@@ -1,0 +1,25 @@
+# AGENTS.md
+
+## 1. Project Identity
+
+TaleSide is an application intended to turn written fiction into persistent, interactive simulations that users can participate in.
+
+The long-term goal is to reconstruct fictional settings from their source material with enough understanding of their inhabitants, history, geography, relationships, rules, and ongoing circumstances to support believable events beyond the original narrative.
+
+The original literature provides the foundation for the simulation.
+
+The ultimate objective is a coherent, persistent fictional reality that can evolve through its own internal processes while remaining responsive to user participation.
+
+IMPORTANT: Whenever installing any library, tool etc. Check its license. Then check any libraries or tools or any other similar software it uses and check their license. Repeat the chain. Reasoning is because we do not want to use a dependency that, due to my license, we are not allowed to legally use. Use tools and add them to the repo for current and future use, you can also make your own notes in a dedicated folder for the license checker. Tools such as pip-licenses and @lizenz/checker. However, package metadata scanners only inspect Python/npm packages ,etc. always check the license of external binaries too. Sometimes a safe library (for instance, pypdfium2—which wraps Google's Apache/BSD PDFium) shows up as UNKNOWN or non-standard in automated scanners. That's why using allowlist mode (--allow-only / --onlyAllow) is best: it pauses and forces you to verify UNKNOWN packages once instead of silently letting them pass.
+
+My license is PolyForm Shield 1.0.0 and therefore some licenses that are not allowed include but are not limited to, AGPL, GPL, SSPL, CC-BY-NC / non-commercial, paid/proprietary SDKs while some that are allowed include MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, 0BSD, CC0-1.0, Unlicense, PSF-2.0.
+
+Many Python packages on PyPI declare full text names like "MIT License", "Apache Software License", "BSD License", "ISC License (ISCL)", or "Python Software Foundation License" instead of "MIT" or "Apache-2.0". If your --allow-only list only has short SPDX IDs, pip-licenses will fail on safe packages like FastAPI or uvicorn until you include those standard PyPI strings too.
+
+## 2. Changelog Model
+Changelog model: [Versioned Releases | Continuous/Dated | None]
+This project's model: Versioned Releases
+Rules:
+- Versioned Releases: notable completed changes go under `## Unreleased` and are moved into a versioned section when a release is created.
+- Continuous/Dated: notable completed changes are recorded when they become part of the delivered project. Do not wait for or invent a formal release.
+- None: this project does not maintain a changelog unless this policy is explicitly changed.
