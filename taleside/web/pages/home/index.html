@@ -9,6 +9,7 @@
   <link rel="preload" as="image" href="/assets/defaults/Default%20Background.png">
   <link rel="stylesheet" href="/assets/styles/base.css">
   <link rel="stylesheet" href="/pages/home/home.css">
+  <script type="module" src="/pages/home/home.js"></script>
 </head>
 <body class="page-backdrop">
   <header class="top-bar">
@@ -41,6 +42,11 @@
       </div>
       <a href="/create" class="empty-label">Create a world.</a>
     </section>
+    <section class="chooser" id="chooser" aria-label="Worlds" hidden>
+      <button class="enter" id="enter" type="button" disabled hidden>Enter</button>
+      <div class="worlds" id="worlds"></div>
+    </section>
+    <p class="message" id="message" role="status" hidden></p>
   </main>
 </body>
 </html>

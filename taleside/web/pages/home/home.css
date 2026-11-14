@@ -1,3 +1,5 @@
+:root { --card-height: max(170px, calc(241 * var(--unit))); }
+
 .top-bar {
   position: absolute;
   z-index: 2;
@@ -95,7 +97,160 @@
   68%, 100% { r: var(--ring-end); opacity: 0; }
 }
 
+.chooser {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.enter {
+  position: absolute;
+  left: 4.7vw;
+  top: 48%;
+  width: max(148px, calc(288 * var(--unit)));
+  height: max(34px, calc(57 * var(--unit)));
+  border-radius: 999px;
+  background: var(--color-button);
+  font-size: max(16px, calc(24 * var(--unit)));
+  font-weight: 650;
+}
+.worlds {
+  position: absolute;
+  pointer-events: auto;
+  left: 0;
+  right: 0;
+  bottom: max(52px, calc(100dvh * .148 - 18px));
+  display: flex;
+  gap: max(7px, calc(10 * var(--unit)));
+  padding: 18px 4.5vw 18px 3.2vw;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.worlds::-webkit-scrollbar { display: none; }
+.card {
+  position: relative;
+  isolation: isolate;
+  flex: 0 0 auto;
+  width: calc(var(--card-height) * .615);
+  height: var(--card-height);
+  border-radius: max(6px, calc(10 * var(--unit)));
+  overflow: hidden;
+  background: #112622;
+  outline: none;
+  transition: translate 280ms ease;
+}
+.card:first-child { width: calc(var(--card-height) * .676); }
+.card:is(:hover, :has(:focus-visible)) {
+  z-index: 1;
+  translate: 0 -3px;
+}
+.card-visual, .cover, .cover img, .alert-tint {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+}
+.card-visual { overflow: hidden; }
+.cover img { object-fit: cover; }
+.cover { overflow: hidden; background: #04251e; }
+.cover.fallback img { object-position: center; transform: translate(2.5%, -10%) scale(1.25); }
+.cover.fallback span {
+  position: absolute;
+  top: 62.5%;
+  left: 8%;
+  right: 8%;
+  font-size: max(11px, calc(16 * var(--unit)));
+  line-height: 1.45;
+  text-align: center;
+  text-transform: uppercase;
+  letter-spacing: .12em;
+  overflow-wrap: anywhere;
+}
+.cover-progress { clip-path: inset(0 calc(100% - var(--progress, 0%)) 0 0); transition: clip-path 450ms ease; }
+.card:not([data-status="ready"]) .cover-base { filter: grayscale(1) brightness(.62); }
+.card:is([data-status="paused"], [data-status="failed"]) .cover-progress { filter: grayscale(1) brightness(.42); }
+.card[data-status="ready"] .cover-progress { visibility: hidden; }
+.card::after {
+  content: "";
+  position: absolute;
+  z-index: 3;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 1px #ffffff29;
+  pointer-events: none;
+}
+.alert-tint { background: #a84040; opacity: 0; }
+.card.alert .alert-tint { animation: failure-pulse 4s ease-in-out infinite; }
+@keyframes failure-pulse {
+  0%, 100% { opacity: 0; }
+  29% { opacity: .29; }
+  71%, 99% { opacity: 0; }
+}
+.card-hit {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  border-radius: inherit;
+}
+.card-hit:focus-visible { outline-offset: -3px; }
+.card-info {
+  position: absolute;
+  z-index: 2;
+  inset: auto 0 0;
+  pointer-events: none;
+  min-height: max(48px, calc(56 * var(--unit)));
+  padding: max(8px, calc(10 * var(--unit))) max(7px, calc(10 * var(--unit))) 8px;
+  background: var(--color-glass);
+  backdrop-filter: blur(13px);
+  opacity: 0;
+  translate: 0 16px;
+  transition: opacity 220ms ease, translate 260ms ease;
+}
+.card:is(:hover, :has(:focus-visible)) .card-info { opacity: 1; translate: 0; }
+.card-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: max(11px, calc(13 * var(--unit)));
+  font-weight: 680;
+  line-height: 1.3;
+}
+.operation {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+  color: var(--color-text-muted);
+  font-size: max(10px, calc(12 * var(--unit)));
+  line-height: 1.25;
+}
+.card:is(:hover, :has(:focus-visible)) .operation { pointer-events: auto; }
+.operation[aria-disabled="true"] { cursor: wait; }
+.operation-icon { width: 10px; height: 10px; background: currentColor; }
+.operation-icon.play { clip-path: polygon(0 0, 100% 50%, 0 100%); }
+.operation-icon.pause { background: linear-gradient(90deg, currentColor 35%, transparent 35% 65%, currentColor 65%); }
+
+.message {
+  position: fixed;
+  z-index: 3;
+  bottom: 16px;
+  left: 3.2vw;
+  max-width: min(49vw, 580px);
+  background: #081b17ed;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+}
+
+@media (max-height: 430px) {
+  :root { --card-height: max(116px, 37dvh); }
+  .enter { top: 34%; }
+  .worlds { bottom: 36px; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .001ms !important; transition-duration: .001ms !important; }
   .ring circle { animation: none !important; r: calc((var(--ring-start) + var(--ring-end)) / 2); opacity: .75; }
+  .card.alert .alert-tint { animation: none !important; opacity: .22; }
 }
