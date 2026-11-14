@@ -1,0 +1,1 @@
+"""TaleSide's local application."""
