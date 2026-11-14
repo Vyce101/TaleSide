@@ -1,5 +1,20 @@
 :root { --card-height: max(170px, calc(241 * var(--unit))); }
 
+.hero-art, .hero-frame, .hero-art img { position: fixed; inset: 0; width: 100%; height: 100%; }
+.hero-art { pointer-events: none; overflow: hidden; }
+.hero-art img { object-fit: cover; object-position: center 40%; }
+.hero-frame.incoming { animation: show-hero 580ms ease both; }
+@keyframes show-hero { from { opacity: 0; } to { opacity: 1; } }
+.hero-art.outgoing { animation: hide-hero 580ms ease both; }
+@keyframes hide-hero { from { opacity: 1; } to { opacity: 0; } }
+.hero-frame::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, #0417128c, transparent 67%),
+    linear-gradient(0deg, #031713c9, transparent 72%);
+}
+
 .top-bar {
   position: absolute;
   z-index: 2;
@@ -231,6 +246,19 @@
 .operation-icon.play { clip-path: polygon(0 0, 100% 50%, 0 100%); }
 .operation-icon.pause { background: linear-gradient(90deg, currentColor 35%, transparent 35% 65%, currentColor 65%); }
 
+.preview-controls {
+  position: fixed;
+  right: max(12px, 2vw);
+  bottom: max(12px, 2.4dvh);
+  z-index: 3;
+  font-size: 12px;
+}
+.preview-controls select {
+  background: var(--color-control);
+  border: 1px solid var(--color-control-border);
+  border-radius: 8px;
+  padding: 7px 10px;
+}
 .message {
   position: fixed;
   z-index: 3;

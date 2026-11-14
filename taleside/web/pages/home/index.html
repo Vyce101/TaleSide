@@ -12,6 +12,7 @@
   <script type="module" src="/pages/home/home.js"></script>
 </head>
 <body class="page-backdrop">
+  <div class="hero-art" id="hero-art" aria-hidden="true"></div>
   <header class="top-bar">
     <nav aria-label="Sections">
       <span aria-current="page">Worlds</span>
@@ -48,5 +49,12 @@
     </section>
     <p class="message" id="message" role="status" hidden></p>
   </main>
+  <aside class="preview-controls" aria-label="Temporary preview control">
+    <select id="world-preview-mode" aria-label="Worlds preview">
+      <option value="saved">My Worlds</option>
+      <option value="demo">Demo Worlds</option>
+      <option value="empty">No Worlds</option>
+    </select>
+  </aside>
 </body>
 </html>
