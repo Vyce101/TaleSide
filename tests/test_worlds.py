@@ -1,13 +1,17 @@
 import codecs
+import json
 import os
 import tempfile
 import time
 import unittest
 from pathlib import Path
 from threading import Event, Thread
+from urllib.error import HTTPError
+from urllib.request import Request, urlopen
 
 from taleside.books import BookSource
 from taleside.embeddings import EmbeddingError, Gemini
+from taleside.server import Server
 from taleside.worlds import Worlds
 
 
@@ -122,6 +126,32 @@ class WorldTests(unittest.TestCase):
         self.provider.vector = [0.5] * 768
         self.worlds.resume(world["id"])
         wait_for(lambda: self.worlds.list()[0]["status"] == "ready")
+
+    def test_homepage_api_only_allows_same_origin_state_changes(self):
+        self.provider.release.clear()
+        world = self.worlds.prepare("World", [BookSource("Book.txt", b"abcdefgh")], 4, 0)
+        self.worlds.accept(world["id"])
+        self.assertTrue(self.provider.started.wait(2))
+        with Server(self.worlds) as server:
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                url = f"{server.url}/api/worlds/{world['id']}/pause"
+                foreign = Request(url, method="POST", headers={"Origin": "https://example.com"})
+                with self.assertRaises(HTTPError) as caught:
+                    urlopen(foreign)
+                with caught.exception as response:
+                    self.assertEqual(response.code, 403)
+                local = Request(url, method="POST", headers={"Origin": server.url})
+                with urlopen(local) as response:
+                    self.assertEqual(json.load(response), {"ok": True})
+                with urlopen(f"{server.url}/api/worlds") as response:
+                    self.assertEqual(json.load(response)[0]["status"], "paused")
+            finally:
+                server.shutdown()
+                thread.join()
+
+
 @unittest.skipUnless(os.getenv("GEMINI_API_KEY"), "GEMINI_API_KEY is not configured")
 class LiveGeminiTests(unittest.TestCase):
     def test_checks_and_embeds_an_approved_prefix_with_gemini(self):

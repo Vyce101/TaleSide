@@ -1,0 +1,101 @@
+.top-bar {
+  position: absolute;
+  z-index: 2;
+  top: calc(43 * var(--unit));
+  left: 4.67vw;
+  right: 2.55vw;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.top-bar nav, .utilities { display: flex; align-items: center; }
+.top-bar nav {
+  gap: calc(63 * var(--unit));
+  font-size: max(17px, calc(28 * var(--unit)));
+  line-height: 1.23;
+  letter-spacing: .005em;
+}
+.top-bar nav span { font-weight: 680; scale: 1.075 1; transform-origin: left; }
+.top-bar nav a { color: var(--color-text-inactive); font-weight: 440; scale: 1.10 1; transform-origin: left; text-decoration: none; }
+.utilities { gap: calc(63 * var(--unit)); }
+.utilities button { display: grid; place-items: center; }
+.utilities svg { width: max(20px, calc(28 * var(--unit))); display: block; }
+
+.empty { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+.emblem-position {
+  position: absolute;
+  left: 50%;
+  top: 49.4%;
+  width: calc(168 * var(--unit));
+  aspect-ratio: 1;
+  transform: translate(-50%, -50%);
+}
+.emblem {
+  position: relative;
+  display: block;
+  border-radius: 50%;
+  pointer-events: auto;
+}
+.emblem::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  box-shadow: 0 0 11px 2px var(--color-logo-glow);
+  opacity: 0;
+  transition: opacity 240ms ease;
+}
+.emblem img {
+  display: block;
+  width: 100%;
+  height: auto;
+  transform: scale(1);
+  transition: transform 240ms ease;
+}
+.emblem:is(:hover, :focus-visible)::before { opacity: 1; }
+.emblem:is(:hover, :focus-visible) img { transform: translateY(-2px) scale(1.035); }
+.empty-label {
+  position: absolute;
+  left: 50%;
+  top: 76%;
+  translate: -50% 0;
+  width: max-content;
+  text-align: center;
+  text-decoration: none;
+  pointer-events: auto;
+  margin: 0;
+  line-height: 1.1;
+  font-size: max(20px, calc(45 * var(--unit)));
+  font-weight: 420;
+  letter-spacing: -.008em;
+  scale: 1.095 1;
+  text-shadow: 0 2px 5px #0007;
+}
+.ring {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  --ring-start: calc(84 * var(--unit));
+  --ring-end: calc((var(--ring-start) + 26.6dvh) / 2);
+}
+.ring circle {
+  fill: none;
+  stroke: var(--color-text);
+  stroke-width: calc(3.5 * var(--unit));
+  filter: drop-shadow(0 0 calc(8 * var(--unit)) var(--color-ring-glow))
+    drop-shadow(0 0 calc(3 * var(--unit)) var(--color-ring-glow));
+  animation: ring-pulse 5.6s linear infinite;
+}
+@keyframes ring-pulse {
+  0% { r: var(--ring-start); opacity: 0; }
+  9% { opacity: .9; }
+  32% { opacity: .62; }
+  68%, 100% { r: var(--ring-end); opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .001ms !important; transition-duration: .001ms !important; }
+  .ring circle { animation: none !important; r: calc((var(--ring-start) + var(--ring-end)) / 2); opacity: .75; }
+}
