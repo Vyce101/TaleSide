@@ -1,12 +1,10 @@
-![TaleSide](./assets/Social%20Preview.png)
+![TaleSide](./docs/brand/social-preview.png)
 
 # TaleSide
 
-**TaleSide** is built for turning media into persistent, interactive worlds and simulations you can step into.
+**TaleSide** is an app in development for turning source material into persistent, interactive worlds.
 
-Instead of chatting with isolated character cards, you feed TaleSide a universe’s source material and enter an ongoing reality where the setting, its rules, and the people inside it keep moving whether or not you interact with them.
-
-> **Status:** Early development (initial repository setup).
+> **Status:** Early development (homepage preview).
 
 ## Vision
 
@@ -19,6 +17,14 @@ Most AI roleplay breaks the moment you look outside the room you're standing in�
 **Hundreds or thousands of people living across the same map.** TaleSide is intended to carry that independence across dozens, hundreds, or even thousands of individuals, alongside groups and entire nations, all living through the same passing time. Imagine travelling across the Demon Continent with Rudeus, Eris, and Ruijerd. In Rikarisu, you help a boy Ruijerd rescued, convince a few adventurers that the feared Superd warrior saved his life. After you leave, the boy keeps telling his story. Merchants carry different versions of it toward Wind Port. Weeks later, you reach another city and find that some people are willing to hear Ruijerd out, while others refuse to let him through the gates. The same continues at Hogwarts while you're practising defensive spells with Harry in the Room of Requirement. Umbridge is questioning students elsewhere in the castle about it. One friend who promised to stand beside you receives a letter from their parents demanding they stay away from Harry. When you return for the next meeting, they are missing.
 
 And none of this is staged. Harry, Umbridge, your missing friend, Ruijerd, Paul: none of them are lines of prose written by a single model. Each one is an independent agent with their own memories, goals, and beliefs, living in the world whether or not you ever meet them. What they do ripples outward. Their choices can shift prices and politics, a rumor about you can strain a relationship, and a bounty can be placed on your head on the far side of the world without you ever hearing of it. All of it is possible because these agents are always on: not static entities scripted in code, but living inhabitants who keep acting, and keep interacting with one another, whether you’re nearby or not or whether you have ever met them or not.
+
+## Screenshot
+
+![TaleSide homepage before any Worlds have been created](./docs/screenshots/homepage.png)
+
+## Quickstart
+
+[Run TaleSide on Windows](./docs/quickstart.md).
 
 ## License
 
