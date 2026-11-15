@@ -10,7 +10,6 @@ from .books import (
     BOUNDARY_SEARCH_DISTANCE,
     MAX_CHUNK_SIZE,
     normalize_lines,
-    prepare_txt,
 )
 from .embeddings import (
     DIMENSIONS,
@@ -20,6 +19,8 @@ from .embeddings import (
     embedding_input,
     valid_vector,
 )
+
+from .world_imports import check_books
 
 VECTOR = Struct(f"<{DIMENSIONS}f")
 SCHEMA = """
@@ -59,20 +60,6 @@ CREATE TABLE IF NOT EXISTS chunks (
     FOREIGN KEY (world_id, book_number) REFERENCES books ON DELETE CASCADE
 );
 """
-
-
-def prefix_length(provider, name, text):
-    # Count the complete formatted request at every tested prefix.
-    minimum, maximum = 0, len(text)
-    while minimum < maximum:
-        middle = (minimum + maximum + 1) // 2
-        if provider.count(embedding_input(name, text[:middle])) <= TOKEN_LIMIT:
-            minimum = middle
-        else:
-            maximum = middle - 1
-    if minimum == 0:
-        raise ValueError("The book name leaves no room for text in the embedding. Choose a shorter name.")
-    return minimum
 
 
 class Worlds:
@@ -118,38 +105,14 @@ class Worlds:
             raise ValueError("Chunk settings are too large to save.")
 
         world_id = uuid4().hex
-        book_rows, chunk_rows, oversized = [], [], []
-        for book_number, source in enumerate(books, 1):
-            if source.name is not None and not isinstance(source.name, str):
-                raise ValueError("Book names must be text.")
-            working, encoding, bom_size, chunks = prepare_txt(source, max_size, search_distance)
-            book_name = (source.name or "").strip() or source.filename[:-4]
-            book_rows.append((world_id, book_number, book_name, source.filename,
-                              source.original, working, encoding, bom_size))
-            chunk_rows.extend((book_number, number, book_name, chunk, working)
-                              for number, chunk in enumerate(chunks, 1))
-
-        checked = []
-        for book_number, number, book_name, chunk, working in chunk_rows:
-            text = working[chunk.start:chunk.end]
-            tokens = self.provider.count(embedding_input(book_name, text))
-            embed_end = chunk.end
-            if tokens > TOKEN_LIMIT:
-                embed_end = chunk.start + prefix_length(self.provider, book_name, text)
-                oversized.append({
-                    "book_number": book_number, "chunk_number": number, "tokens": tokens,
-                    "characters": len(text), "embedded_characters": embed_end - chunk.start,
-                })
-            checked.append((world_id, book_number, number, chunk.start, chunk.end,
-                            chunk.original_start, chunk.original_end, tokens, embed_end))
+        checked = check_books(world_id, books, max_size, search_distance, self.provider.count, Event())
 
         with self.connect() as db:
             db.execute("INSERT INTO worlds VALUES (?, ?, 'draft', ?, ?, ?, ?, NULL)",
                        (world_id, name.strip(), MODEL, DIMENSIONS, max_size, search_distance))
-            db.executemany("INSERT INTO books VALUES (?, ?, ?, ?, ?, ?, ?, ?)", book_rows)
-            db.executemany("INSERT INTO chunks VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)", checked)
-        return {"id": world_id, "chunk_count": len(checked), "token_limit": TOKEN_LIMIT,
-                "oversized_chunks": oversized}
+            db.executemany("INSERT INTO books VALUES (?, ?, ?, ?, ?, ?, ?, ?)", checked.book_rows)
+            db.executemany("INSERT INTO chunks VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)", checked.chunk_rows)
+        return checked.report
 
     def accept(self, world_id, allow_oversized=False):
         with self.connect() as db:
