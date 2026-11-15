@@ -40,3 +40,16 @@ body:not([data-view="home"]) .top-bar { position: fixed; z-index: 5; }
 .top-bar button:not(:disabled):hover { color: white; }
 body:is([data-view="create"], [data-view="world"]) .hero-art img { object-position: center; }
 body:is([data-view="create"], [data-view="world"]) .hero-frame::after { display: none; }
+
+:root { view-transition-name: none; }
+::view-transition { pointer-events: none; }
+html[data-route-transition] #home { position: relative; min-height: 100dvh; }
+::view-transition-group(world-cover) {
+  z-index: 1;
+  animation-duration: 240ms;
+  animation-timing-function: cubic-bezier(.22, 1, .36, 1);
+}
+::view-transition-old(outgoing-content), ::view-transition-old(outgoing-shelf-controls) {
+  animation: route-fade-out 240ms cubic-bezier(.22, 1, .36, 1) both;
+}
+@keyframes route-fade-out { to { opacity: 0; } }
