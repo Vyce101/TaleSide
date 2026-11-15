@@ -193,15 +193,18 @@ class Worlds:
             pending.timer.cancel()
         return True
 
-    def list(self):
+    def list(self, world_id=None):
         with self.lock, self.connect() as db:
             db.execute("BEGIN")
-            worlds = [dict(row) for row in db.execute("""
-                SELECT id, name, status, error FROM worlds WHERE status != 'draft' ORDER BY rowid
-            """)]
+            query = "SELECT * FROM worlds WHERE status != 'draft'"
+            filters = ()
+            if world_id is not None:
+                query += " AND id = ?"
+                filters = (world_id,)
+            worlds = [dict(row) for row in db.execute(query + " ORDER BY rowid", filters)]
             for world in worlds:
                 world["books"] = [dict(row) for row in db.execute("""
-                    SELECT b.number, b.name, count(*) AS total_chunks, count(c.vector) AS embedded_chunks
+                    SELECT b.number, b.name, b.filename, count(*) AS total_chunks, count(c.vector) AS embedded_chunks
                     FROM books b JOIN chunks c ON c.world_id = b.world_id AND c.book_number = b.number
                     WHERE b.world_id = ? GROUP BY b.number ORDER BY b.number
                 """, (world["id"],))]
@@ -214,6 +217,22 @@ class Worlds:
                              active_book=active_book,
                              progress=100 if world["status"] == "ready" else min(99, done * 100 // (total or 1)))
         return worlds
+
+    def detail(self, world_id):
+        worlds = self.list(world_id)
+        return worlds[0] if worlds else None
+
+    def rename(self, world_id, name):
+        if not isinstance(name, str) or not name.strip():
+            raise ValueError("Enter a World name.")
+        with self.lock, self.connect() as db:
+            return bool(db.execute("""
+                UPDATE worlds SET name = ? WHERE id = ? AND status != 'draft'
+            """, (name.strip(), world_id)).rowcount)
+
+    def discard(self, world_id):
+        with self.lock, self.connect() as db:
+            return bool(db.execute("DELETE FROM worlds WHERE id = ? AND status != 'draft'", (world_id,)).rowcount)
 
     def pause(self, world_id):
         with self.lock, self.connect() as db:

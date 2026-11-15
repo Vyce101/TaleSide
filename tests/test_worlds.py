@@ -90,7 +90,7 @@ class WorldTests(unittest.TestCase):
         self.assertTrue(self.worlds.accept(world["id"]))
         self.assertTrue(self.provider.started.wait(2))
         self.assertTrue(self.worlds.pause(world["id"]))
-        self.assertEqual(self.worlds.list()[0]["status"], "pausing")
+        self.assertEqual(self.worlds.detail(world["id"])["status"], "pausing")
         self.assertFalse(self.worlds.resume(world["id"]))
         self.provider.release.set()
         wait_for(lambda: self.worlds.list()[0]["status"] == "paused")
@@ -127,11 +127,30 @@ class WorldTests(unittest.TestCase):
         self.assertTrue(self.provider.started.wait(2))
         self.assertTrue(self.worlds.pause(world["id"]))
         self.provider.release.set()
-        wait_for(lambda: self.worlds.list()[0]["status"] == "failed")
-        self.assertEqual(self.worlds.list()[0]["embedded_chunks"], 0)
+        wait_for(lambda: self.worlds.detail(world["id"])["status"] == "failed")
+        self.assertEqual(self.worlds.detail(world["id"])["embedded_chunks"], 0)
         self.provider.vector = [0.5] * 768
         self.assertTrue(self.worlds.resume(world["id"]))
-        wait_for(lambda: self.worlds.list()[0]["status"] == "ready")
+        wait_for(lambda: self.worlds.detail(world["id"])["status"] == "ready")
+
+    def test_discard_during_embedding_cascades_and_does_not_restore_the_world(self):
+        self.provider.release.clear()
+        first = self.worlds.prepare("First", [BookSource("First.txt", b"first")])
+        self.worlds.accept(first["id"])
+        self.assertTrue(self.provider.started.wait(2))
+        second = self.worlds.prepare("Second", [BookSource("Second.txt", b"second")])
+        self.worlds.accept(second["id"])
+        self.assertTrue(self.worlds.pause(second["id"]))
+        self.assertEqual(self.worlds.detail(second["id"])["status"], "paused")
+        self.assertTrue(self.worlds.discard(first["id"]))
+        self.provider.release.set()
+        self.worlds.resume(second["id"])
+        wait_for(lambda: self.worlds.detail(second["id"])["status"] == "ready")
+        self.assertIsNone(self.worlds.detail(first["id"]))
+        with self.worlds.connect() as db:
+            for table in ("books", "chunks"):
+                self.assertEqual(db.execute(f"SELECT count(*) FROM {table} WHERE world_id = ?",
+                                            (first["id"],)).fetchone()[0], 0)
 
     def test_invalid_vector_and_provider_error_fail_without_saving_progress(self):
         self.provider.vector = [float("nan")] * 768
