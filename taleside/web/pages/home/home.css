@@ -81,6 +81,10 @@
 }
 .enter {
   position: absolute;
+  display: grid;
+  place-items: center;
+  pointer-events: auto;
+  text-decoration: none;
   left: 4.7vw;
   top: 48%;
   width: max(148px, calc(288 * var(--unit)));
@@ -130,19 +134,7 @@
 .card-visual { overflow: hidden; }
 .cover img { object-fit: cover; }
 .cover { overflow: hidden; background: #04251e; }
-.cover.fallback img { object-position: center; transform: translate(2.5%, -10%) scale(1.25); }
-.cover.fallback span {
-  position: absolute;
-  top: 62.5%;
-  left: 8%;
-  right: 8%;
-  font-size: max(11px, calc(16 * var(--unit)));
-  line-height: 1.45;
-  text-align: center;
-  text-transform: uppercase;
-  letter-spacing: .12em;
-  overflow-wrap: anywhere;
-}
+.cover.fallback img { object-position: center; transform: var(--fallback-cover-transform); }
 .cover-progress { clip-path: inset(0 calc(100% - var(--progress, 0%)) 0 0); transition: clip-path 450ms ease; }
 .card:not([data-status="ready"]) .cover-base { filter: grayscale(1) brightness(.62); }
 .card:is([data-status="paused"], [data-status="failed"]) .cover-progress { filter: grayscale(1) brightness(.42); }
@@ -203,7 +195,7 @@
   line-height: 1.25;
 }
 .card:is(:hover, :has(:focus-visible)) .operation { pointer-events: auto; }
-.operation[aria-disabled="true"] { cursor: wait; }
+.operation:disabled { cursor: wait; }
 .operation-icon { width: 10px; height: 10px; background: currentColor; }
 .operation-icon.play { clip-path: polygon(0 0, 100% 50%, 0 100%); }
 .operation-icon.pause { background: linear-gradient(90deg, currentColor 35%, transparent 35% 65%, currentColor 65%); }

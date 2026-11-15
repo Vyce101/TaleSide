@@ -14,6 +14,8 @@ const displayed = new Map();
 export function selectWorld(world) {
   previewed = world?.id ?? null;
   enter.hidden = !world;
+  if (world) enter.href = `/worlds/${world.id}`;
+  else enter.removeAttribute("href");
   if (!home.hidden) showArtwork(world?.wide ?? null);
 }
 
@@ -30,7 +32,7 @@ export function renderHome(worlds, loading, pending, onJobChange) {
   worlds.forEach((world, index) => {
     if (!displayed.has(world.id)) displayed.set(world.id, createCard(world, selectWorld, onJobChange));
     const card = displayed.get(world.id);
-    updateCard(card, world, pending.has(world.id));
+    updateCard(card, world, pending.get(world.id));
     if (cards.children[index] !== card.node) cards.insertBefore(card.node, cards.children[index] ?? null);
   });
   selectWorld(worlds.find(world => world.id === previewed));
@@ -39,6 +41,11 @@ export function renderHome(worlds, loading, pending, onJobChange) {
 export function showHomeMessage(text) {
   message.textContent = text;
   message.hidden = !text;
+}
+
+export function revealHomeCard(id) {
+  displayed.get(id)?.hit.focus({ preventScroll: true });
+  displayed.get(id)?.node.scrollIntoView({ block: "nearest", inline: "nearest" });
 }
 
 export function resetHomeSelection() {

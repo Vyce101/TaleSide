@@ -243,6 +243,8 @@ class WorldTests(unittest.TestCase):
                 self.assertEqual(post(f"/api/worlds/{world_id}/rename", b'{"name":"Renamed"}'), {"ok": True})
                 with urlopen(f"{server.url}/api/worlds/{world_id}") as response:
                     self.assertEqual(json.load(response)["name"], "Renamed")
+                with urlopen(f"{server.url}/worlds/{world_id}") as response:
+                    self.assertIn(b'id="studio"', response.read())
                 with self.worlds.connect() as db:
                     originals = [row[0] for row in db.execute("SELECT original FROM books ORDER BY number")]
                 self.assertEqual(originals, [second, first])
