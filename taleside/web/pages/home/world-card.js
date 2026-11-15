@@ -16,11 +16,12 @@ function cover(world, layer) {
     image.addEventListener("error", () => {
       node.classList.add("fallback");
       image.src = fallbackCover;
-      node.append(element("span", "", world.name));
+      node.append(element("span", "cover-name", node.dataset.name));
     }, { once: true });
   }
   node.append(image);
-  if (!world.cover) node.append(element("span", "", world.name));
+  node.dataset.name = world.name;
+  if (!world.cover) node.append(element("span", "cover-name", world.name));
   return node;
 }
 
@@ -30,8 +31,8 @@ export function createCard(world, onPreview, onJobChange) {
   const visuals = element("div", "card-visual");
   visuals.setAttribute("aria-hidden", "true");
   visuals.append(cover(world, "cover-base"), cover(world, "cover-progress"), element("div", "alert-tint"));
-  const hit = element("button", "card-hit");
-  hit.type = "button";
+  const hit = element("a", "card-hit");
+  hit.href = `/worlds/${world.id}`;
   const info = element("div", "card-info");
   const name = element("div", "card-title", world.name);
   const action = element("button", "operation");
@@ -43,7 +44,7 @@ export function createCard(world, onPreview, onJobChange) {
   info.append(name, action);
   node.append(visuals, hit, info);
 
-  const card = { node, hit, action, icon, label, world };
+  const card = { node, hit, name, action, icon, label, world };
   const activate = () => {
     if (card.world.status === "failed") node.classList.remove("alert");
     onPreview(card.world);
@@ -56,20 +57,27 @@ export function createCard(world, onPreview, onJobChange) {
 }
 
 export function updateCard(card, world, pending) {
-  const { node, hit, action, icon, label } = card;
+  const { node, hit, name, action, icon, label } = card;
   if (world.status === "failed" && node.dataset.status !== "failed") {
     node.classList.toggle("alert", !node.matches(":hover, :has(:focus-visible)"));
   } else if (world.status !== "failed") {
     node.classList.remove("alert");
   }
+  if (name.textContent !== world.name) {
+    name.textContent = world.name;
+    node.querySelectorAll(".cover").forEach(cover => {
+      cover.dataset.name = world.name;
+      const title = cover.querySelector("span");
+      if (title) title.textContent = world.name;
+    });
+  }
   card.world = world;
   node.dataset.status = world.status;
   node.style.setProperty("--progress", `${world.progress}%`);
-  hit.setAttribute("aria-label", `Preview ${world.name}`);
+  hit.setAttribute("aria-label", `Open ${world.name}`);
   action.hidden = world.status === "ready";
-  const pausing = world.status === "pausing";
-  action.disabled = pausing;
-  action.setAttribute("aria-disabled", String(pending || pausing));
+  const pausing = world.status === "pausing" || pending === "pause";
+  action.disabled = Boolean(pending) || pausing;
   if (action.hidden && document.activeElement === action) hit.focus({ preventScroll: true });
   const creating = world.status === "creating";
   icon.className = `operation-icon ${creating || pausing ? "pause" : "play"}`;

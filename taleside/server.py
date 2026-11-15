@@ -18,8 +18,9 @@ from .embeddings import EmbeddingError
 
 WEB_ROOT = Path(__file__).resolve().parent / "web"
 MIME_TYPES = {".js": "text/javascript", ".woff2": "font/woff2"}
-PAGE_ROUTES = {"/": "/pages/home/index.html", "/create": "/pages/create/index.html"}
+APP_PAGE = "/pages/index.html"
 WORLD_ID = re.compile(r"[0-9a-f]{32}")
+WORLD_PAGE = re.compile(r"/worlds/(?:[0-9a-f]{32}|demo-[a-z0-9-]+)")
 INSTANCE_PATH = "/api/instance"
 INSTANCE = {"app": "TaleSide"}
 
@@ -66,7 +67,8 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 self.send_json(world)
             return
-        path = PAGE_ROUTES.get(path, path)
+        if path in ("/", "/create") or WORLD_PAGE.fullmatch(path):
+            path = APP_PAGE
         parts = path.lstrip("/").split("/")
         if parts[0] not in ("assets", "pages") or any(part in ("", ".", "..") for part in parts) or "\\" in path:
             self.send_error(HTTPStatus.NOT_FOUND)
