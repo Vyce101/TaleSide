@@ -1,10 +1,10 @@
+import { showArtwork } from "../artwork.js";
 import { createDemoWorlds } from "./demo-worlds.js";
 import { createCard, updateCard } from "./world-card.js";
 
 const empty = document.querySelector("#empty");
 const chooser = document.querySelector("#chooser");
 const cards = document.querySelector("#worlds");
-const hero = document.querySelector("#hero-art");
 const enter = document.querySelector("#enter");
 const message = document.querySelector("#message");
 const previewMode = document.querySelector("#world-preview-mode");
@@ -12,46 +12,9 @@ const previewMode = document.querySelector("#world-preview-mode");
 let savedWorlds = [];
 let demoWorlds = [];
 let previewed = null;
-let artworkRequest = 0;
-let artworkUrl = null;
 let refreshRequest = 0;
 const displayed = new Map();
 const pending = new Set();
-
-async function showArtwork(url) {
-  if (url === artworkUrl) return;
-  artworkUrl = url;
-  const request = ++artworkRequest;
-  const next = url ? new Image() : null;
-  if (next) {
-    next.src = url;
-    next.alt = "";
-    try {
-      await next.decode();
-    } catch {
-      if (request === artworkRequest) showArtwork(null);
-      return;
-    }
-  }
-  if (request !== artworkRequest) return;
-  if (!next) {
-    hero.classList.add("outgoing");
-    hero.getAnimations()[0]?.finished.then(() => {
-      if (request === artworkRequest) hero.replaceChildren();
-    }).catch(() => {});
-    return;
-  }
-  hero.classList.remove("outgoing");
-  const frame = document.createElement("div");
-  frame.className = "hero-frame incoming";
-  frame.append(next);
-  hero.append(frame);
-  frame.addEventListener("animationend", () => {
-    if (hero.lastElementChild === frame) {
-      while (hero.firstElementChild !== frame) hero.firstElementChild.remove();
-    }
-  }, { once: true });
-}
 
 function showPreview(world) {
   previewed = world?.id ?? null;

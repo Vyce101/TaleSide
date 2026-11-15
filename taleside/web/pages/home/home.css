@@ -1,43 +1,5 @@
 :root { --card-height: max(170px, calc(241 * var(--unit))); }
 
-.hero-art, .hero-frame, .hero-art img { position: fixed; inset: 0; width: 100%; height: 100%; }
-.hero-art { pointer-events: none; overflow: hidden; }
-.hero-art img { object-fit: cover; object-position: center 40%; }
-.hero-frame.incoming { animation: show-hero 580ms ease both; }
-@keyframes show-hero { from { opacity: 0; } to { opacity: 1; } }
-.hero-art.outgoing { animation: hide-hero 580ms ease both; }
-@keyframes hide-hero { from { opacity: 1; } to { opacity: 0; } }
-.hero-frame::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(90deg, #0417128c, transparent 67%),
-    linear-gradient(0deg, #031713c9, transparent 72%);
-}
-
-.top-bar {
-  position: absolute;
-  z-index: 2;
-  top: calc(43 * var(--unit));
-  left: 4.67vw;
-  right: 2.55vw;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-.top-bar nav, .utilities { display: flex; align-items: center; }
-.top-bar nav {
-  gap: calc(63 * var(--unit));
-  font-size: max(17px, calc(28 * var(--unit)));
-  line-height: 1.23;
-  letter-spacing: .005em;
-}
-.top-bar nav span { font-weight: 680; scale: 1.075 1; transform-origin: left; }
-.top-bar nav a { color: var(--color-text-inactive); font-weight: 440; scale: 1.10 1; transform-origin: left; text-decoration: none; }
-.utilities { gap: calc(63 * var(--unit)); }
-.utilities button { display: grid; place-items: center; }
-.utilities svg { width: max(20px, calc(28 * var(--unit))); display: block; }
-
 .empty { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
 .emblem-position {
   position: absolute;
