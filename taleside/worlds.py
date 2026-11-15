@@ -2,8 +2,9 @@
 
 import sqlite3
 from contextlib import contextmanager
+from dataclasses import dataclass, field
 from struct import Struct
-from threading import Event, Thread
+from threading import Event, Lock, Thread, Timer
 from uuid import uuid4
 
 from .books import (
@@ -14,15 +15,15 @@ from .books import (
 from .embeddings import (
     DIMENSIONS,
     MODEL,
-    TOKEN_LIMIT,
     EmbeddingError,
     embedding_input,
     valid_vector,
 )
-
-from .world_imports import check_books
+from .world_imports import CheckedBooks, check_books
 
 VECTOR = Struct(f"<{DIMENSIONS}f")
+IMPORT_TIMEOUT_SECONDS = 30 * 60
+DEFAULT_WORLD_NAME = "TaleSide"
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS worlds (
     id TEXT PRIMARY KEY,
@@ -62,12 +63,22 @@ CREATE TABLE IF NOT EXISTS chunks (
 """
 
 
+@dataclass
+class PendingImport:
+    cancelled: Event = field(default_factory=Event)
+    checked: CheckedBooks | None = None
+    world_row: tuple = ()
+    timer: Timer | None = None
+
+
 class Worlds:
     def __init__(self, database, provider):
         self.database = database
         self.provider = provider
         self.wake = Event()
         self.stopping = Event()
+        self.lock = Lock()
+        self.imports = {}
         with self.connect() as db:
             db.execute("PRAGMA journal_mode = WAL")
             db.executescript(SCHEMA)
@@ -90,10 +101,14 @@ class Worlds:
         self.stopping.set()
         self.wake.set()
         self.worker.join()
+        with self.lock:
+            for world_id in tuple(self.imports):
+                self._cancel_import_locked(world_id)
 
-    def prepare(self, name, books, max_size=MAX_CHUNK_SIZE, search_distance=BOUNDARY_SEARCH_DISTANCE):
-        if not isinstance(name, str) or not name.strip():
-            raise ValueError("Enter a World name.")
+    def prepare(self, name, books, max_size=MAX_CHUNK_SIZE, search_distance=BOUNDARY_SEARCH_DISTANCE,
+                *, world_id=None):
+        if not isinstance(name, str):
+            raise ValueError("World names must be text.")
         books = tuple(books)
         if not books:
             raise ValueError("Select at least one TXT book.")
@@ -104,29 +119,78 @@ class Worlds:
         if max_size > 2**63 - 1 or search_distance > 2**63 - 1:
             raise ValueError("Chunk settings are too large to save.")
 
-        world_id = uuid4().hex
-        checked = check_books(world_id, books, max_size, search_distance, self.provider.count, Event())
+        world_id = world_id or uuid4().hex
+        with self.lock, self.connect() as db:
+            if self.stopping.is_set():
+                raise ValueError("TaleSide is closing.")
+            if db.execute("SELECT 1 FROM worlds WHERE id = ?", (world_id,)).fetchone():
+                raise ValueError("This import ID is already in use.")
+            pending = self.imports.get(world_id)
+            if pending is not None:
+                if pending.checked is not None:
+                    return pending.checked.report
+                raise ValueError("These books are already being checked.")
+            pending = PendingImport()
+            self.imports[world_id] = pending
 
-        with self.connect() as db:
-            db.execute("INSERT INTO worlds VALUES (?, ?, 'draft', ?, ?, ?, ?, NULL)",
-                       (world_id, name.strip(), MODEL, DIMENSIONS, max_size, search_distance))
-            db.executemany("INSERT INTO books VALUES (?, ?, ?, ?, ?, ?, ?, ?)", checked.book_rows)
-            db.executemany("INSERT INTO chunks VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)", checked.chunk_rows)
-        return checked.report
+        try:
+            checked = check_books(world_id, books, max_size, search_distance, self.provider.count, pending.cancelled)
+            with self.lock:
+                if pending.cancelled.is_set():
+                    raise ValueError("The import was cancelled.")
+                pending.world_row = (world_id, name.strip() or DEFAULT_WORLD_NAME, MODEL, DIMENSIONS,
+                                     max_size, search_distance)
+                pending.checked = checked
+                pending.timer = Timer(IMPORT_TIMEOUT_SECONDS, self.decline, args=(world_id,))
+                pending.timer.daemon = True
+                pending.timer.start()
+                return checked.report
+        finally:
+            if pending.timer is None:
+                with self.lock:
+                    if self.imports.get(world_id) is pending:
+                        self._cancel_import_locked(world_id)
 
     def accept(self, world_id, allow_oversized=False):
-        with self.connect() as db:
-            updated = db.execute("""
-                UPDATE worlds SET status = 'creating' WHERE id = ? AND status = 'draft'
-                AND (? OR NOT EXISTS (SELECT 1 FROM chunks WHERE world_id = ? AND tokens > ?))
-            """, (world_id, allow_oversized, world_id, TOKEN_LIMIT)).rowcount
-        if updated:
-            self.wake.set()
-        return bool(updated)
+        with self.lock:
+            with self.connect() as db:
+                if db.execute("SELECT 1 FROM worlds WHERE id = ? AND status != 'draft'", (world_id,)).fetchone():
+                    return True
+                pending = self.imports.get(world_id)
+                if pending is None or pending.checked is None:
+                    return False
+                checked = pending.checked
+                if checked.report["oversized_chunks"] and not allow_oversized:
+                    return False
+                db.execute("""
+                    INSERT INTO worlds (id, name, model, dimensions, max_chunk_size, boundary_search_distance, status)
+                    VALUES (?, ?, ?, ?, ?, ?, 'creating')
+                """, pending.world_row)
+                db.executemany("""
+                    INSERT INTO books (world_id, number, name, filename, original, working, encoding, bom_size)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """, checked.book_rows)
+                db.executemany("""
+                    INSERT INTO chunks (world_id, book_number, number, start, end, original_start, original_end,
+                                        tokens, embed_end)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, checked.chunk_rows)
+            self._cancel_import_locked(world_id)
+        self.wake.set()
+        return True
 
     def decline(self, world_id):
-        with self.connect() as db:
-            return bool(db.execute("DELETE FROM worlds WHERE id = ? AND status = 'draft'", (world_id,)).rowcount)
+        with self.lock:
+            return self._cancel_import_locked(world_id)
+
+    def _cancel_import_locked(self, world_id):
+        pending = self.imports.pop(world_id, None)
+        if pending is None:
+            return False
+        pending.cancelled.set()
+        if pending.timer is not None:
+            pending.timer.cancel()
+        return True
 
     def list(self):
         with self.connect() as db:
