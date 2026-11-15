@@ -8,6 +8,12 @@ const dropHint = document.getElementById("book-drop-hint");
 const summary = document.getElementById("books-summary");
 const error = document.getElementById("books-error");
 const indexed = document.getElementById("books-indexed");
+const worldTop = document.getElementById("world-top");
+const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
+const dragThresholdPx = 4;
+const scrollEdgePx = 56;
+const maxScrollPerFramePx = 14;
+
 const icons = {
   grip: "M9 5h.01M15 5h.01M9 12h.01M15 12h.01M9 19h.01M15 19h.01",
   pencil: "m15 5 4 4M4 20l4-.8L20 7a2.8 2.8 0 0 0-4-4L4.8 16Z",
@@ -49,7 +55,9 @@ export function initBooksPanel(onEdit) {
   let selected = [];
   let saved = null;
   let locked = false;
+  let drag = null;
   let snapshot = "";
+  const rowMotions = new WeakMap();
 
   function showError(text) {
     error.hidden = !text;
@@ -82,7 +90,96 @@ export function initBooksPanel(onEdit) {
     if (focusHandle) list.children[destination]?.querySelector(".book-handle")?.focus();
   }
 
-  function editRow(row, order, title, book, index) {
+  function slideRow(row, fromTop, lifted = false) {
+    rowMotions.get(row)?.cancel();
+    const offset = fromTop - row.getBoundingClientRect().top;
+    if (reducedMotion.matches || (!offset && !lifted)) return;
+    const motion = row.animate([
+      { translate: `0 ${offset}px`, scale: lifted ? 1.012 : 1 },
+      { translate: "0 0", scale: 1 },
+    ], { duration: 220, easing: "cubic-bezier(.22, 1, .36, 1)" });
+    rowMotions.set(row, motion);
+  }
+
+  function updateDrag() {
+    const { row, grab, y } = drag;
+    const upper = Math.max(0, worldTop.getBoundingClientRect().bottom);
+    const lift = upper + scrollEdgePx - y;
+    const lower = y - (window.innerHeight - scrollEdgePx);
+    if (lift > 0) window.scrollBy(0, -Math.min(maxScrollPerFramePx, lift / 3));
+    else if (lower > 0) window.scrollBy(0, Math.min(maxScrollPerFramePx, lower / 3));
+
+    const top = y - list.getBoundingClientRect().top - grab;
+    const center = top + row.offsetHeight / 2;
+    while (true) {
+      const previous = row.previousElementSibling;
+      const next = row.nextElementSibling;
+      const moveUp = previous && center < previous.offsetTop + previous.offsetHeight / 2;
+      const moveDown = next && center > next.offsetTop + next.offsetHeight / 2;
+      if (!moveUp && !moveDown) break;
+
+      const neighbor = moveUp ? previous : next;
+      const previousTop = neighbor.getBoundingClientRect().top;
+      list.insertBefore(row, moveUp ? previous : next.nextElementSibling);
+      slideRow(neighbor, previousTop);
+      const draggedNumber = row.querySelector(".book-number");
+      const neighborNumber = neighbor.querySelector(".book-number");
+      [draggedNumber.textContent, neighborNumber.textContent] = [neighborNumber.textContent, draggedNumber.textContent];
+    }
+    row.style.setProperty("--drag-offset", `${top - row.offsetTop}px`);
+    drag.frame = requestAnimationFrame(updateDrag);
+  }
+
+  function clearDrag() {
+    if (!drag) return;
+    const { pointer, frame } = drag;
+    drag = null;
+    cancelAnimationFrame(frame);
+    if (list.hasPointerCapture(pointer)) list.releasePointerCapture(pointer);
+  }
+
+  function finishDrag(event) {
+    if (drag?.pointer !== event.pointerId) return;
+    if (!drag.frame) {
+      clearDrag();
+      return;
+    }
+    const lifted = drag.row;
+    const rows = [...list.children];
+    const tops = rows.map(row => row.getBoundingClientRect().top);
+    selected = rows.map(row => selected[Number(row.dataset.index)]);
+    const dragIndex = rows.indexOf(lifted);
+    clearDrag();
+    render();
+    [...list.children].forEach((row, index) => slideRow(row, tops[index], index === dragIndex));
+    onEdit();
+  }
+
+  list.addEventListener("pointerdown", event => {
+    const area = event.target.closest(".book-drag-area[data-reorder]");
+    if (!area || drag || event.button !== 0 || !event.isPrimary) return;
+    const row = area.closest(".book-row");
+    drag = { row, pointer: event.pointerId, y: event.clientY, grab: event.clientY - row.getBoundingClientRect().top };
+  });
+  window.addEventListener("pointermove", event => {
+    if (drag?.pointer !== event.pointerId) return;
+    const previousY = drag.y;
+    drag.y = event.clientY;
+    if (drag.frame) return;
+    if (Math.abs(drag.y - previousY) < dragThresholdPx) {
+      drag.y = previousY;
+      return;
+    }
+    list.setPointerCapture(event.pointerId);
+    rowMotions.get(drag.row)?.cancel();
+    drag.row.dataset.dragging = "";
+    updateDrag();
+  });
+  window.addEventListener("pointerup", finishDrag);
+  window.addEventListener("pointercancel", finishDrag);
+  list.addEventListener("lostpointercapture", finishDrag);
+
+  function editRow(row, dragArea, order, title, book, index) {
     const defaultName = book.filename.slice(0, -4);
     const titleText = element("span", "book-name-text", book.name.trim() || defaultName);
     titleText.title = titleText.textContent;
@@ -108,6 +205,7 @@ export function initBooksPanel(onEdit) {
     handle.classList.add("book-handle");
     const canReorder = !locked && selected.length > 1;
     function allowReorder(allow) {
+      dragArea.toggleAttribute("data-reorder", allow);
       handle.disabled = !allow;
     }
     allowReorder(canReorder);
@@ -213,6 +311,7 @@ export function initBooksPanel(onEdit) {
   }
 
   function render() {
+    clearDrag();
     const books = saved?.books ?? selected;
     const complete = books.filter(book => book.embedded_chunks === book.total_chunks).length;
     indexed.hidden = !saved;
@@ -240,7 +339,7 @@ export function initBooksPanel(onEdit) {
         const dragArea = element("div", "book-drag-area");
         dragArea.append(order, title);
         row.append(dragArea);
-        editRow(row, order, title, book, index);
+        editRow(row, dragArea, order, title, book, index);
       }
       const filename = element("small", "", book.filename);
       filename.title = book.filename;
