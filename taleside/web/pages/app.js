@@ -161,6 +161,7 @@ function onCreated(world) {
   selectWorld(world);
   navigation.replace("/", {
     afterDisplay: () => revealHomeCard(world.id),
+    arrivingWorld: world.id,
   });
   refreshWorlds(true);
 }

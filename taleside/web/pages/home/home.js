@@ -48,6 +48,19 @@ export function revealHomeCard(id) {
   displayed.get(id)?.node.scrollIntoView({ block: "nearest", inline: "nearest" });
 }
 
+export function homeCover(id) {
+  return displayed.get(id)?.node.querySelector(".card-visual");
+}
+
+export function firstHomeWorld() {
+  const { left, right } = cards.getBoundingClientRect();
+  const visible = [...cards.children].find(card => {
+    const bounds = card.getBoundingClientRect();
+    return bounds.left < right && bounds.right > left;
+  });
+  return (visible ?? cards.firstElementChild)?.dataset.world;
+}
+
 export function resetHomeSelection() {
   selectWorld(null);
   cards.scrollLeft = 0;
