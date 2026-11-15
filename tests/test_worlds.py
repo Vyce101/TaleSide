@@ -90,8 +90,11 @@ class WorldTests(unittest.TestCase):
         self.assertTrue(self.worlds.accept(world["id"]))
         self.assertTrue(self.provider.started.wait(2))
         self.assertTrue(self.worlds.pause(world["id"]))
+        self.assertEqual(self.worlds.list()[0]["status"], "pausing")
+        self.assertFalse(self.worlds.resume(world["id"]))
         self.provider.release.set()
-        wait_for(lambda: self.worlds.list()[0]["embedded_chunks"] == 1)
+        wait_for(lambda: self.worlds.list()[0]["status"] == "paused")
+        self.assertEqual(self.worlds.list()[0]["embedded_chunks"], 1)
         self.assertEqual(self.worlds.list()[0]["status"], "paused")
         self.assertTrue(self.worlds.resume(world["id"]))
         wait_for(lambda: self.worlds.list()[0]["status"] == "ready")
@@ -115,6 +118,20 @@ class WorldTests(unittest.TestCase):
         self.worlds.resume(world["id"])
         wait_for(lambda: self.worlds.list()[0]["status"] == "ready")
         self.assertEqual(self.provider.embedded, ["title: Book | text: abcd", "title: Book | text: efgh"])
+
+    def test_failed_request_while_pausing_can_be_retried(self):
+        self.provider.release.clear()
+        self.provider.vector = EmbeddingError("Gemini is unavailable.")
+        world = self.worlds.prepare("World", [BookSource("Book.txt", b"text")])
+        self.worlds.accept(world["id"])
+        self.assertTrue(self.provider.started.wait(2))
+        self.assertTrue(self.worlds.pause(world["id"]))
+        self.provider.release.set()
+        wait_for(lambda: self.worlds.list()[0]["status"] == "failed")
+        self.assertEqual(self.worlds.list()[0]["embedded_chunks"], 0)
+        self.provider.vector = [0.5] * 768
+        self.assertTrue(self.worlds.resume(world["id"]))
+        wait_for(lambda: self.worlds.list()[0]["status"] == "ready")
 
     def test_invalid_vector_and_provider_error_fail_without_saving_progress(self):
         self.provider.vector = [float("nan")] * 768
@@ -151,10 +168,16 @@ class WorldTests(unittest.TestCase):
                 with urlopen(local) as response:
                     self.assertEqual(json.load(response), {"ok": True})
                 with urlopen(f"{server.url}/api/worlds") as response:
-                    self.assertEqual(json.load(response)[0]["status"], "paused")
+                    self.assertEqual(json.load(response)[0]["status"], "pausing")
+                resume = Request(url.replace("/pause", "/resume"), method="POST", headers={"Origin": server.url})
+                with self.assertRaises(HTTPError) as caught:
+                    urlopen(resume)
+                with caught.exception as response:
+                    self.assertEqual(response.code, 409)
             finally:
                 server.shutdown()
                 thread.join()
+
 
 
 @unittest.skipUnless(os.getenv("GEMINI_API_KEY"), "GEMINI_API_KEY is not configured")

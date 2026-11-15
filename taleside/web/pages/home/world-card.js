@@ -67,12 +67,15 @@ export function updateCard(card, world, pending) {
   node.style.setProperty("--progress", `${world.progress}%`);
   hit.setAttribute("aria-label", `Preview ${world.name}`);
   action.hidden = world.status === "ready";
-  action.setAttribute("aria-disabled", String(pending));
+  const pausing = world.status === "pausing";
+  action.disabled = pausing;
+  action.setAttribute("aria-disabled", String(pending || pausing));
   if (action.hidden && document.activeElement === action) hit.focus({ preventScroll: true });
   const creating = world.status === "creating";
-  icon.className = `operation-icon ${creating ? "pause" : "play"}`;
-  const status = world.status[0].toUpperCase() + world.status.slice(1);
+  icon.className = `operation-icon ${creating || pausing ? "pause" : "play"}`;
+  const status = pausing ? "Pausing…" : world.status[0].toUpperCase() + world.status.slice(1);
   label.textContent = `${status} ${world.progress}%`;
-  action.setAttribute("aria-label", `${creating ? "Pause" : "Resume"} ${world.name}. ${label.textContent}`);
+  action.setAttribute("aria-label", pausing ? `Pausing ${world.name}`
+    : `${creating ? "Pause" : "Resume"} ${world.name}. ${label.textContent}`);
   action.title = world.error ?? "";
 }

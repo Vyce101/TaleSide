@@ -104,7 +104,7 @@ async function refreshWorlds() {
 
 async function changeJob(card) {
   const { id, status } = card.world;
-  if (status === "ready" || pending.has(id)) return;
+  if (status === "ready" || status === "pausing" || pending.has(id)) return;
   const action = status === "creating" ? "pause" : "resume";
   if (previewMode.value === "demo") {
     card.world.status = action === "pause" ? "paused" : "creating";
