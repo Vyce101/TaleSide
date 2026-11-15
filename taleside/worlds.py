@@ -79,10 +79,11 @@ class Worlds:
         self.stopping = Event()
         self.lock = Lock()
         self.imports = {}
+        self.active_chunk = None
         with self.connect() as db:
             db.execute("PRAGMA journal_mode = WAL")
             db.executescript(SCHEMA)
-            db.execute("UPDATE worlds SET status = 'paused' WHERE status = 'creating'")
+            db.execute("UPDATE worlds SET status = 'paused' WHERE status IN ('creating', 'pausing')")
         self.worker = Thread(target=self.run, name="World embeddings", daemon=True)
         self.worker.start()
 
@@ -193,7 +194,7 @@ class Worlds:
         return True
 
     def list(self):
-        with self.connect() as db:
+        with self.lock, self.connect() as db:
             db.execute("BEGIN")
             worlds = [dict(row) for row in db.execute("""
                 SELECT id, name, status, error FROM worlds WHERE status != 'draft' ORDER BY rowid
@@ -206,18 +207,24 @@ class Worlds:
                 """, (world["id"],))]
                 total = sum(book["total_chunks"] for book in world["books"])
                 done = sum(book["embedded_chunks"] for book in world["books"])
+                active_book = None
+                if self.active_chunk is not None and self.active_chunk[0] == world["id"]:
+                    active_book = self.active_chunk[1]
                 world.update(total_chunks=total, embedded_chunks=done,
-                             progress=100 if world["status"] == "ready" else min(99, done * 100 // total))
+                             active_book=active_book,
+                             progress=100 if world["status"] == "ready" else min(99, done * 100 // (total or 1)))
         return worlds
 
     def pause(self, world_id):
-        with self.connect() as db:
+        with self.lock, self.connect() as db:
+            active = self.active_chunk is not None and self.active_chunk[0] == world_id
+            status = "pausing" if active else "paused"
             return bool(db.execute("""
-                UPDATE worlds SET status = 'paused' WHERE id = ? AND status = 'creating'
-            """, (world_id,)).rowcount)
+                UPDATE worlds SET status = ? WHERE id = ? AND status = 'creating'
+            """, (status, world_id)).rowcount)
 
     def resume(self, world_id):
-        with self.connect() as db:
+        with self.lock, self.connect() as db:
             updated = db.execute("""
                 UPDATE worlds SET status = 'creating', error = NULL
                 WHERE id = ? AND status IN ('paused', 'failed')
@@ -240,31 +247,30 @@ class Worlds:
                 self.process_next(world)
             except (EmbeddingError, ValueError, sqlite3.Error) as error:
                 message = str(error) if isinstance(error, EmbeddingError) else "Could not verify the saved World."
-                with self.connect() as db:
+                with self.lock, self.connect() as db:
                     db.execute("""
-                        UPDATE worlds SET status = 'failed', error = ? WHERE id = ? AND status = 'creating'
+                        UPDATE worlds SET status = 'failed', error = ? WHERE id = ? AND status IN ('creating', 'pausing')
                     """, (message, world["id"]))
+                    self.active_chunk = None
 
     def process_next(self, world):
-        if (world["model"], world["dimensions"]) != (MODEL, DIMENSIONS):
-            raise EmbeddingError("This World's saved embedding profile is unavailable.")
-        with self.connect() as db:
+        with self.lock, self.connect() as db:
+            current = db.execute("SELECT status FROM worlds WHERE id = ?", (world["id"],)).fetchone()
+            if current is None or current["status"] != "creating" or self.stopping.is_set():
+                return
+            if (world["model"], world["dimensions"]) != (MODEL, DIMENSIONS):
+                raise EmbeddingError("This World's saved embedding profile is unavailable.")
             chunk = db.execute("""
                 SELECT c.book_number, c.number, b.name, substr(b.working, c.start + 1, c.embed_end - c.start) AS text
                 FROM chunks c JOIN books b ON b.world_id = c.world_id AND b.number = c.book_number
                 WHERE c.world_id = ? AND c.vector IS NULL
                 ORDER BY c.book_number, c.number LIMIT 1
             """, (world["id"],)).fetchone()
-            status = db.execute("SELECT status FROM worlds WHERE id = ?", (world["id"],)).fetchone()[0]
-            if status != "creating" or self.stopping.is_set():
+            if chunk is None:
+                self.verify(db, world)
+                db.execute("UPDATE worlds SET status = 'ready' WHERE id = ?", (world["id"],))
                 return
-        if chunk is None:
-            with self.connect() as db:
-                db.execute("BEGIN IMMEDIATE")
-                if db.execute("SELECT status FROM worlds WHERE id = ?", (world["id"],)).fetchone()[0] == "creating":
-                    self.verify(db, world)
-                    db.execute("UPDATE worlds SET status = 'ready' WHERE id = ?", (world["id"],))
-            return
+            self.active_chunk = (world["id"], chunk["book_number"])
 
         values = self.provider.embed(embedding_input(chunk["name"], chunk["text"]))
         if not valid_vector(values):
@@ -272,10 +278,12 @@ class Worlds:
         vector = VECTOR.pack(*values)
         if not valid_vector(list(VECTOR.unpack(vector))):
             raise EmbeddingError("Gemini returned an invalid embedding vector.")
-        with self.connect() as db:
+        with self.lock, self.connect() as db:
             db.execute("""
                 UPDATE chunks SET vector = ? WHERE world_id = ? AND book_number = ? AND number = ?
             """, (vector, world["id"], chunk["book_number"], chunk["number"]))
+            db.execute("UPDATE worlds SET status = 'paused' WHERE id = ? AND status = 'pausing'", (world["id"],))
+            self.active_chunk = None
 
     def verify(self, db, world):
         books = db.execute("SELECT * FROM books WHERE world_id = ? ORDER BY number", (world["id"],))
