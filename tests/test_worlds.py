@@ -73,11 +73,16 @@ class WorldTests(unittest.TestCase):
         self.assertEqual(originals, [(original, "a" * 9000), (b"second", "second")])
         self.assertEqual(model, ("gemini-embedding-2", 768, 9000))
 
-    def test_declining_a_draft_does_not_start_embedding(self):
+    def test_cancelling_an_import_leaves_no_saved_world_books_or_chunks(self):
         world = self.worlds.prepare("World", [BookSource("Book.txt", b"a" * 9000)], max_size=9000)
+        with self.worlds.connect() as db:
+            self.assertEqual(db.execute("SELECT count(*) FROM worlds").fetchone()[0], 0)
         self.assertTrue(self.worlds.decline(world["id"]))
         self.assertFalse(self.worlds.accept(world["id"], allow_oversized=True))
         self.assertEqual(self.provider.embedded, [])
+        with self.worlds.connect() as db:
+            self.assertEqual(db.execute("SELECT count(*) FROM books").fetchone()[0], 0)
+            self.assertEqual(db.execute("SELECT count(*) FROM chunks").fetchone()[0], 0)
 
     def test_pause_finishes_in_flight_chunk_and_resume_only_embeds_remaining_text(self):
         self.provider.release.clear()
