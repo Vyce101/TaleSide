@@ -8,6 +8,7 @@ from pathlib import Path
 from threading import Event, Thread
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
+from uuid import uuid4
 
 from taleside.books import BookSource
 from taleside.embeddings import EmbeddingError, Gemini
@@ -197,6 +198,57 @@ class WorldTests(unittest.TestCase):
                 server.shutdown()
                 thread.join()
 
+    def test_http_import_keeps_file_order_and_bytes_and_accepts_only_once(self):
+        second = codecs.BOM_UTF16_LE + "second\r\n".encode("utf-16-le")
+        first = codecs.BOM_UTF8 + b"first\r\n"
+        settings = json.dumps({
+            "name": " ",
+            "max_chunk_size": 8000,
+            "boundary_search_distance": 1000,
+            "books": [
+                {"filename": "Second.part.txt", "name": "Same title"},
+                {"filename": "First.txt", "name": "Same title"},
+            ],
+        }).encode()
+        files = b"".join(
+            b'--boundary\r\nContent-Disposition: form-data; name="book"; filename="Book.txt"\r\n'
+            b'Content-Type: text/plain\r\n\r\n' + original + b"\r\n"
+            for original in (second, first)
+        )
+        body = (b'--boundary\r\nContent-Disposition: form-data; name="settings"\r\n\r\n' + settings
+                + b"\r\n" + files + b"--boundary--\r\n")
+        world_id = uuid4().hex
+        with Server(self.worlds) as server:
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+
+            def post(path, data, content_type="application/json"):
+                headers = {"Origin": server.url, "Content-Type": content_type}
+                with urlopen(Request(server.url + path, data=data, headers=headers)) as response:
+                    return json.load(response)
+
+            try:
+                route = f"/api/world-imports/{world_id}"
+                prepared = post(route + "/prepare", body, "multipart/form-data; boundary=boundary")
+                self.assertEqual(prepared["oversized_chunks"], [])
+                self.assertEqual(self.worlds.list(), [])
+                accepted = post(route + "/accept", b"{}")["world"]
+                self.assertEqual(accepted["name"], "TaleSide")
+                self.assertEqual([book["filename"] for book in accepted["books"]], ["Second.part.txt", "First.txt"])
+                self.assertEqual(post(route + "/accept", b"{}")["world"]["id"], world_id)
+                wait_for(lambda: self.worlds.detail(world_id)["status"] == "ready")
+                self.assertEqual(self.provider.embedded, ["title: Same title | text: second\n",
+                                                          "title: Same title | text: first\n"])
+
+                self.assertEqual(post(f"/api/worlds/{world_id}/rename", b'{"name":"Renamed"}'), {"ok": True})
+                with urlopen(f"{server.url}/api/worlds/{world_id}") as response:
+                    self.assertEqual(json.load(response)["name"], "Renamed")
+                with self.worlds.connect() as db:
+                    originals = [row[0] for row in db.execute("SELECT original FROM books ORDER BY number")]
+                self.assertEqual(originals, [second, first])
+            finally:
+                server.shutdown()
+                thread.join()
 
 
 @unittest.skipUnless(os.getenv("GEMINI_API_KEY"), "GEMINI_API_KEY is not configured")

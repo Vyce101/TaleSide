@@ -3,15 +3,23 @@
 import json
 import mimetypes
 import os
+import re
 import socket
+import sqlite3
+from email import policy
+from email.parser import BytesParser
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
+from .books import BookSource
+from .embeddings import EmbeddingError
+
 WEB_ROOT = Path(__file__).resolve().parent / "web"
 MIME_TYPES = {".js": "text/javascript", ".woff2": "font/woff2"}
 PAGE_ROUTES = {"/": "/pages/home/index.html", "/create": "/pages/create/index.html"}
+WORLD_ID = re.compile(r"[0-9a-f]{32}")
 INSTANCE_PATH = "/api/instance"
 INSTANCE = {"app": "TaleSide"}
 
@@ -36,6 +44,9 @@ class Handler(BaseHTTPRequestHandler):
     def send_json(self, value, status=HTTPStatus.OK):
         self.send_bytes(json.dumps(value).encode(), "application/json", status)
 
+    def api_error(self, message, status):
+        self.send_json({"error": message}, status)
+
     def do_GET(self):
         if not self.local_request():
             self.send_error(HTTPStatus.FORBIDDEN)
@@ -46,6 +57,14 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path == "/api/worlds":
             self.send_json(self.server.worlds.list())
+            return
+        if path.startswith("/api/worlds/"):
+            world_id = path.removeprefix("/api/worlds/")
+            world = self.server.worlds.detail(world_id) if WORLD_ID.fullmatch(world_id) else None
+            if world is None:
+                self.api_error("This World could not be found.", HTTPStatus.NOT_FOUND)
+            else:
+                self.send_json(world)
             return
         path = PAGE_ROUTES.get(path, path)
         parts = path.lstrip("/").split("/")
@@ -60,20 +79,115 @@ class Handler(BaseHTTPRequestHandler):
         content_type = MIME_TYPES.get(target.suffix) or mimetypes.guess_type(target)[0] or "application/octet-stream"
         self.send_bytes(target.read_bytes(), content_type)
 
+    def read_body(self):
+        length = self.headers.get("Content-Length", "")
+        if not length.isascii() or not length.isdecimal():
+            raise ValueError("The request body needs a valid length.")
+        length = int(length)
+        body = self.rfile.read(length)
+        if len(body) != length:
+            raise ValueError("The request ended before all data was received.")
+        return body
+
+    def read_json(self):
+        if self.headers.get_content_type() != "application/json":
+            raise ValueError("Expected a JSON request.")
+        return self.json_object(self.read_body())
+
+    @staticmethod
+    def json_object(data):
+        try:
+            value = json.loads(data)
+        except (TypeError, ValueError, RecursionError):
+            raise ValueError("The request contains invalid JSON.") from None
+        if not isinstance(value, dict):
+            raise ValueError("Expected a JSON object.")
+        return value
+
+    def prepare_import(self, world_id):
+        if self.headers.get_content_type() != "multipart/form-data":
+            raise ValueError("Send the settings and TXT files together.")
+        mime_header = f"Content-Type: {self.headers['Content-Type']}\r\n\r\n".encode("ascii")
+        message = BytesParser(policy=policy.default).parsebytes(mime_header + self.read_body())
+        if not message.is_multipart() or message.defects:
+            raise ValueError("The book upload is incomplete.")
+        parts = list(message.iter_parts())
+        if (not parts or parts[0].is_multipart() or parts[0].defects
+                or parts[0].get_param("name", header="content-disposition") != "settings"):
+            raise ValueError("The upload is missing World settings.")
+        settings = self.json_object(parts[0].get_payload(decode=True))
+        book_details = settings.get("books")
+        file_parts = parts[1:]
+        if not isinstance(book_details, list) or len(book_details) != len(file_parts):
+            raise ValueError("The book list does not match the uploaded files.")
+        books = []
+        for details, part in zip(book_details, file_parts):
+            if (not isinstance(details, dict) or not isinstance(details.get("filename"), str)
+                    or part.is_multipart() or part.defects
+                    or part.get_param("name", header="content-disposition") != "book"
+                    or part.get("content-transfer-encoding") is not None):
+                raise ValueError("The upload contains an invalid book.")
+            books.append(BookSource(details["filename"], part.get_payload(decode=True), details.get("name")))
+        return self.server.worlds.prepare(settings.get("name"), books, settings.get("max_chunk_size"),
+                                          settings.get("boundary_search_distance"), world_id=world_id)
+
     def do_POST(self):
         if not self.local_request() or self.headers.get("Origin") != self.server.url:
             self.send_error(HTTPStatus.FORBIDDEN)
             return
-        parts = urlsplit(self.path).path.strip("/").split("/")
-        if len(parts) != 4 or parts[:2] != ["api", "worlds"] or parts[3] not in ("pause", "resume"):
+        match = re.fullmatch(r"/api/(worlds|world-imports)/([0-9a-f]{32})/([a-z]+)", urlsplit(self.path).path)
+        if match is None:
             self.send_error(HTTPStatus.NOT_FOUND)
             return
-        _, _, world_id, action = parts
-        update = self.server.worlds.pause if action == "pause" else self.server.worlds.resume
-        if update(world_id):
+        group, world_id, action = match.groups()
+        try:
+            if group == "world-imports":
+                self.update_import(world_id, action)
+            else:
+                self.update_world(world_id, action)
+        except ValueError as error:
+            self.api_error(str(error), HTTPStatus.BAD_REQUEST)
+        except EmbeddingError as error:
+            self.api_error(str(error), HTTPStatus.BAD_GATEWAY)
+        except sqlite3.Error:
+            self.api_error("Could not update the local World database.", HTTPStatus.INTERNAL_SERVER_ERROR)
+
+    def update_import(self, world_id, action):
+        worlds = self.server.worlds
+        if action == "prepare":
+            self.send_json(self.prepare_import(world_id))
+        elif action == "cancel":
+            worlds.decline(world_id)
+            self.send_json({"ok": True})
+        elif action == "accept":
+            allow = self.read_json().get("allow_oversized", False)
+            if type(allow) is not bool:
+                raise ValueError("Oversized chunk approval must be true or false.")
+            if worlds.accept(world_id, allow):
+                self.send_json({"world": worlds.detail(world_id)}, HTTPStatus.CREATED)
+            else:
+                self.api_error("This import expired or requires approval. Check the books again.",
+                               HTTPStatus.CONFLICT)
+        else:
+            self.send_error(HTTPStatus.NOT_FOUND)
+
+    def update_world(self, world_id, action):
+        worlds = self.server.worlds
+        if action == "rename":
+            updated = worlds.rename(world_id, self.read_json().get("name"))
+        elif action == "discard":
+            updated = worlds.discard(world_id)
+        elif action == "pause":
+            updated = worlds.pause(world_id)
+        elif action == "resume":
+            updated = worlds.resume(world_id)
+        else:
+            self.send_error(HTTPStatus.NOT_FOUND)
+            return
+        if updated:
             self.send_json({"ok": True})
         else:
-            self.send_json({"error": "This World has already changed state."}, HTTPStatus.CONFLICT)
+            self.api_error("This World has already changed state.", HTTPStatus.CONFLICT)
 
     def log_request(self, code="-", size="-"):
         if str(code)[0] in "45":
