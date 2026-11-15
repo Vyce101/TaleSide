@@ -20,6 +20,7 @@
   --color-logo-glow: #fdf5e638;
   --color-ring-glow: #fbd18fb8;
   --background-art: url("/assets/defaults/Default Background.png");
+  --fallback-cover-transform: translate(2.5%, -10%) scale(1.25);
   font-family: Inter, sans-serif;
   color: var(--color-text);
   background: var(--color-background);
@@ -28,6 +29,18 @@
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
 body { margin: 0; min-height: 100dvh; }
+.cover-name {
+  position: absolute;
+  top: 62.5%;
+  left: 8%;
+  right: 8%;
+  font-size: var(--cover-name-size, max(11px, calc(16 * var(--unit))));
+  line-height: 1.45;
+  text-align: center;
+  text-transform: uppercase;
+  letter-spacing: .12em;
+  overflow-wrap: anywhere;
+}
 .page-backdrop { background: var(--background-art) center / cover no-repeat; user-select: none; }
 button, select { font: inherit; color: inherit; }
 button { background: none; border: 0; padding: 0; cursor: pointer; }

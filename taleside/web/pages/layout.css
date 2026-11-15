@@ -30,8 +30,13 @@
   line-height: 1.23;
   letter-spacing: .005em;
 }
-.top-bar nav span { font-weight: 680; scale: 1.075 1; transform-origin: left; }
 .top-bar nav a { color: var(--color-text-inactive); font-weight: 440; scale: 1.10 1; transform-origin: left; text-decoration: none; }
+.top-bar nav span, .top-bar nav a[aria-current] { color: var(--color-text); font-weight: 680; scale: 1.075 1; }
 .utilities { gap: calc(63 * var(--unit)); }
 .utilities button { display: grid; place-items: center; }
 .utilities svg { width: max(20px, calc(28 * var(--unit))); display: block; }
+
+body:is([data-view="create"], [data-view="world"]) .top-bar { position: fixed; z-index: 5; }
+.top-bar button:not(:disabled):hover { color: white; }
+body:is([data-view="create"], [data-view="world"]) .hero-art img { object-position: center; }
+body:is([data-view="create"], [data-view="world"]) .hero-frame::after { display: none; }
