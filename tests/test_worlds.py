@@ -4,14 +4,16 @@ import os
 import tempfile
 import time
 import unittest
+from functools import partial
 from pathlib import Path
+from types import SimpleNamespace
 from threading import Event, Thread
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 from uuid import uuid4
 
 from taleside.books import BookSource
-from taleside.embeddings import EmbeddingError, Gemini
+from taleside.embeddings import EmbeddingError
 from taleside.server import Server
 from taleside.worlds import Worlds
 
@@ -19,22 +21,38 @@ from taleside.worlds import Worlds
 class Provider:
     def __init__(self):
         self.embedded = []
-        self.vector = [0.5] * 3072
+        self.vector = None
+        self.embed_requests = []
+        self.count_requests = []
+        self.count_started = Event()
+        self.count_release = Event()
+        self.count_release.set()
         self.started = Event()
         self.release = Event()
         self.release.set()
 
-    def count(self, text):
+    def __call__(self, secret, *, model, dimensions):
+        return SimpleNamespace(
+            count=partial(self.count, secret, model),
+            embed=partial(self.embed, secret, model, dimensions),
+        )
+
+    def count(self, secret, model, text):
+        self.count_requests.append((secret, model, text))
+        self.count_started.set()
+        if not self.count_release.wait(3):
+            raise EmbeddingError("Request timed out.")
         return len(text)
 
-    def embed(self, text, *, dimensions):
+    def embed(self, secret, model, dimensions, text):
         self.embedded.append(text)
+        self.embed_requests.append((secret, model, dimensions, text))
         self.started.set()
         if not self.release.wait(3):
             raise EmbeddingError("Request timed out.")
         if isinstance(self.vector, Exception):
             raise self.vector
-        return self.vector
+        return self.vector if self.vector is not None else [0.5] * dimensions
 
 
 def wait_for(check):
@@ -53,10 +71,16 @@ class WorldTests(unittest.TestCase):
         self.worlds = Worlds(self.database, self.provider)
         self.addCleanup(lambda: self.worlds.close())
         self.addCleanup(self.provider.release.set)
+        self.addCleanup(self.provider.count_release.set)
+        self.key = self.worlds.keys.add("gemini", "Personal", "fake-personal-key")["id"]
+
+    def prepare(self, name, books, *chunk_settings, key_id=None, **settings):
+        return self.worlds.prepare(name, books, *chunk_settings, model="gemini-embedding-2",
+                                   key_id=key_id or self.key, **settings)
 
     def test_oversized_import_requires_approval_and_keeps_full_text_and_original(self):
         original = codecs.BOM_UTF8 + b"a" * 9000
-        world = self.worlds.prepare("World", [
+        world = self.prepare("World", [
             BookSource("First.txt", original, "Renamed"), BookSource("Second.txt", b"second"),
         ], max_size=9000)
         self.assertEqual(world["oversized_chunks"], [{
@@ -75,7 +99,7 @@ class WorldTests(unittest.TestCase):
         self.assertEqual(model, ("gemini-embedding-2", 3072, 9000))
 
     def test_cancelling_an_import_leaves_no_saved_world_books_or_chunks(self):
-        world = self.worlds.prepare("World", [BookSource("Book.txt", b"a" * 9000)], max_size=9000)
+        world = self.prepare("World", [BookSource("Book.txt", b"a" * 9000)], max_size=9000)
         with self.worlds.connect() as db:
             self.assertEqual(db.execute("SELECT count(*) FROM worlds").fetchone()[0], 0)
         self.assertTrue(self.worlds.decline(world["id"]))
@@ -87,7 +111,7 @@ class WorldTests(unittest.TestCase):
 
     def test_pause_finishes_in_flight_chunk_and_resume_only_embeds_remaining_text(self):
         self.provider.release.clear()
-        world = self.worlds.prepare("World", [BookSource("Book.txt", b"abcdefgh")], 4, 0)
+        world = self.prepare("World", [BookSource("Book.txt", b"abcdefgh")], 4, 0)
         self.assertTrue(self.worlds.accept(world["id"]))
         self.assertTrue(self.provider.started.wait(2))
         self.assertTrue(self.worlds.pause(world["id"]))
@@ -103,7 +127,7 @@ class WorldTests(unittest.TestCase):
 
     def test_restarted_job_waits_for_resume_and_keeps_the_saved_vector(self):
         self.provider.release.clear()
-        world = self.worlds.prepare("World", [BookSource("Book.txt", b"abcdefgh")], 4, 0)
+        world = self.prepare("World", [BookSource("Book.txt", b"abcdefgh")], 4, 0)
         self.worlds.accept(world["id"])
         self.assertTrue(self.provider.started.wait(2))
         old_worlds = self.worlds
@@ -123,23 +147,23 @@ class WorldTests(unittest.TestCase):
     def test_failed_request_while_pausing_can_be_retried(self):
         self.provider.release.clear()
         self.provider.vector = EmbeddingError("Gemini is unavailable.")
-        world = self.worlds.prepare("World", [BookSource("Book.txt", b"text")])
+        world = self.prepare("World", [BookSource("Book.txt", b"text")])
         self.worlds.accept(world["id"])
         self.assertTrue(self.provider.started.wait(2))
         self.assertTrue(self.worlds.pause(world["id"]))
         self.provider.release.set()
         wait_for(lambda: self.worlds.detail(world["id"])["status"] == "failed")
         self.assertEqual(self.worlds.detail(world["id"])["embedded_chunks"], 0)
-        self.provider.vector = [0.5] * 3072
+        self.provider.vector = None
         self.assertTrue(self.worlds.resume(world["id"]))
         wait_for(lambda: self.worlds.detail(world["id"])["status"] == "ready")
 
     def test_discard_during_embedding_cascades_and_does_not_restore_the_world(self):
         self.provider.release.clear()
-        first = self.worlds.prepare("First", [BookSource("First.txt", b"first")])
+        first = self.prepare("First", [BookSource("First.txt", b"first")])
         self.worlds.accept(first["id"])
         self.assertTrue(self.provider.started.wait(2))
-        second = self.worlds.prepare("Second", [BookSource("Second.txt", b"second")])
+        second = self.prepare("Second", [BookSource("Second.txt", b"second")])
         self.worlds.accept(second["id"])
         self.assertTrue(self.worlds.pause(second["id"]))
         self.assertEqual(self.worlds.detail(second["id"])["status"], "paused")
@@ -155,7 +179,7 @@ class WorldTests(unittest.TestCase):
 
     def test_invalid_vector_and_provider_error_fail_without_saving_progress(self):
         self.provider.vector = [float("nan")] * 3072
-        world = self.worlds.prepare("World", [BookSource("Book.txt", b"text")])
+        world = self.prepare("World", [BookSource("Book.txt", b"text")])
         self.worlds.accept(world["id"])
         wait_for(lambda: self.worlds.list()[0]["status"] == "failed")
         self.assertEqual(self.worlds.list()[0]["embedded_chunks"], 0)
@@ -165,9 +189,25 @@ class WorldTests(unittest.TestCase):
         wait_for(lambda: self.worlds.list()[0]["status"] == "failed")
         self.assertEqual(self.worlds.list()[0]["embedded_chunks"], 0)
         self.assertEqual(self.worlds.list()[0]["error"], "Gemini is unavailable.")
-        self.provider.vector = [0.5] * 3072
+        self.provider.vector = None
         self.worlds.resume(world["id"])
         wait_for(lambda: self.worlds.list()[0]["status"] == "ready")
+
+    def test_replacing_a_key_keeps_its_id_and_survives_restart(self):
+        alternate = self.worlds.keys.add("gemini", "Work", "fake-work-key")["id"]
+        self.worlds.keys.replace(alternate, "fake-replacement-secret")
+        self.worlds.close()
+        self.worlds = Worlds(self.database, self.provider)
+        world = self.prepare("World", [BookSource("Book.txt", b"chapter")], key_id=alternate)
+        self.assertTrue(self.worlds.accept(world["id"]))
+        wait_for(lambda: self.worlds.detail(world["id"])["status"] == "ready")
+        self.assertEqual(self.provider.count_requests, [
+            ("fake-replacement-secret", "gemini-embedding-2", "title: Book | text: chapter"),
+        ])
+        self.assertEqual(self.provider.embed_requests, [
+            ("fake-replacement-secret", "gemini-embedding-2", 3072, "title: Book | text: chapter"),
+        ])
+        self.assertEqual(self.worlds.keys.settings()["defaults"]["key_id"], alternate)
 
     def test_provider_key_api_omits_secrets_and_rejects_cross_origin_changes(self):
         with Server(self.worlds) as server:
@@ -192,7 +232,7 @@ class WorldTests(unittest.TestCase):
                     data = response.read()
                     self.assertNotIn(secret.encode(), data)
                     settings = json.loads(data)
-                    self.assertEqual(len(settings["keys"]), 1)
+                    self.assertEqual(len(settings["keys"]), 2)
                     self.assertEqual(settings["models"][0]["dimensions"], 3072)
                 with self.assertRaises(HTTPError) as caught:
                     add(server.url)
@@ -209,7 +249,7 @@ class WorldTests(unittest.TestCase):
 
     def test_homepage_api_only_allows_same_origin_state_changes(self):
         self.provider.release.clear()
-        world = self.worlds.prepare("World", [BookSource("Book.txt", b"abcdefgh")], 4, 0)
+        world = self.prepare("World", [BookSource("Book.txt", b"abcdefgh")], 4, 0)
         self.worlds.accept(world["id"])
         self.assertTrue(self.provider.started.wait(2))
         with Server(self.worlds) as server:
@@ -241,6 +281,8 @@ class WorldTests(unittest.TestCase):
         first = codecs.BOM_UTF8 + b"first\r\n"
         settings = json.dumps({
             "name": " ",
+            "model": "gemini-embedding-2",
+            "key_id": self.key,
             "max_chunk_size": 8000,
             "boundary_search_distance": 1000,
             "books": [
@@ -295,11 +337,12 @@ class WorldTests(unittest.TestCase):
 class LiveGeminiTests(unittest.TestCase):
     def test_checks_and_embeds_an_approved_prefix_with_gemini(self):
         with tempfile.TemporaryDirectory() as directory:
-            provider = Gemini(os.environ["GEMINI_API_KEY"])
-            worlds = Worlds(Path(directory) / "worlds.sqlite3", provider)
+            worlds = Worlds(Path(directory) / "worlds.sqlite3")
+            key_id = worlds.keys.add("gemini", "Live test", os.environ["GEMINI_API_KEY"])["id"]
             try:
                 text = b"The book on the table is blue. " * 1400
-                draft = worlds.prepare("Example", [BookSource("Example.txt", text)], max_size=len(text))
+                draft = worlds.prepare("Example", [BookSource("Example.txt", text)], max_size=len(text),
+                                       model="gemini-embedding-2", key_id=key_id)
                 oversized, = draft["oversized_chunks"]
                 self.assertGreater(oversized["tokens"], 8192)
                 self.assertLess(oversized["embedded_characters"], len(text))

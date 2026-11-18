@@ -46,8 +46,6 @@ class Gemini:
         self.dimensions = dimensions
 
     def request(self, method, body):
-        if not self.api_key:
-            raise EmbeddingError("Set GEMINI_API_KEY and restart TaleSide before embedding books.")
         request = Request(
             f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:{method}",
             data=json.dumps(body).encode(),
@@ -58,6 +56,8 @@ class Gemini:
                 return json.load(response)
         except HTTPError as error:
             with error:
+                if error.code in (401, 403):
+                    raise EmbeddingError("Gemini denied access. Check the selected API key in App Settings.") from None
                 raise EmbeddingError(f"Gemini {method} returned HTTP {error.code}.") from None
         except (URLError, OSError):
             raise EmbeddingError(f"Could not reach Gemini for {method}.") from None
@@ -71,16 +71,15 @@ class Gemini:
             raise EmbeddingError("Gemini returned an invalid token count.")
         return total
 
-    def embed(self, text, *, dimensions=None):
-        dimensions = self.dimensions if dimensions is None else dimensions
+    def embed(self, text):
         response = self.request("embedContent", {
             "content": {"parts": [{"text": text}]},
-            "embedContentConfig": {"outputDimensionality": dimensions, "autoTruncate": False},
+            "embedContentConfig": {"outputDimensionality": self.dimensions, "autoTruncate": False},
         })
         try:
             values = response["embedding"]["values"]
         except (KeyError, TypeError):
             raise EmbeddingError("Gemini did not return an embedding.") from None
-        if not valid_vector(values, dimensions):
+        if not valid_vector(values, self.dimensions):
             raise EmbeddingError("Gemini returned an invalid embedding vector.")
         return values

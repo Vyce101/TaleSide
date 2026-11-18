@@ -1,12 +1,10 @@
 """Start or reopen TaleSide from the local launcher."""
 
 import json
-import os
 import webbrowser
 from pathlib import Path
 from urllib.request import urlopen
 
-from .embeddings import Gemini
 from .server import INSTANCE, INSTANCE_PATH, Server
 from .worlds import Worlds
 
@@ -40,7 +38,7 @@ def main():
         ) from None
     with server:
         DATA_DIRECTORY.mkdir(exist_ok=True)
-        worlds = Worlds(DATA_DIRECTORY / "worlds.sqlite3", Gemini(os.environ.get("GEMINI_API_KEY")))
+        worlds = Worlds(DATA_DIRECTORY / "worlds.sqlite3")
         server.worlds = worlds
         try:
             print(f"TaleSide is running at {server.url}. Close this launcher window to stop it.", flush=True)

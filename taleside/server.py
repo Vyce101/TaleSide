@@ -136,8 +136,14 @@ class Handler(BaseHTTPRequestHandler):
                     or part.get("content-transfer-encoding") is not None):
                 raise ValueError("The upload contains an invalid book.")
             books.append(BookSource(details["filename"], part.get_payload(decode=True), details.get("name")))
+        model = settings.get("model")
+        key_id = settings.get("key_id")
+        if model is None and key_id is None:
+            defaults = self.server.worlds.keys.settings()["defaults"]
+            model, key_id = defaults["model"], defaults["key_id"]
         return self.server.worlds.prepare(settings.get("name"), books, settings.get("max_chunk_size"),
-                                          settings.get("boundary_search_distance"), world_id=world_id)
+                                          settings.get("boundary_search_distance"), model=model,
+                                          key_id=key_id, world_id=world_id)
 
     def do_POST(self):
         if not self.local_request() or self.headers.get("Origin") != self.server.url:
