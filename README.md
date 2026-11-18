@@ -20,7 +20,7 @@ And none of this is staged. Harry, Umbridge, your missing friend, Ruijerd, Paul:
 
 ## Screenshot
 
-![TaleSide homepage before any Worlds have been created](./docs/screenshots/homepage.png)
+![TaleSide’s Demo Worlds shelf previewing Ghost of Tsushima](./docs/screenshots/homepage.png)
 
 ## Quickstart
 
