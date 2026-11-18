@@ -16,7 +16,8 @@ export function createDemoWorlds() {
     id: `demo-${slug}`, name, status, progress,
     cover: slug === "cyberpunk" ? null : `${demoArt}${slug}-cover.jpg`,
     wide: `${demoArt}${slug}-wide.jpg`,
-    model: "gemini-embedding-2", dimensions: 3072, max_chunk_size: 8000, boundary_search_distance: 1000,
+    model: "gemini-embedding-2", dimensions: 3072, max_token_limit: 8192,
+    max_chunk_size: 8000, boundary_search_distance: 1000,
     total_chunks: 100,
     error: status === "failed" ? "Could not reach Gemini for embedContent." : null,
     books: [55, 45].map((total_chunks, index) => ({

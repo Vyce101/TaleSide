@@ -1,4 +1,5 @@
 import { initBooksPanel } from "./books-panel.js";
+import { initEmbeddingControls } from "./embedding-controls.js";
 import { createWorldImport } from "./import.js";
 
 const element = id => document.getElementById(id);
@@ -15,9 +16,6 @@ const action = element("world-action");
 const actionLabel = element("world-action-label");
 const progressBar = element("progress-bar");
 const progressFill = progressBar.firstElementChild;
-const profile = element("embedding-profile");
-const profileMenu = element("profile-menu");
-const profileOption = element("profile-option");
 const dialog = element("studio-dialog");
 const tabs = [...studio.querySelectorAll('[role="tab"]')];
 const renameForm = element("rename-form");
@@ -53,18 +51,11 @@ function showTab(id) {
   }
 }
 
-function setProfileMenu(open, focus = false) {
-  profileMenu.hidden = !open;
-  profile.setAttribute("aria-expanded", String(open));
-  if (focus) (open ? profileOption : profile).focus();
-}
-
 let expandTimer;
 
 function selectTab(id) {
   const tab = element(`${id}-tab`);
   if (tab.getAttribute("aria-selected") === "true") return;
-  setProfileMenu(false);
   if (window.scrollY > 4 && !reducedMotion.matches) {
     worldTop.dataset.expanding = "";
     clearTimeout(expandTimer);
@@ -102,20 +93,6 @@ dialog.addEventListener("click", event => {
   const bounds = dialog.getBoundingClientRect();
   if (event.clientX < bounds.left || event.clientX > bounds.right
       || event.clientY < bounds.top || event.clientY > bounds.bottom) dialog.close("cancel");
-});
-
-profile.addEventListener("click", () => setProfileMenu(profileMenu.hidden));
-profile.addEventListener("keydown", event => {
-  if (event.key !== "ArrowDown" || profile.disabled) return;
-  event.preventDefault();
-  setProfileMenu(true, true);
-});
-profileOption.addEventListener("click", () => setProfileMenu(false, true));
-profile.closest(".profile-picker").addEventListener("keydown", event => {
-  if (event.key === "Escape" && !profileMenu.hidden) setProfileMenu(false, true);
-});
-document.addEventListener("pointerdown", event => {
-  if (!event.target.closest(".profile-picker")) setProfileMenu(false);
 });
 
 function showMetadata(books, model, chunks) {
@@ -187,12 +164,19 @@ coverImage.addEventListener("error", () => {
   if (!cover.classList.contains("fallback")) showCover(element("cover-title").textContent);
 });
 
-export function initWorldScreen({ request, onCreated, rename, discard, changeJob }) {
+export function initWorldScreen({ request, onCreated, rename, discard, changeJob, changeKey, requestAddKey, refreshSettings }) {
   let currentWorld = null;
   let settingUp = false;
   let savingWorld = null;
   let beforeUnload = false;
   let pendingRename = null;
+  let busy = false;
+  let jobPending;
+  let keyChange = null;
+  let embeddingOptions;
+  let draft;
+  let changedEmbedding = false;
+  const embedding = initEmbeddingControls({ chooseModel, chooseKey, addKey });
   const books = initBooksPanel(onEdit);
   const worldImport = createWorldImport({
     request,
@@ -203,7 +187,7 @@ export function initWorldScreen({ request, onCreated, rename, discard, changeJob
 
   function isDirty() {
     return settingUp && (worldName.value.trim() !== "" || books.selected.length > 0
-      || maxSize.value !== maxSize.defaultValue || boundary.value !== boundary.defaultValue);
+      || maxSize.value !== maxSize.defaultValue || boundary.value !== boundary.defaultValue || changedEmbedding);
   }
 
   function warnOnUnload(event) {
@@ -222,8 +206,72 @@ export function initWorldScreen({ request, onCreated, rename, discard, changeJob
   function describeSetup() {
     const count = books.selected.length;
     const chunks = count === 0 ? 0 : worldImport.chunkCount;
-    showMetadata(count, "Gemini Embedding 2", chunks);
+    showMetadata(count, draft?.model ?? "", chunks);
     element("books-tab").textContent = `Books (${count})`;
+  }
+
+  function updateEmbedding() {
+    embedding.show({
+      options: embeddingOptions, selection: draft ?? currentWorld, world: currentWorld,
+      busy, changingKey: Boolean(keyChange), jobPending,
+    });
+    if (currentWorld) action.disabled = Boolean(keyChange || jobPending || currentWorld.status === "pausing");
+  }
+
+  function applyDraftDefaults() {
+    if (!draft || !embeddingOptions) return;
+    draft.model ??= embeddingOptions.defaults.model;
+    const model = embeddingOptions.models.find(model => model.id === draft.model);
+    const compatible = embeddingOptions.keys.filter(key => key.provider === model?.provider);
+    if (!compatible.some(key => key.id === draft.key_id)) {
+      draft.key_id = compatible.find(key => key.id === embeddingOptions.defaults.key_id)?.id ?? compatible[0]?.id;
+    }
+    describeSetup();
+  }
+
+  function chooseModel(model) {
+    if (!draft || busy) return;
+    draft.model = model;
+    applyDraftDefaults();
+    changedEmbedding = true;
+    onEdit();
+    updateEmbedding();
+  }
+
+  async function chooseKey(keyId) {
+    if (draft && !busy) {
+      draft.key_id = keyId;
+      changedEmbedding = true;
+      onEdit();
+      updateEmbedding();
+      return;
+    }
+    const world = currentWorld;
+    if (!world || keyChange || !["paused", "failed", "ready"].includes(world.status)) return;
+    setError("action-error", "");
+    const submission = changeKey(world, keyId);
+    keyChange = submission;
+    updateEmbedding();
+    try {
+      await submission;
+    } catch (error) {
+      if (currentWorld?.id === world.id) setError("action-error", error.message);
+    } finally {
+      if (keyChange === submission) {
+        keyChange = null;
+        updateEmbedding();
+      }
+    }
+  }
+
+  function addKey() {
+    const originDraft = draft;
+    const worldId = currentWorld?.id;
+    const stillHere = () => originDraft ? draft === originDraft : currentWorld?.id === worldId;
+    requestAddKey({
+      onAdded: key => stillHere() && chooseKey(key.id),
+      restoreFocus: () => { if (stillHere()) embedding.focusKey(); },
+    });
   }
 
   function onEdit() {
@@ -236,17 +284,24 @@ export function initWorldScreen({ request, onCreated, rename, discard, changeJob
   }
 
   function setBusy(value, label = "Checking books…") {
+    busy = value;
     action.disabled = value;
     actionLabel.textContent = value ? label : "Create";
     worldName.readOnly = value;
     maxSize.disabled = boundary.disabled = value;
-    profile.disabled = value;
     element("import-note").hidden = !value;
     books.setLocked(value);
+    if (!value) applyDraftDefaults();
+    updateEmbedding();
   }
 
   function reset(isCreate) {
     currentWorld = null;
+    draft = isCreate ? {} : null;
+    busy = false;
+    changedEmbedding = false;
+    keyChange = null;
+    jobPending = undefined;
     settingUp = isCreate;
     savingWorld = null;
     worldName.value = "";
@@ -265,9 +320,6 @@ export function initWorldScreen({ request, onCreated, rename, discard, changeJob
     element("chronicles-tab").hidden = true;
     element("world-progress").hidden = true;
     element("play-world").toggleAttribute("hidden", true);
-    profile.disabled = !isCreate;
-    setProfileMenu(false);
-    element("settings-lock").textContent = isCreate ? "Locked once creation starts" : "Locked for this World";
     setError("action-error", "");
     showSettingFeedback(maxSize, "");
     showSettingFeedback(boundary, "");
@@ -291,11 +343,20 @@ export function initWorldScreen({ request, onCreated, rename, discard, changeJob
       field.focus();
       return;
     }
+    if (!draft?.key_id) {
+      selectTab("settings");
+      setError("action-error", embeddingOptions ? "Choose a Google Gemini key before creating this World."
+        : "Could not load embedding settings. Open App Settings to try again.");
+      embedding.focusKey();
+      return;
+    }
 
     const settings = {
       name: worldName.value,
       max_chunk_size: maxSize.valueAsNumber,
       boundary_search_distance: boundary.valueAsNumber,
+      model: draft.model,
+      key_id: draft.key_id,
     };
     setBusy(true);
     const submission = worldImport.save(settings, books.selected);
@@ -308,6 +369,7 @@ export function initWorldScreen({ request, onCreated, rename, discard, changeJob
       onCreated(world);
     } catch (error) {
       if (savingWorld === submission) setError("action-error", error.message);
+      if (error.status === 409) refreshSettings();
     } finally {
       if (savingWorld === submission) {
         savingWorld = null;
@@ -401,6 +463,12 @@ export function initWorldScreen({ request, onCreated, rename, discard, changeJob
   action.addEventListener("click", () => {
     if (settingUp) submit();
     else if (currentWorld?.status === "ready") selectTab("chronicles");
+    else if (["paused", "failed"].includes(currentWorld?.status)
+        && !currentWorld.id.startsWith("demo-") && !currentWorld.key_id) {
+      selectTab("settings");
+      setError("action-error", "Choose a Google Gemini key before resuming this World.");
+      embedding.focusKey();
+    }
     else if (currentWorld) changeJob(currentWorld);
   });
   for (const field of [worldName, maxSize, boundary]) field.addEventListener("input", onEdit);
@@ -431,6 +499,7 @@ export function initWorldScreen({ request, onCreated, rename, discard, changeJob
   window.addEventListener("pageshow", event => {
     if (event.persisted && isDirty()) {
       reset(true);
+      applyDraftDefaults();
       setBusy(false);
       onEdit();
     }
@@ -442,8 +511,7 @@ export function initWorldScreen({ request, onCreated, rename, discard, changeJob
       studio.dataset.status = "setup";
       element("world-status").textContent = statusLabels.setup;
       showCover("");
-      element("embedding-name").textContent = "Gemini Embedding 2";
-      element("embedding-spec").textContent = "3,072 dimensions · 8,192 token limit";
+      applyDraftDefaults();
       describeSetup();
       setBusy(false);
       content.hidden = false;
@@ -455,6 +523,7 @@ export function initWorldScreen({ request, onCreated, rename, discard, changeJob
         if (world.status === "ready") showTab("chronicles");
       }
       currentWorld = world;
+      jobPending = pending;
       content.hidden = false;
       access.hidden = true;
       const status = pending === "pause" ? "pausing" : world.status;
@@ -462,15 +531,12 @@ export function initWorldScreen({ request, onCreated, rename, discard, changeJob
       element("world-status").textContent = statusLabels[status];
       element("world-title").textContent = world.name;
       showWorldCover();
-      const model = world.model === "gemini-embedding-2" ? "Gemini Embedding 2" : world.model;
       const count = world.books.length;
-      showMetadata(count, model, world.total_chunks);
+      showMetadata(count, world.model, world.total_chunks);
       element("books-tab").textContent = `Books (${count})`;
       element("chronicles-tab").hidden = false;
       showJobProgress(world, status, pending);
-      element("embedding-name").textContent = model;
-      element("embedding-spec").textContent = `${world.dimensions} dimensions · 8,192 token limit`;
-      element("settings-lock").textContent = world.status === "ready" ? "Locked for this World" : "Locked while World is active";
+      updateEmbedding();
       maxSize.value = world.max_chunk_size;
       boundary.value = world.boundary_search_distance;
       element("discard-world").querySelector("small").textContent = world.id.startsWith("demo-")
@@ -501,5 +567,10 @@ export function initWorldScreen({ request, onCreated, rename, discard, changeJob
         "Keep Editing", "Discard Setup", true);
     },
     setActionError(text) { setError("action-error", text); },
+    setEmbeddingOptions(options) {
+      embeddingOptions = options;
+      if (!busy) applyDraftDefaults();
+      updateEmbedding();
+    },
   };
 }

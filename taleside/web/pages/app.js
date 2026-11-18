@@ -37,7 +37,10 @@ async function request(path, { json, ...options } = {}) {
 }
 
 const settings = initSettings({ request, refresh: refreshSettings, onPreviewChange: changePreviewMode });
-const worldScreen = initWorldScreen({ request, onCreated, rename, discard, changeJob });
+const worldScreen = initWorldScreen({
+  request, onCreated, rename, discard, changeJob, changeKey,
+  requestAddKey: settings.addKey, refreshSettings,
+});
 const navigation = initNavigation({
   display,
   confirmLeave: worldScreen.confirmLeave,
@@ -108,11 +111,20 @@ async function refreshSettings({ worlds = false } = {}) {
     if (number === settingsRequestNumber) {
       settings.render(data.keys);
       settings.showError("");
+      worldScreen.setEmbeddingOptions(data);
     }
   } catch (error) {
     if (number === settingsRequestNumber) settings.showError(error.message);
   }
   await worldRefresh;
+}
+
+async function changeKey(world, keyId) {
+  try {
+    await request(`/api/worlds/${world.id}/embedding-key`, { method: "POST", json: { key_id: keyId } });
+  } finally {
+    await refreshSettings({ worlds: true });
+  }
 }
 
 async function changeJob(world) {
@@ -139,10 +151,8 @@ async function changeJob(world) {
     if (navigation.path === "/") showHomeMessage("");
     if (navigation.path === `/worlds/${id}`) worldScreen.setActionError("");
   } catch (error) {
-    if (error.status !== 409) {
-      if (navigation.path === "/") showHomeMessage(error.message);
-      if (navigation.path === `/worlds/${id}`) worldScreen.setActionError(error.message);
-    }
+    if (navigation.path === "/") showHomeMessage(error.message);
+    if (navigation.path === `/worlds/${id}`) worldScreen.setActionError(error.message);
   } finally {
     await refreshWorlds(true);
     pending.delete(id);

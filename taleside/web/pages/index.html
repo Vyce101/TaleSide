@@ -157,34 +157,38 @@
             </span>
           </div>
           <div class="settings-rows">
-            <div class="setting">
-              <div>
-                <span id="embedding-label">Embedding Profile</span>
-                <small id="embedding-spec">3,072 dimensions · 8,192 token limit</small>
+            <div class="embedding-pair">
+              <div class="setting setting-model">
+                <div>
+                  <span id="embedding-model-label">Embedding Model</span>
+                  <small><span id="embedding-spec"></span><svg class="row-lock" viewBox="0 0 24 24" aria-hidden="true"><use href="#lock-icon"/></svg></small>
+                </div>
+                <div class="setting-picker world-picker" id="embedding-model"></div>
               </div>
-              <div class="profile-picker">
-                <button type="button" id="embedding-profile" aria-labelledby="embedding-label embedding-name" aria-controls="profile-menu" aria-expanded="false">
-                  <span id="embedding-name">Gemini Embedding 2</span>
-                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
-                </button>
-                <div class="profile-menu" id="profile-menu" hidden>
-                  <button type="button" id="profile-option" aria-label="Gemini Embedding 2, selected">
-                    <span>Gemini Embedding 2 <small>3,072 dimensions · 8,192 token limit</small></span>
-                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg>
+              <div class="setting setting-key">
+                <div>
+                  <span id="embedding-key-label">Embedding Key</span>
+                  <small><span id="embedding-key-description">Google Gemini key for embedding</span><svg class="row-lock" viewBox="0 0 24 24" aria-hidden="true"><use href="#lock-icon"/></svg></small>
+                </div>
+                <div class="world-picker">
+                  <div class="setting-picker" id="embedding-key"></div>
+                  <button type="button" class="add-provider-key" id="add-provider-key" hidden>
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+                    <span>Add Google Gemini Key</span>
                   </button>
                 </div>
               </div>
             </div>
             <div class="setting">
               <label for="max-chunk-size">Maximum Chunk Size
-                <small>Maximum characters per chunk before splitting (Default: 8,000)</small>
+                <small>Maximum characters per chunk before splitting (Default: 8,000)<svg class="row-lock" viewBox="0 0 24 24" aria-hidden="true"><use href="#lock-icon"/></svg></small>
                 <small class="setting-feedback" id="max-chunk-size-feedback" hidden></small>
               </label>
               <label class="setting-value"><input id="max-chunk-size" type="number" min="1" step="1" value="8000" aria-describedby="max-chunk-size-feedback" required> <span aria-hidden="true">chars</span></label>
             </div>
             <div class="setting">
               <label for="boundary-distance">Boundary Search Distance
-                <small>How far back to look for paragraph or sentence breaks (Default: 1,000)</small>
+                <small>How far back to look for paragraph or sentence breaks (Default: 1,000)<svg class="row-lock" viewBox="0 0 24 24" aria-hidden="true"><use href="#lock-icon"/></svg></small>
                 <small class="setting-feedback" id="boundary-distance-feedback" hidden></small>
               </label>
               <label class="setting-value"><input id="boundary-distance" type="number" min="0" step="1" value="1000" aria-describedby="boundary-distance-feedback" required> <span aria-hidden="true">chars</span></label>
@@ -314,5 +318,8 @@
       </div>
     </div>
   </template>
+  <svg width="0" height="0" style="position: absolute" aria-hidden="true">
+    <symbol id="lock-icon" viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></symbol>
+  </svg>
 </body>
 </html>
