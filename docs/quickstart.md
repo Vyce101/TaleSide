@@ -1,26 +1,31 @@
 # Quickstart
 
-TaleSide runs on Windows. Demo Worlds work without a Gemini API key.
+TaleSide runs on Windows. Demo Worlds work without an API key.
 
 1. Install Python 3.12 and leave the Python launcher enabled. [Python 3.12 Windows installer](https://www.python.org/downloads/release/python-31210/)
 2. On the TaleSide repository page, choose **Code** → **Download ZIP** and
    extract the ZIP.
-3. Open PowerShell in the extracted folder. If you want to create your own
-   Worlds, close any running TaleSide launcher, run the command below, and
-   paste your Gemini API key when prompted.
-
-   ```powershell
-   $env:GEMINI_API_KEY = Read-Host 'Enter your Gemini API key'
-   ```
-
-4. In the same PowerShell window, start TaleSide.
+3. Open PowerShell in the extracted folder and start TaleSide.
 
    ```powershell
    & '.\Start TaleSide.cmd'
    ```
 
    The homepage opens at `http://127.0.0.1:8765`. Keep the PowerShell window open.
-5. Choose **Demo Worlds** from the selector in the bottom right. Hover over
-   any World card to preview its artwork.
+4. Open **Settings** with the gear and choose **Developer Options** →
+   **Worlds Preview** → **Demo Worlds**.
+5. Click the gear again to close Settings. Hover over a World card to preview it
+   and click **Enter** to open it.
 
 Close the PowerShell window when you’re done to stop TaleSide.
+
+## Create your own World
+
+1. Get a Gemini API key from [Google AI Studio](https://aistudio.google.com/apikey).
+2. In TaleSide, open **Settings** → **API Keys** → **Add API Key**. Name the key,
+   paste it, and click **Save Key**. Click the gear again to close Settings.
+3. Open **Create** and use **Add Books** to select one or more TXT files. In
+   **World Settings**, confirm which **Embedding Key** TaleSide will use.
+4. Click **Create** to start. TaleSide sends book titles and chunks of text to
+   Google Gemini to count tokens and create embeddings. Once the World is saved,
+   you can follow its progress from **Worlds**.
