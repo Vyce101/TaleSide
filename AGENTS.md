@@ -16,11 +16,7 @@ My license is PolyForm Shield 1.0.0 and therefore some licenses that are not all
 
 Many Python packages on PyPI declare full text names like "MIT License", "Apache Software License", "BSD License", "ISC License (ISCL)", or "Python Software Foundation License" instead of "MIT" or "Apache-2.0". If your --allow-only list only has short SPDX IDs, pip-licenses will fail on safe packages like FastAPI or uvicorn until you include those standard PyPI strings too.
 
-## Web UI
-
-- Load `/assets/styles/base.css` on new pages for shared typography and colors.
-- Move the My Worlds, Demo Worlds, and No Worlds selector to Developer Options
-  when Settings is ready. Keep the demo artwork in `taleside/web/assets/demo/`.
+Additionally, keep everything truly local, everything related to the app if it can be done, remains within TaleSide, so for example, no LOCALAPPDATA folder should be used.
 
 ## 2. Changelog Model
 Changelog model: [Versioned Releases | Continuous/Dated | None]
