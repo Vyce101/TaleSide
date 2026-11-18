@@ -27,6 +27,7 @@ export function initSettings({ request, refresh, onPreviewChange }) {
   const reveal = element("reveal-key");
   const save = element("save-key");
   let keys = [];
+  let editing;
   let keyAction;
 
   function showError(id, message = "") {
@@ -80,6 +81,7 @@ export function initSettings({ request, refresh, onPreviewChange }) {
     if (overlay.hidden) return;
     if (overlay.hasAttribute("data-closing") && !immediate) return;
     preview.close();
+    if (editing) finishRename(editing);
     if (focus) gear.focus({ preventScroll: true });
     overlay.inert = true;
     home.inert = studio.inert = false;
@@ -115,6 +117,7 @@ export function initSettings({ request, refresh, onPreviewChange }) {
   function render(nextKeys) {
     keys = nextKeys;
     list.setAttribute("aria-busy", "false");
+    if (editing) return;
     list.replaceChildren();
     if (!keys.length) {
       const empty = document.createElement("p");
@@ -133,8 +136,13 @@ export function initSettings({ request, refresh, onPreviewChange }) {
       row.dataset.keyId = key.id;
       const name = row.querySelector(".key-nickname");
       name.textContent = key.nickname;
+      const rename = row.querySelector(".rename-key");
+      rename.setAttribute("aria-label", `Rename ${key.nickname}`);
       const usage = row.querySelector(".key-usage");
       usage.textContent = key.worlds.length ? `Used by ${describeWorlds(key.worlds)}` : "Unused";
+      const startRename = () => editName(key, row);
+      name.addEventListener("dblclick", startRename);
+      rename.addEventListener("click", startRename);
       const replace = row.querySelector(".replace-key");
       replace.setAttribute("aria-label", `Replace key for ${key.nickname}`);
       replace.addEventListener("click", () => openKeyDialog({
@@ -142,6 +150,72 @@ export function initSettings({ request, refresh, onPreviewChange }) {
       }));
       card.append(row);
     }
+  }
+
+  function finishRename(edit, restoreFocus = false) {
+    if (editing !== edit) return;
+    editing = null;
+    edit.listeners.abort();
+    edit.form.hidden = true;
+    edit.label.hidden = false;
+    if (restoreFocus) edit.label.querySelector("button").focus();
+  }
+
+  function editName(key, row) {
+    if (editing) return;
+    showError("settings-error");
+    const form = row.querySelector(".key-rename");
+    const label = row.querySelector(".key-label");
+    const input = form.querySelector("input");
+    const edit = { form, label, listeners: new AbortController() };
+    editing = edit;
+    label.hidden = true;
+    input.value = key.nickname;
+    form.hidden = false;
+    input.select();
+    input.focus();
+
+    async function submit() {
+      if (editing !== edit || edit.saving) return;
+      const nickname = input.value.trim();
+      if (nickname === key.nickname) {
+        finishRename(edit, form.contains(document.activeElement));
+        return;
+      }
+      edit.saving = true;
+      input.readOnly = true;
+      showError("settings-error");
+      try {
+        await request(`${keyRoute(key.id)}/rename`, { method: "POST", json: { nickname } });
+        const restore = form.contains(document.activeElement);
+        finishRename(edit);
+        await refresh();
+        if (restore && !overlay.inert) focusRow(key.id, ".rename-key");
+      } catch (error) {
+        showError("settings-error", error.message);
+        if (editing === edit && !overlay.inert && document.activeElement === document.body) input.focus();
+      } finally {
+        edit.saving = false;
+        input.readOnly = false;
+      }
+    }
+
+    const options = { signal: edit.listeners.signal };
+    edit.form.addEventListener("submit", event => {
+      event.preventDefault();
+      submit();
+    }, options);
+    form.addEventListener("focusout", event => {
+      if (!form.contains(event.relatedTarget)) submit();
+    }, options);
+    form.addEventListener("keydown", event => {
+      if (event.key !== "Escape") return;
+      event.stopPropagation();
+      if (!edit.saving) finishRename(edit, true);
+    }, options);
+    form.querySelector(".cancel-name").addEventListener("click", () => {
+      if (!edit.saving) finishRename(edit, true);
+    }, options);
   }
 
   function maskSecret(masked) {

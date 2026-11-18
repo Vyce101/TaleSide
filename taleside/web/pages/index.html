@@ -275,7 +275,21 @@
   <template id="key-row-template">
     <div class="key-row">
       <div>
-        <span class="key-nickname"></span>
+        <div class="key-label">
+          <span class="key-nickname"></span>
+          <button type="button" class="icon-button rename-key">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 5 4 4M4 20l4-.8L20 7a2.8 2.8 0 0 0-4-4L4.8 16Z"/></svg>
+          </button>
+        </div>
+        <form class="key-rename" hidden>
+          <input type="text" aria-label="Key name" autocomplete="off" required>
+          <button type="submit" class="icon-button save-name" aria-label="Save key name">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg>
+          </button>
+          <button type="button" class="icon-button cancel-name" aria-label="Cancel rename">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>
+          </button>
+        </form>
         <p class="key-usage"></p>
       </div>
       <div class="key-actions">

@@ -76,7 +76,8 @@ body:has(#settings-overlay[data-closing]) .top-bar { z-index: 16; }
 .key-row { display: flex; justify-content: space-between; align-items: center; gap: 12px 24px; padding: 15px 22px; }
 .key-row + .key-row { border-top: 1px solid #ffffff14; }
 .key-row > div:first-child { min-width: 0; }
-.key-actions { display: flex; align-items: center; }
+.key-label, .key-actions, .key-rename { display: flex; align-items: center; }
+.key-label, .key-rename { gap: 5px; }
 .key-actions { gap: 12px; flex-shrink: 0; }
 .key-nickname, .key-usage { overflow-wrap: anywhere; }
 .key-usage { margin: 4px 0 0; font-size: 13px; line-height: 1.4; }
@@ -92,7 +93,8 @@ body:has(#settings-overlay[data-closing]) .top-bar { z-index: 16; }
   stroke-linecap: round;
   stroke-linejoin: round;
 }
-.dialog-field input, .dialog-provider {
+.key-rename .icon-button { min-height: 33px; min-width: 33px; }
+.key-rename input, .dialog-field input, .dialog-provider {
   width: 100%;
   min-width: 0;
   min-height: 38px;
@@ -104,7 +106,8 @@ body:has(#settings-overlay[data-closing]) .top-bar { z-index: 16; }
   color: var(--color-text);
   font: inherit;
 }
-.dialog-field input:focus { border-color: #ffffffb3; }
+.key-rename input { max-width: 230px; border-color: #ffffff70; background: #0b261ce6; }
+.key-rename input:focus, .dialog-field input:focus { border-color: #ffffffb3; }
 
 .key-dialog { background: #0b2019f5; max-height: calc(100dvh - 28px); }
 .key-dialog > p { color: var(--color-text-muted); margin-bottom: 22px; }
