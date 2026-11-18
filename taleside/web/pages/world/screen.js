@@ -443,7 +443,7 @@ export function initWorldScreen({ request, onCreated, rename, discard, changeJob
       element("world-status").textContent = statusLabels.setup;
       showCover("");
       element("embedding-name").textContent = "Gemini Embedding 2";
-      element("embedding-spec").textContent = "768 dimensions · 8,192 token limit";
+      element("embedding-spec").textContent = "3,072 dimensions · 8,192 token limit";
       describeSetup();
       setBusy(false);
       content.hidden = false;

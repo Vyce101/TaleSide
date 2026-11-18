@@ -15,13 +15,13 @@ from .books import (
 from .embeddings import (
     DIMENSIONS,
     MODEL,
+    TOKEN_LIMIT,
     EmbeddingError,
     embedding_input,
     valid_vector,
 )
 from .world_imports import CheckedBooks, check_books
 
-VECTOR = Struct(f"<{DIMENSIONS}f")
 IMPORT_TIMEOUT_SECONDS = 30 * 60
 DEFAULT_WORLD_NAME = "TaleSide"
 SCHEMA = """
@@ -31,6 +31,7 @@ CREATE TABLE IF NOT EXISTS worlds (
     status TEXT NOT NULL,
     model TEXT NOT NULL,
     dimensions INTEGER NOT NULL,
+    max_token_limit INTEGER NOT NULL,
     max_chunk_size INTEGER NOT NULL,
     boundary_search_distance INTEGER NOT NULL,
     error TEXT
@@ -83,6 +84,10 @@ class Worlds:
         with self.connect() as db:
             db.execute("PRAGMA journal_mode = WAL")
             db.executescript(SCHEMA)
+            db.execute("BEGIN")
+            columns = {column["name"] for column in db.execute("PRAGMA table_info(worlds)")}
+            if "max_token_limit" not in columns:
+                db.execute("ALTER TABLE worlds ADD COLUMN max_token_limit INTEGER NOT NULL DEFAULT 8192")
             db.execute("UPDATE worlds SET status = 'paused' WHERE status IN ('creating', 'pausing')")
         self.worker = Thread(target=self.run, name="World embeddings", daemon=True)
         self.worker.start()
@@ -135,12 +140,13 @@ class Worlds:
             self.imports[world_id] = pending
 
         try:
-            checked = check_books(world_id, books, max_size, search_distance, self.provider.count, pending.cancelled)
+            checked = check_books(world_id, books, max_size, search_distance, TOKEN_LIMIT,
+                                  self.provider.count, pending.cancelled)
             with self.lock:
                 if pending.cancelled.is_set():
                     raise ValueError("The import was cancelled.")
                 pending.world_row = (world_id, name.strip() or DEFAULT_WORLD_NAME, MODEL, DIMENSIONS,
-                                     max_size, search_distance)
+                                     TOKEN_LIMIT, max_size, search_distance)
                 pending.checked = checked
                 pending.timer = Timer(IMPORT_TIMEOUT_SECONDS, self.decline, args=(world_id,))
                 pending.timer.daemon = True
@@ -164,8 +170,9 @@ class Worlds:
                 if checked.report["oversized_chunks"] and not allow_oversized:
                     return False
                 db.execute("""
-                    INSERT INTO worlds (id, name, model, dimensions, max_chunk_size, boundary_search_distance, status)
-                    VALUES (?, ?, ?, ?, ?, ?, 'creating')
+                    INSERT INTO worlds (id, name, model, dimensions, max_token_limit, max_chunk_size,
+                                        boundary_search_distance, status)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, 'creating')
                 """, pending.world_row)
                 db.executemany("""
                     INSERT INTO books (world_id, number, name, filename, original, working, encoding, bom_size)
@@ -277,8 +284,10 @@ class Worlds:
             current = db.execute("SELECT status FROM worlds WHERE id = ?", (world["id"],)).fetchone()
             if current is None or current["status"] != "creating" or self.stopping.is_set():
                 return
-            if (world["model"], world["dimensions"]) != (MODEL, DIMENSIONS):
-                raise EmbeddingError("This World's saved embedding profile is unavailable.")
+            if world["model"] != MODEL or not 128 <= world["dimensions"] <= DIMENSIONS:
+                raise EmbeddingError("This World's saved embedding model or dimensions are unavailable.")
+            dimensions = world["dimensions"]
+            vector_format = Struct(f"<{dimensions}f")
             chunk = db.execute("""
                 SELECT c.book_number, c.number, b.name, substr(b.working, c.start + 1, c.embed_end - c.start) AS text
                 FROM chunks c JOIN books b ON b.world_id = c.world_id AND b.number = c.book_number
@@ -286,16 +295,16 @@ class Worlds:
                 ORDER BY c.book_number, c.number LIMIT 1
             """, (world["id"],)).fetchone()
             if chunk is None:
-                self.verify(db, world)
+                self.verify(db, world, vector_format)
                 db.execute("UPDATE worlds SET status = 'ready' WHERE id = ?", (world["id"],))
                 return
             self.active_chunk = (world["id"], chunk["book_number"])
 
-        values = self.provider.embed(embedding_input(chunk["name"], chunk["text"]))
-        if not valid_vector(values):
+        values = self.provider.embed(embedding_input(chunk["name"], chunk["text"]), dimensions=dimensions)
+        if not valid_vector(values, dimensions):
             raise EmbeddingError("Gemini returned an invalid embedding vector.")
-        vector = VECTOR.pack(*values)
-        if not valid_vector(list(VECTOR.unpack(vector))):
+        vector = vector_format.pack(*values)
+        if not valid_vector(list(vector_format.unpack(vector)), dimensions):
             raise EmbeddingError("Gemini returned an invalid embedding vector.")
         with self.lock, self.connect() as db:
             db.execute("""
@@ -304,7 +313,7 @@ class Worlds:
             db.execute("UPDATE worlds SET status = 'paused' WHERE id = ? AND status = 'pausing'", (world["id"],))
             self.active_chunk = None
 
-    def verify(self, db, world):
+    def verify(self, db, world, vector_format):
         books = db.execute("SELECT * FROM books WHERE world_id = ? ORDER BY number", (world["id"],))
         for book in books:
             chunks = db.execute("""
@@ -319,8 +328,8 @@ class Worlds:
                 if (chunk["number"] != number or chunk["start"] != start or chunk["original_start"] != source_start
                         or not start < chunk["embed_end"] <= end
                         or end - start > world["max_chunk_size"] or normalize_lines(source) != working
-                        or vector is None or len(vector) != VECTOR.size
-                        or not valid_vector(list(VECTOR.unpack(vector)))):
+                        or vector is None or len(vector) != vector_format.size
+                        or not valid_vector(list(vector_format.unpack(vector)), world["dimensions"])):
                     raise ValueError("Invalid saved chunk.")
                 start, source_start = end, source_end
             if start != len(book["working"]) or source_start != len(book["original"]):

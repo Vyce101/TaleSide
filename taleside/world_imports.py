@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 
 from .books import prepare_txt
-from .embeddings import TOKEN_LIMIT, embedding_input
+from .embeddings import embedding_input
 
 
 @dataclass
@@ -13,11 +13,11 @@ class CheckedBooks:
     report: dict
 
 
-def _prefix_length(count, text):
+def _prefix_length(count, text, token_limit):
     minimum, maximum = 0, len(text)
     while minimum < maximum:
         middle = (minimum + maximum + 1) // 2
-        if count(text[:middle]) <= TOKEN_LIMIT:
+        if count(text[:middle]) <= token_limit:
             minimum = middle
         else:
             maximum = middle - 1
@@ -26,7 +26,7 @@ def _prefix_length(count, text):
     return minimum
 
 
-def check_books(world_id, books, max_size, search_distance, count_tokens, cancelled):
+def check_books(world_id, books, max_size, search_distance, token_limit, count_tokens, cancelled):
     book_rows = []
     chunks_to_check = []
     for book_number, source in enumerate(books, 1):
@@ -53,8 +53,8 @@ def check_books(world_id, books, max_size, search_distance, count_tokens, cancel
         text = working[chunk.start:chunk.end]
         tokens = count(text)
         embed_end = chunk.end
-        if tokens > TOKEN_LIMIT:
-            embed_end = chunk.start + _prefix_length(count, text)
+        if tokens > token_limit:
+            embed_end = chunk.start + _prefix_length(count, text, token_limit)
             oversized.append({
                 "book_number": book_number,
                 "chunk_number": number,
@@ -67,7 +67,7 @@ def check_books(world_id, books, max_size, search_distance, count_tokens, cancel
     report = {
         "id": world_id,
         "chunk_count": len(chunk_rows),
-        "token_limit": TOKEN_LIMIT,
+        "token_limit": token_limit,
         "oversized_chunks": oversized,
     }
     return CheckedBooks(book_rows, chunk_rows, report)

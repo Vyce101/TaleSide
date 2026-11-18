@@ -19,7 +19,7 @@ from taleside.worlds import Worlds
 class Provider:
     def __init__(self):
         self.embedded = []
-        self.vector = [0.5] * 768
+        self.vector = [0.5] * 3072
         self.started = Event()
         self.release = Event()
         self.release.set()
@@ -27,7 +27,7 @@ class Provider:
     def count(self, text):
         return len(text)
 
-    def embed(self, text):
+    def embed(self, text, *, dimensions):
         self.embedded.append(text)
         self.started.set()
         if not self.release.wait(3):
@@ -72,7 +72,7 @@ class WorldTests(unittest.TestCase):
             originals = [tuple(row) for row in db.execute("SELECT original, working FROM books ORDER BY number")]
             model = tuple(db.execute("SELECT model, dimensions, max_chunk_size FROM worlds").fetchone())
         self.assertEqual(originals, [(original, "a" * 9000), (b"second", "second")])
-        self.assertEqual(model, ("gemini-embedding-2", 768, 9000))
+        self.assertEqual(model, ("gemini-embedding-2", 3072, 9000))
 
     def test_cancelling_an_import_leaves_no_saved_world_books_or_chunks(self):
         world = self.worlds.prepare("World", [BookSource("Book.txt", b"a" * 9000)], max_size=9000)
@@ -130,7 +130,7 @@ class WorldTests(unittest.TestCase):
         self.provider.release.set()
         wait_for(lambda: self.worlds.detail(world["id"])["status"] == "failed")
         self.assertEqual(self.worlds.detail(world["id"])["embedded_chunks"], 0)
-        self.provider.vector = [0.5] * 768
+        self.provider.vector = [0.5] * 3072
         self.assertTrue(self.worlds.resume(world["id"]))
         wait_for(lambda: self.worlds.detail(world["id"])["status"] == "ready")
 
@@ -154,7 +154,7 @@ class WorldTests(unittest.TestCase):
                                             (first["id"],)).fetchone()[0], 0)
 
     def test_invalid_vector_and_provider_error_fail_without_saving_progress(self):
-        self.provider.vector = [float("nan")] * 768
+        self.provider.vector = [float("nan")] * 3072
         world = self.worlds.prepare("World", [BookSource("Book.txt", b"text")])
         self.worlds.accept(world["id"])
         wait_for(lambda: self.worlds.list()[0]["status"] == "failed")
@@ -165,7 +165,7 @@ class WorldTests(unittest.TestCase):
         wait_for(lambda: self.worlds.list()[0]["status"] == "failed")
         self.assertEqual(self.worlds.list()[0]["embedded_chunks"], 0)
         self.assertEqual(self.worlds.list()[0]["error"], "Gemini is unavailable.")
-        self.provider.vector = [0.5] * 768
+        self.provider.vector = [0.5] * 3072
         self.worlds.resume(world["id"])
         wait_for(lambda: self.worlds.list()[0]["status"] == "ready")
 
