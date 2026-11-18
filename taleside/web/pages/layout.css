@@ -24,20 +24,24 @@
   align-items: center;
 }
 .top-bar nav, .utilities { display: flex; align-items: center; }
-.top-bar nav {
-  gap: calc(63 * var(--unit));
+.top-bar :is(nav, .top-bar-title) {
   font-size: max(17px, calc(28 * var(--unit)));
   line-height: 1.23;
   letter-spacing: .005em;
 }
+.top-bar nav { gap: calc(63 * var(--unit)); }
 .top-bar nav a { color: var(--color-text-inactive); font-weight: 440; scale: 1.10 1; transform-origin: left; text-decoration: none; }
-.top-bar nav a[aria-current] { color: var(--color-text); font-weight: 680; scale: 1.075 1; }
+.top-bar :is(nav a[aria-current], .top-bar-title) { color: var(--color-text); font-weight: 680; scale: 1.075 1; }
+.top-bar-title { display: none; margin: 0; transform-origin: left; }
+.top-bar-title:focus { outline: none; }
 .utilities { gap: calc(63 * var(--unit)); }
-.utilities button { display: grid; place-items: center; }
+.utilities button { display: grid; place-items: center; color: var(--color-text-inactive); }
 .utilities svg { width: max(20px, calc(28 * var(--unit))); display: block; }
 
 body:not([data-view="home"]) .top-bar { position: fixed; z-index: 5; }
-.top-bar button:not(:disabled):hover { color: white; }
+.top-bar :is(nav a:not([aria-current]), #settings-button[aria-expanded="false"]):hover {
+  color: color-mix(in srgb, var(--color-text-inactive) 55%, var(--color-text));
+}
 body:is([data-view="create"], [data-view="world"]) .hero-art img { object-position: center; }
 body:is([data-view="create"], [data-view="world"]) .hero-frame::after { display: none; }
 
@@ -49,11 +53,10 @@ html[data-route-transition] #home { position: relative; min-height: 100dvh; }
   animation-duration: 240ms;
   animation-timing-function: cubic-bezier(.22, 1, .36, 1);
 }
-::view-transition-old(outgoing-content), ::view-transition-old(outgoing-shelf-controls) {
+::view-transition-old(outgoing-content) {
   animation: route-fade-out 240ms cubic-bezier(.22, 1, .36, 1) both;
 }
 @keyframes route-fade-out { to { opacity: 0; } }
-
 
 .setting-picker { position: relative; min-width: 0; }
 .picker-trigger, .add-provider-key {

@@ -1,13 +1,12 @@
 import { showArtwork } from "./artwork.js";
 import { initNavigation } from "./navigation.js";
+import { initSettings } from "./settings/settings.js";
 import { initWorldScreen } from "./world/screen.js";
 import { createDemoWorlds, updateDemoProgress } from "./home/demo-worlds.js";
 import { renderHome, resetHomeSelection, revealHomeCard, selectWorld, showHomeMessage } from "./home/home.js";
 
 const home = document.getElementById("home");
 const studio = document.getElementById("studio");
-const preview = document.querySelector(".preview-controls");
-const mode = document.getElementById("world-preview-mode");
 const header = document.querySelector(".top-bar");
 const worldsLink = document.getElementById("worlds-link");
 const createLink = document.getElementById("create-link");
@@ -17,6 +16,7 @@ const canopy = document.getElementById("studio-canopy");
 const pending = new Map();
 let savedWorlds = null;
 let demos = createDemoWorlds().map(updateDemoProgress);
+let previewMode = "saved";
 let requestNumber = 0;
 let worldRequest = null;
 let connectionError = false;
@@ -35,11 +35,14 @@ async function request(path, { json, ...options } = {}) {
   throw error;
 }
 
+const settings = initSettings({ onPreviewChange: changePreviewMode });
 const worldScreen = initWorldScreen({ request, onCreated, rename, discard, changeJob });
 const navigation = initNavigation({
   display,
   confirmLeave: worldScreen.confirmLeave,
   isDirty: worldScreen.isDirty,
+  beforeLink: sameSection => settings.close({ focus: sameSection }),
+  beforeTraversal: () => settings.close({ immediate: true }),
 });
 
 function isDemo(id) {
@@ -47,8 +50,8 @@ function isDemo(id) {
 }
 
 function updateHome() {
-  const worlds = mode.value === "demo" ? demos : mode.value === "saved" ? savedWorlds ?? [] : [];
-  renderHome(worlds, mode.value === "saved" && savedWorlds === null, pending, card => changeJob(card.world));
+  const worlds = previewMode === "demo" ? demos : previewMode === "saved" ? savedWorlds ?? [] : [];
+  renderHome(worlds, previewMode === "saved" && savedWorlds === null, pending, card => changeJob(card.world));
 }
 
 function updateWorld() {
@@ -157,7 +160,7 @@ async function discard(world) {
 
 function onCreated(world) {
   savedWorlds = [...(savedWorlds ?? []).filter(item => item.id !== world.id), world];
-  mode.value = "saved";
+  setPreviewMode("saved");
   selectWorld(world);
   navigation.replace("/", {
     afterDisplay: () => revealHomeCard(world.id),
@@ -167,13 +170,14 @@ function onCreated(world) {
 }
 
 function display(path, previous) {
+  settings.close({ immediate: true });
   if (previous && previous !== "/") worldScreen.close();
   const view = path === "/" ? "home" : path === "/create" ? "create" : "world";
   expandedHeight = 0;
   worldTop.style.setProperty("--collapse", "0");
   worldTopSpacer.style.height = "0";
   document.body.dataset.view = view;
-  home.hidden = preview.hidden = view !== "home";
+  home.hidden = view !== "home";
   studio.hidden = view === "home";
   studio.dataset.status = "";
   worldsLink.removeAttribute("aria-current");
@@ -197,7 +201,7 @@ function display(path, previous) {
     studio.focus({ preventScroll: true });
   } else if (previous && path === "/") {
     const id = previous.split("/")[2];
-    if (id && (isDemo(id) ? mode.value === "demo" : mode.value === "saved")) {
+    if (id && (isDemo(id) ? previewMode === "demo" : previewMode === "saved")) {
       revealHomeCard(id);
     } else {
       worldsLink.focus({ preventScroll: true });
@@ -222,14 +226,20 @@ function updateHeader() {
   canopy.style.setProperty("--canopy-fade", `${fade}px`);
 }
 
-mode.addEventListener("change", () => {
-  if (mode.value === "demo") {
+function setPreviewMode(value) {
+  previewMode = value;
+  settings.setPreviewMode(value);
+}
+
+function changePreviewMode(value) {
+  setPreviewMode(value);
+  if (value === "demo") {
     demos = createDemoWorlds().map(updateDemoProgress);
     for (const world of demos) new Image().src = world.wide;
   }
   resetHomeSelection();
   updateHome();
-});
+}
 window.addEventListener("scroll", updateHeader, { passive: true });
 window.addEventListener("resize", () => {
   expandedHeight = 0;
@@ -243,7 +253,7 @@ for (const type of ["dragover", "drop"]) {
 }
 
 if (navigation.path.startsWith("/worlds/demo-")) {
-  mode.value = "demo";
+  setPreviewMode("demo");
   selectWorld(demos.find(world => world.id === navigation.path.split("/")[2]));
 }
 studio.tabIndex = -1;
@@ -251,7 +261,7 @@ display(navigation.path);
 refreshWorlds();
 setInterval(refreshWorlds, 1200);
 setInterval(() => {
-  if (mode.value !== "demo") return;
+  if (previewMode !== "demo") return;
   const creating = demos.filter(world => world.status === "creating");
   if (!creating.length) return;
   for (const world of creating) {

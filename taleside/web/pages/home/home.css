@@ -200,19 +200,6 @@
 .operation-icon.play { clip-path: polygon(0 0, 100% 50%, 0 100%); }
 .operation-icon.pause { background: linear-gradient(90deg, currentColor 35%, transparent 35% 65%, currentColor 65%); }
 
-.preview-controls {
-  position: fixed;
-  right: max(12px, 2vw);
-  bottom: max(12px, 2.4dvh);
-  z-index: 3;
-  font-size: 12px;
-}
-.preview-controls select {
-  background: var(--color-control);
-  border: 1px solid var(--color-control-border);
-  border-radius: 8px;
-  padding: 7px 10px;
-}
 .message {
   position: fixed;
   z-index: 3;

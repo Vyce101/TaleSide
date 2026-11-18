@@ -2,11 +2,10 @@ import { firstHomeWorld, homeCover } from "./home/home.js";
 
 const home = document.getElementById("home");
 const studio = document.getElementById("studio");
-const preview = document.querySelector(".preview-controls");
 const studioCover = studio.querySelector(".world-cover");
 const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
 
-export function initNavigation({ display, confirmLeave, isDirty }) {
+export function initNavigation({ display, confirmLeave, isDirty, beforeLink, beforeTraversal }) {
   let current = { path: location.pathname, index: 0 };
   let pendingTraversal = null;
   let confirmedIndex = null;
@@ -32,12 +31,9 @@ export function initNavigation({ display, confirmLeave, isDirty }) {
     if (fromHome && toCreate) createCoverId = firstHomeWorld();
     current = entry;
     function fadeIn(duration) {
-      const targets = toHome ? [home, preview] : [studio];
-      for (const element of targets) {
-        element.animate([{ opacity: 0 }, { opacity: 1 }], {
-          duration, easing: "cubic-bezier(.22, 1, .36, 1)",
-        });
-      }
+      (toHome ? home : studio).animate([{ opacity: 0 }, { opacity: 1 }], {
+        duration, easing: "cubic-bezier(.22, 1, .36, 1)",
+      });
     }
 
     function update() {
@@ -68,10 +64,8 @@ export function initNavigation({ display, confirmLeave, isDirty }) {
     }
     const outgoing = fromHome ? home : studio;
     outgoing.style.viewTransitionName = "outgoing-content";
-    if (fromHome) preview.style.viewTransitionName = "outgoing-shelf-controls";
     function releaseOutgoing() {
       outgoing.style.viewTransitionName = "";
-      if (fromHome) preview.style.viewTransitionName = "";
     }
     document.documentElement.dataset.routeTransition = "";
     markCover(studioCover);
@@ -109,6 +103,7 @@ export function initNavigation({ display, confirmLeave, isDirty }) {
     if (!link || link.origin !== location.origin || link.target) return;
     if (link.pathname !== "/" && link.pathname !== "/create" && !link.pathname.startsWith("/worlds/")) return;
     event.preventDefault();
+    beforeLink(link.pathname === current.path);
     navigate(link.pathname);
   });
 
@@ -133,6 +128,7 @@ export function initNavigation({ display, confirmLeave, isDirty }) {
       if (traversal) confirmTraversal(traversal.entry, traversal.distance);
       return;
     }
+    beforeTraversal();
     if (entry.index === confirmedIndex || !isDirty()) {
       confirmedIndex = null;
       enter(entry);
