@@ -169,6 +169,44 @@ class WorldTests(unittest.TestCase):
         self.worlds.resume(world["id"])
         wait_for(lambda: self.worlds.list()[0]["status"] == "ready")
 
+    def test_provider_key_api_omits_secrets_and_rejects_cross_origin_changes(self):
+        with Server(self.worlds) as server:
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            secret = "fake-private-credential"
+            body = json.dumps({"provider": "gemini", "nickname": "Work", "secret": secret}).encode()
+
+            def add(origin):
+                headers = {"Origin": origin, "Content-Type": "application/json"}
+                return urlopen(Request(server.url + "/api/provider-keys", data=body, headers=headers))
+
+            try:
+                with self.assertRaises(HTTPError) as caught:
+                    add("https://example.com")
+                with caught.exception as response:
+                    self.assertEqual(response.code, 403)
+                with add(server.url) as response:
+                    public_key = json.load(response)
+                    self.assertEqual(set(public_key), {"id", "provider", "nickname"})
+                with urlopen(server.url + "/api/settings") as response:
+                    data = response.read()
+                    self.assertNotIn(secret.encode(), data)
+                    settings = json.loads(data)
+                    self.assertEqual(len(settings["keys"]), 1)
+                    self.assertEqual(settings["models"][0]["dimensions"], 3072)
+                with self.assertRaises(HTTPError) as caught:
+                    add(server.url)
+                with caught.exception as response:
+                    self.assertEqual(response.code, 400)
+                    self.assertNotIn(secret.encode(), response.read())
+                with self.worlds.connect() as db:
+                    protected = db.execute("SELECT protected_secret FROM provider_keys WHERE id = ?",
+                                           (public_key["id"],)).fetchone()[0]
+                    self.assertNotIn(secret.encode(), protected)
+            finally:
+                server.shutdown()
+                thread.join()
+
     def test_homepage_api_only_allows_same_origin_state_changes(self):
         self.provider.release.clear()
         world = self.worlds.prepare("World", [BookSource("Book.txt", b"abcdefgh")], 4, 0)

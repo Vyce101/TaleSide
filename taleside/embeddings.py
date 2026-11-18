@@ -8,6 +8,13 @@ MODEL = "gemini-embedding-2"
 PROVIDER = "gemini"
 DIMENSIONS = 3072
 TOKEN_LIMIT = 8192
+MODEL_INFO = {
+    "id": MODEL,
+    "provider": PROVIDER,
+    "provider_name": "Google Gemini",
+    "dimensions": DIMENSIONS,
+    "max_token_limit": TOKEN_LIMIT,
+}
 
 
 class EmbeddingError(Exception):

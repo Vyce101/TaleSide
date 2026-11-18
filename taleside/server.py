@@ -14,7 +14,8 @@ from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
 from .books import BookSource
-from .embeddings import EmbeddingError
+from .embeddings import MODEL_INFO, EmbeddingError
+from .provider_keys import KeyConflict
 
 WEB_ROOT = Path(__file__).resolve().parent / "web"
 MIME_TYPES = {".js": "text/javascript", ".woff2": "font/woff2"}
@@ -35,6 +36,8 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("X-Content-Type-Options", "nosniff")
+        if content_type == "application/json":
+            self.send_header("Cache-Control", "no-store")
         try:
             self.end_headers()
             self.wfile.write(body)
@@ -55,6 +58,9 @@ class Handler(BaseHTTPRequestHandler):
         path = unquote(urlsplit(self.path).path)
         if path == INSTANCE_PATH:
             self.send_json(INSTANCE)
+            return
+        if path == "/api/settings":
+            self.send_json({"models": [MODEL_INFO], **self.server.worlds.keys.settings()})
             return
         if path == "/api/worlds":
             self.send_json(self.server.worlds.list())
@@ -137,22 +143,44 @@ class Handler(BaseHTTPRequestHandler):
         if not self.local_request() or self.headers.get("Origin") != self.server.url:
             self.send_error(HTTPStatus.FORBIDDEN)
             return
-        match = re.fullmatch(r"/api/(worlds|world-imports)/([0-9a-f]{32})/([a-z]+)", urlsplit(self.path).path)
-        if match is None:
-            self.send_error(HTTPStatus.NOT_FOUND)
-            return
-        group, world_id, action = match.groups()
+        path = urlsplit(self.path).path
         try:
+            if path == "/api/provider-keys":
+                details = self.read_json()
+                key = self.server.worlds.keys.add(details.get("provider"), details.get("nickname"),
+                                                  details.get("secret"))
+                self.send_json(key, HTTPStatus.CREATED)
+                return
+            match = re.fullmatch(r"/api/(worlds|world-imports|provider-keys)/([0-9a-f]{32})/([a-z-]+)", path)
+            if match is None:
+                self.send_error(HTTPStatus.NOT_FOUND)
+                return
+            group, item_id, action = match.groups()
             if group == "world-imports":
-                self.update_import(world_id, action)
+                self.update_import(item_id, action)
+            elif group == "provider-keys":
+                self.update_key(item_id, action)
             else:
-                self.update_world(world_id, action)
+                self.update_world(item_id, action)
+        except KeyConflict as error:
+            self.api_error(str(error), HTTPStatus.CONFLICT)
         except ValueError as error:
             self.api_error(str(error), HTTPStatus.BAD_REQUEST)
         except EmbeddingError as error:
             self.api_error(str(error), HTTPStatus.BAD_GATEWAY)
         except sqlite3.Error:
             self.api_error("Could not update the local World database.", HTTPStatus.INTERNAL_SERVER_ERROR)
+
+    def update_key(self, key_id, action):
+        keys = self.server.worlds.keys
+        if action == "rename":
+            keys.rename(key_id, self.read_json().get("nickname"))
+        elif action == "replace":
+            keys.replace(key_id, self.read_json().get("secret"))
+        else:
+            self.send_error(HTTPStatus.NOT_FOUND)
+            return
+        self.send_json({"ok": True})
 
     def update_import(self, world_id, action):
         worlds = self.server.worlds
