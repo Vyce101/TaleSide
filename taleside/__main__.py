@@ -11,6 +11,7 @@ from .server import INSTANCE, INSTANCE_PATH, Server
 from .worlds import Worlds
 
 PORT = 8765
+DATA_DIRECTORY = Path(__file__).resolve().parent.parent / "data"
 
 
 def open_running_app(port):
@@ -38,9 +39,8 @@ def main():
             f"close that window and try again. ({error})"
         ) from None
     with server:
-        app_data = Path(os.environ.get("LOCALAPPDATA") or (Path.home() / "AppData" / "Local")) / "TaleSide"
-        app_data.mkdir(parents=True, exist_ok=True)
-        worlds = Worlds(app_data / "worlds.sqlite3", Gemini(os.environ.get("GEMINI_API_KEY")))
+        DATA_DIRECTORY.mkdir(exist_ok=True)
+        worlds = Worlds(DATA_DIRECTORY / "worlds.sqlite3", Gemini(os.environ.get("GEMINI_API_KEY")))
         server.worlds = worlds
         try:
             print(f"TaleSide is running at {server.url}. Close this launcher window to stop it.", flush=True)
