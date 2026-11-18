@@ -84,6 +84,7 @@ body:has(#settings-overlay[data-closing]) .top-bar { z-index: 16; }
 .key-actions button { color: #d7e1dca6; font-size: 13px; }
 .key-actions .replace-key { display: flex; align-items: center; gap: 7px; padding: 7px 4px; }
 .key-actions .replace-key:hover { color: var(--color-text); }
+.key-actions .delete-key:hover { color: #f4a5a5; background: #ef444426; }
 #settings-overlay :is(.icon-button, .replace-key) svg {
   width: 16px;
   height: 16px;
@@ -121,6 +122,8 @@ body:has(#settings-overlay[data-closing]) .top-bar { z-index: 16; }
 .key-dialog .studio-error { margin: 0; color: #ffb9bd; }
 .dialog-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-top: 8px; }
 .dialog-cancel { background: #ffffff1c; border-color: #ffffff24; }
+.key-dialog .danger-last-key { color: #fff; background: #a84040; border-color: #a84040; box-shadow: none; }
+.key-dialog .danger-last-key:not(:disabled):hover { background: #bf4c4c; }
 .key-dialog button:disabled { opacity: .58; }
 
 @media (max-width: 650px) {

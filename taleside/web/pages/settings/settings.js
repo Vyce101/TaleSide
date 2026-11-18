@@ -26,9 +26,14 @@ export function initSettings({ request, refresh, onPreviewChange }) {
   const secret = element("key-secret");
   const reveal = element("reveal-key");
   const save = element("save-key");
+  const deleteDialog = element("delete-key-dialog");
+  const deleteForm = element("delete-key-form");
+  const confirmDelete = element("delete-key-confirm");
   let keys = [];
   let editing;
   let keyAction;
+  let deletion;
+  let deleteRequest;
 
   function showError(id, message = "") {
     const error = element(id);
@@ -77,9 +82,14 @@ export function initSettings({ request, refresh, onPreviewChange }) {
   }
 
   function close({ immediate = false, focus = false } = {}) {
-    if (immediate && keyDialog.open) keyDialog.close();
+    if (immediate) {
+      for (const dialog of [keyDialog, deleteDialog]) {
+        if (dialog.open) dialog.close();
+      }
+    }
     if (overlay.hidden) return;
     if (overlay.hasAttribute("data-closing") && !immediate) return;
+    deleteRequest = null;
     preview.close();
     if (editing) finishRename(editing);
     if (focus) gear.focus({ preventScroll: true });
@@ -148,6 +158,9 @@ export function initSettings({ request, refresh, onPreviewChange }) {
       replace.addEventListener("click", () => openKeyDialog({
         key, restoreFocus: () => focusRow(key.id, ".replace-key"),
       }));
+      const remove = row.querySelector(".delete-key");
+      remove.setAttribute("aria-label", `Delete ${key.nickname}`);
+      remove.addEventListener("click", () => openDelete(key.id));
       card.append(row);
     }
   }
@@ -226,7 +239,8 @@ export function initSettings({ request, refresh, onPreviewChange }) {
   }
 
   function openKeyDialog({ key, onAdded, restoreFocus }) {
-    if (keyDialog.open) return;
+    if (keyDialog.open || deleteDialog.open) return;
+    deleteRequest = null;
     keyAction = { key, onAdded, restoreFocus };
     element("key-dialog-title").textContent = key ? `Replace “${key.nickname}”` : "Add API Key";
     element("key-dialog-description").textContent = key
@@ -284,15 +298,96 @@ export function initSettings({ request, refresh, onPreviewChange }) {
     }
   });
 
-  keyDialog.addEventListener("cancel", event => {
-    if (keyAction?.saving) event.preventDefault();
+  function showDeleteImpact(impact) {
+    element("delete-key-title").textContent = `Delete “${impact.key.nickname}”?`;
+    const used = impact.worlds.length > 0;
+    const last = used && !impact.fallback;
+    let description = "This key is unused. Delete it from TaleSide?";
+    if (used) {
+      const singular = impact.worlds.length === 1;
+      const usage = `${describeWorlds(impact.worlds)} currently ${singular ? "uses" : "use"} this key.`;
+      const affected = singular ? "This World" : "These Worlds";
+      description = impact.fallback
+        ? `${usage} ${affected} will automatically switch to “${impact.fallback.nickname}”.`
+        : `${usage} This is your last Google Gemini key. Add and assign a new key before ${affected.toLowerCase()} can use Gemini again.`;
+    }
+    element("delete-key-description").textContent = description;
+    confirmDelete.textContent = last ? "Delete Last Key" : used ? "Delete & Auto-Switch" : "Delete Key";
+    confirmDelete.classList.toggle("danger-last-key", last);
+    confirmDelete.disabled = impact.busy;
+    showError("delete-key-error", impact.busy ? "Wait for book checks to finish and pause any Worlds using this key." : "");
+  }
+
+  async function openDelete(id) {
+    if (deleteRequest || deleteDialog.open) return;
+    showError("settings-error");
+    const loading = request(`${keyRoute(id)}/delete-impact`);
+    deleteRequest = loading;
+    try {
+      const impact = await loading;
+      if (deleteRequest !== loading) return;
+      deletion = { impact };
+      showDeleteImpact(impact);
+      deleteDialog.showModal();
+      element("delete-key-cancel").focus();
+    } catch (error) {
+      if (deleteRequest === loading) showError("settings-error", error.message);
+    } finally {
+      if (deleteRequest === loading) deleteRequest = null;
+    }
+  }
+
+  element("delete-key-cancel").addEventListener("click", () => deleteDialog.close());
+  deleteDialog.addEventListener("close", () => {
+    const id = deletion?.impact.key.id;
+    deletion = null;
+    if (id && !overlay.inert) focusRow(id, ".delete-key");
   });
-  keyDialog.addEventListener("click", event => {
-    if (event.target !== keyDialog || keyAction?.saving) return;
-    const bounds = keyDialog.getBoundingClientRect();
-    if (event.clientX < bounds.left || event.clientX > bounds.right
-        || event.clientY < bounds.top || event.clientY > bounds.bottom) keyDialog.close();
+  deleteForm.addEventListener("submit", async event => {
+    event.preventDefault();
+    const action = deletion;
+    if (!action || action.saving || confirmDelete.disabled) return;
+    const route = keyRoute(action.impact.key.id);
+    action.saving = confirmDelete.disabled = element("delete-key-cancel").disabled = true;
+    showError("delete-key-error");
+    try {
+      await request(`${route}/delete`, { method: "POST", json: { impact: action.impact } });
+      await refresh({ worlds: true });
+      if (deletion === action) deleteDialog.close();
+    } catch (error) {
+      if (deletion !== action) return;
+      if (error.status === 409) {
+        try {
+          const impact = await request(`${route}/delete-impact`);
+          if (deletion !== action) return;
+          action.impact = impact;
+          showDeleteImpact(impact);
+          if (!impact.busy) showError("delete-key-error", error.message);
+        } catch (refreshError) {
+          if (deletion !== action) return;
+          showError("settings-error", refreshError.message);
+          deleteDialog.close();
+          refresh();
+        }
+      } else {
+        showError("delete-key-error", error.message);
+      }
+    } finally {
+      action.saving = element("delete-key-cancel").disabled = false;
+      confirmDelete.disabled = action.impact.busy;
+    }
   });
+
+  for (const dialog of [keyDialog, deleteDialog]) {
+    const saving = () => dialog === keyDialog ? keyAction?.saving : deletion?.saving;
+    dialog.addEventListener("cancel", event => { if (saving()) event.preventDefault(); });
+    dialog.addEventListener("click", event => {
+      if (event.target !== dialog || saving()) return;
+      const bounds = dialog.getBoundingClientRect();
+      if (event.clientX < bounds.left || event.clientX > bounds.right
+          || event.clientY < bounds.top || event.clientY > bounds.bottom) dialog.close();
+    });
+  }
 
   setPreviewMode("saved");
   return {

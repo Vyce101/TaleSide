@@ -100,8 +100,9 @@ function refreshWorlds(force = false) {
   return worldRequest;
 }
 
-async function refreshSettings() {
+async function refreshSettings({ worlds = false } = {}) {
   const number = ++settingsRequestNumber;
+  const worldRefresh = worlds && refreshWorlds(true);
   try {
     const data = await request("/api/settings");
     if (number === settingsRequestNumber) {
@@ -111,6 +112,7 @@ async function refreshSettings() {
   } catch (error) {
     if (number === settingsRequestNumber) settings.showError(error.message);
   }
+  await worldRefresh;
 }
 
 async function changeJob(world) {

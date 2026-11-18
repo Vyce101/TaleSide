@@ -122,6 +122,8 @@ class WorldTests(unittest.TestCase):
         self.assertEqual(self.worlds.detail(world["id"])["status"], "pausing")
         with self.assertRaises(KeyConflict):
             self.worlds.keys.replace(self.key, "fake-replacement")
+        with self.assertRaises(KeyConflict):
+            self.worlds.keys.delete(self.key, self.worlds.keys.delete_impact(self.key))
         self.worlds.keys.rename(self.key, "Personal key")
         self.assertFalse(self.worlds.resume(world["id"]))
         self.provider.release.set()
@@ -220,6 +222,53 @@ class WorldTests(unittest.TestCase):
             ("fake-replacement-secret", "gemini-embedding-2", 3072, "title: Book | text: chapter"),
         ])
         self.assertEqual(self.worlds.keys.settings()["defaults"]["key_id"], alternate)
+
+    def test_delete_rechecks_world_names_and_uses_the_oldest_remaining_key(self):
+        older = self.worlds.keys.add("gemini", "Older", "fake-older-key")["id"]
+        newer = self.worlds.keys.add("gemini", "Newer", "fake-newer-key")["id"]
+        draft = self.prepare("World", [BookSource("Book.txt", b"chapter")])
+        self.worlds.accept(draft["id"])
+        wait_for(lambda: self.worlds.detail(draft["id"])["status"] == "ready")
+        impact = self.worlds.keys.delete_impact(self.key)
+        self.assertEqual(impact["fallback"]["id"], older)
+        self.assertEqual(impact["worlds"], [{"id": draft["id"], "name": "World"}])
+        self.worlds.rename(draft["id"], "Renamed")
+        with self.assertRaises(KeyConflict):
+            self.worlds.keys.delete(self.key, impact)
+        self.worlds.keys.delete(self.key, self.worlds.keys.delete_impact(self.key))
+        self.assertEqual(self.worlds.detail(draft["id"])["key_id"], older)
+        self.assertEqual(self.worlds.keys.settings()["defaults"]["key_id"], older)
+
+        unused_impact = self.worlds.keys.delete_impact(newer)
+        self.assertEqual(unused_impact["worlds"], [])
+        self.assertIsNone(unused_impact["fallback"])
+        self.worlds.keys.delete(newer, unused_impact)
+        self.worlds.keys.delete(older, self.worlds.keys.delete_impact(older))
+        world = self.worlds.detail(draft["id"])
+        self.assertEqual(world["status"], "ready")
+        self.assertEqual(world["embedded_chunks"], 1)
+        self.assertIsNone(world["key_id"])
+        self.assertEqual(self.worlds.keys.settings()["keys"], [])
+
+    def test_pending_import_blocks_key_deletion_only_while_checking(self):
+        self.provider.count_release.clear()
+        world_id = uuid4().hex
+        outcomes = []
+        checking = Thread(target=lambda: outcomes.append(
+            self.prepare("World", [BookSource("Book.txt", b"chapter")], world_id=world_id)))
+        checking.start()
+        try:
+            self.assertTrue(self.provider.count_started.wait(2))
+            with self.assertRaises(KeyConflict):
+                self.worlds.keys.delete(self.key, self.worlds.keys.delete_impact(self.key))
+        finally:
+            self.provider.count_release.set()
+            checking.join(2)
+        self.assertEqual(outcomes[0]["id"], world_id)
+        self.worlds.keys.delete(self.key, self.worlds.keys.delete_impact(self.key))
+        with self.assertRaises(KeyConflict):
+            self.worlds.accept(world_id)
+        self.assertEqual(self.worlds.list(), [])
 
     def test_legacy_world_resumes_at_768_dimensions_after_assigning_a_key(self):
         self.provider.release.clear()

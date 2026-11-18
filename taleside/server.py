@@ -62,6 +62,13 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/settings":
             self.send_json({"models": [MODEL_INFO], **self.server.worlds.keys.settings()})
             return
+        impact = re.fullmatch(r"/api/provider-keys/([0-9a-f]{32})/delete-impact", path)
+        if impact:
+            try:
+                self.send_json(self.server.worlds.keys.delete_impact(impact[1]))
+            except KeyConflict as error:
+                self.api_error(str(error), HTTPStatus.CONFLICT)
+            return
         if path == "/api/worlds":
             self.send_json(self.server.worlds.list())
             return
@@ -183,6 +190,8 @@ class Handler(BaseHTTPRequestHandler):
             keys.rename(key_id, self.read_json().get("nickname"))
         elif action == "replace":
             keys.replace(key_id, self.read_json().get("secret"))
+        elif action == "delete":
+            keys.delete(key_id, self.read_json().get("impact"))
         else:
             self.send_error(HTTPStatus.NOT_FOUND)
             return
