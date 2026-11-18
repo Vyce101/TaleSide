@@ -18,6 +18,7 @@ let savedWorlds = null;
 let demos = createDemoWorlds().map(updateDemoProgress);
 let previewMode = "saved";
 let requestNumber = 0;
+let settingsRequestNumber = 0;
 let worldRequest = null;
 let connectionError = false;
 let expandedHeight = 0;
@@ -35,7 +36,7 @@ async function request(path, { json, ...options } = {}) {
   throw error;
 }
 
-const settings = initSettings({ onPreviewChange: changePreviewMode });
+const settings = initSettings({ request, refresh: refreshSettings, onPreviewChange: changePreviewMode });
 const worldScreen = initWorldScreen({ request, onCreated, rename, discard, changeJob });
 const navigation = initNavigation({
   display,
@@ -97,6 +98,19 @@ function refreshWorlds(force = false) {
     if (number === requestNumber) worldRequest = null;
   });
   return worldRequest;
+}
+
+async function refreshSettings() {
+  const number = ++settingsRequestNumber;
+  try {
+    const data = await request("/api/settings");
+    if (number === settingsRequestNumber) {
+      settings.render(data.keys);
+      settings.showError("");
+    }
+  } catch (error) {
+    if (number === settingsRequestNumber) settings.showError(error.message);
+  }
 }
 
 async function changeJob(world) {
@@ -167,6 +181,7 @@ function onCreated(world) {
     arrivingWorld: world.id,
   });
   refreshWorlds(true);
+  refreshSettings();
 }
 
 function display(path, previous) {
@@ -259,6 +274,7 @@ if (navigation.path.startsWith("/worlds/demo-")) {
 studio.tabIndex = -1;
 display(navigation.path);
 refreshWorlds();
+refreshSettings();
 setInterval(refreshWorlds, 1200);
 setInterval(() => {
   if (previewMode !== "demo") return;

@@ -38,7 +38,7 @@ body:has(#settings-overlay[data-closing]) .top-bar { z-index: 16; }
 }
 .settings-shell h2 { margin: 0; font-size: 22px; font-weight: 620; letter-spacing: -.035em; }
 .settings-layout { display: grid; grid-template-columns: min(21vw, 240px) minmax(0, 1fr); gap: clamp(23px, 2.6vw, 48px); }
-.settings-rail, .settings-glass-card {
+.settings-rail, .settings-glass-card, .key-dialog {
   border: 1px solid #b5efda29;
   border-radius: 20px;
   background: #0c251eaf;
@@ -58,14 +58,74 @@ body:has(#settings-overlay[data-closing]) .top-bar { z-index: 16; }
 .settings-section-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px 16px; margin-bottom: 22px; }
 .settings-section-header p, .settings-preview p { margin: 5px 0 0; font-size: 14px; line-height: 1.5; }
 .settings-preview { display: flex; justify-content: space-between; align-items: center; gap: 14px 20px; padding: 20px 22px; }
-.settings-preview p { color: #d7e1dcbd; }
+.settings-preview p, .key-usage, .key-empty { color: #d7e1dcbd; }
 .settings-preview .setting-picker { width: min(196px, 100%); flex-shrink: 0; }
-.settings-preview strong { font-size: 15px; font-weight: 620; }
+.settings-preview strong, .key-nickname { font-size: 15px; font-weight: 620; }
+#settings-error { margin-bottom: 12px; }
+#add-api-key { white-space: nowrap; }
+
+#key-list h3 {
+  margin: 0 0 7px 4px;
+  color: var(--color-text-inactive);
+  font-size: 11.5px;
+  font-weight: 650;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+.key-empty { margin: 0; padding: 22px; font-size: 14px; }
+.key-row { display: flex; justify-content: space-between; align-items: center; gap: 12px 24px; padding: 15px 22px; }
+.key-row + .key-row { border-top: 1px solid #ffffff14; }
+.key-row > div:first-child { min-width: 0; }
+.key-actions { display: flex; align-items: center; }
+.key-actions { gap: 12px; flex-shrink: 0; }
+.key-nickname, .key-usage { overflow-wrap: anywhere; }
+.key-usage { margin: 4px 0 0; font-size: 13px; line-height: 1.4; }
+.key-actions button { color: #d7e1dca6; font-size: 13px; }
+.key-actions .replace-key { display: flex; align-items: center; gap: 7px; padding: 7px 4px; }
+.key-actions .replace-key:hover { color: var(--color-text); }
+#settings-overlay :is(.icon-button, .replace-key) svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.dialog-field input, .dialog-provider {
+  width: 100%;
+  min-width: 0;
+  min-height: 38px;
+  padding: 7px 12px;
+  border: 1px solid #ffffff40;
+  border-radius: 8px;
+  outline: 0;
+  background: #143329ad;
+  color: var(--color-text);
+  font: inherit;
+}
+.dialog-field input:focus { border-color: #ffffffb3; }
+
+.key-dialog { background: #0b2019f5; max-height: calc(100dvh - 28px); }
+.key-dialog > p { color: var(--color-text-muted); margin-bottom: 22px; }
+.key-dialog form, #new-key-details { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
+.dialog-field { display: grid; gap: 5px; font-size: 14px; color: var(--color-text-muted); }
+.dialog-provider { display: flex; align-items: center; }
+.key-secret-control { position: relative; }
+.key-secret-control input { padding-right: 38px; }
+.key-secret-control input[data-masked="true"] { -webkit-text-security: disc; }
+.key-secret-control button { position: absolute; inset: 50% 6px auto auto; transform: translateY(-50%); }
+.key-dialog .studio-error { margin: 0; color: #ffb9bd; }
+.dialog-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-top: 8px; }
+.dialog-cancel { background: #ffffff1c; border-color: #ffffff24; }
+.key-dialog button:disabled { opacity: .58; }
+
 @media (max-width: 650px) {
   .settings-layout { grid-template-columns: 1fr; gap: 20px; }
   .settings-rail { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .settings-section-header, .settings-preview { flex-wrap: wrap; }
-  .settings-preview { padding-inline: 16px; }
+  .settings-section-header, .settings-preview, .key-row { flex-wrap: wrap; }
+  .settings-preview, .key-row { padding-inline: 16px; }
+  .key-row > div:first-child { width: 100%; }
 }
 @media (prefers-reduced-motion: reduce) {
   #settings-overlay { animation: none; }

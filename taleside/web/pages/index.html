@@ -210,9 +210,21 @@
     <div class="settings-shell">
       <div class="settings-layout">
         <div class="settings-rail" role="tablist" aria-label="Settings sections" aria-orientation="vertical">
-          <button type="button" role="tab" id="developer-options-tab" aria-controls="settings-developer-options" aria-selected="true">Developer Options</button>
+          <button type="button" role="tab" id="api-keys-tab" aria-controls="settings-api-keys" aria-selected="true">API Keys</button>
+          <button type="button" role="tab" id="developer-options-tab" aria-controls="settings-developer-options" aria-selected="false" tabindex="-1">Developer Options</button>
         </div>
-        <section role="tabpanel" id="settings-developer-options" aria-labelledby="developer-options-tab">
+        <section role="tabpanel" id="settings-api-keys" aria-labelledby="api-keys-tab">
+          <div class="settings-section-header">
+            <div>
+              <h2>API Keys</h2>
+              <p>Provider API keys used across TaleSide.</p>
+            </div>
+            <button type="button" class="studio-pill primary" id="add-api-key">+ Add API Key</button>
+          </div>
+          <p class="studio-error" id="settings-error" role="alert" hidden></p>
+          <div id="key-list" aria-busy="true"></div>
+        </section>
+        <section role="tabpanel" id="settings-developer-options" aria-labelledby="developer-options-tab" hidden>
           <div class="settings-section-header">
             <div>
               <h2>Developer Options</h2>
@@ -230,5 +242,49 @@
       </div>
     </div>
   </section>
+  <dialog class="studio-dialog key-dialog" id="key-dialog" aria-labelledby="key-dialog-title" aria-describedby="key-dialog-description">
+    <h2 id="key-dialog-title"></h2>
+    <p id="key-dialog-description"></p>
+    <form id="key-form">
+      <div id="new-key-details">
+        <div class="dialog-field">
+          <span>Provider</span>
+          <span class="dialog-provider">Google Gemini</span>
+        </div>
+        <label class="dialog-field">Key Name
+          <input id="key-nickname" type="text" autocomplete="off">
+        </label>
+      </div>
+      <div class="dialog-field">
+        <label for="key-secret" id="key-secret-label">API Key</label>
+        <div class="key-secret-control">
+          <input id="key-secret" type="text" data-masked="true" autocomplete="off" spellcheck="false"
+            data-1p-ignore="true" data-lpignore="true" data-bwignore="true" required>
+          <button type="button" class="icon-button" id="reveal-key" aria-label="Show API key" aria-pressed="false">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6Z"/><circle cx="12" cy="12" r="2.5"/></svg>
+          </button>
+        </div>
+      </div>
+      <p class="studio-error" id="key-dialog-error" role="alert" hidden></p>
+      <div class="dialog-actions">
+        <button type="button" class="studio-pill dialog-cancel" id="key-dialog-cancel">Cancel</button>
+        <button type="submit" class="studio-pill primary" id="save-key">Save Key</button>
+      </div>
+    </form>
+  </dialog>
+  <template id="key-row-template">
+    <div class="key-row">
+      <div>
+        <span class="key-nickname"></span>
+        <p class="key-usage"></p>
+      </div>
+      <div class="key-actions">
+        <button type="button" class="replace-key">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 2.6-6.4L3 8m0-5v5h5"/></svg>
+          Replace key
+        </button>
+      </div>
+    </div>
+  </template>
 </body>
 </html>
