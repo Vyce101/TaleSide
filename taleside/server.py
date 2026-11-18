@@ -211,6 +211,8 @@ class Handler(BaseHTTPRequestHandler):
         worlds = self.server.worlds
         if action == "rename":
             updated = worlds.rename(world_id, self.read_json().get("name"))
+        elif action == "embedding-key":
+            updated = worlds.set_embedding_key(world_id, self.read_json().get("key_id"))
         elif action == "discard":
             updated = worlds.discard(world_id)
         elif action == "pause":

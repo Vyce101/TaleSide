@@ -257,6 +257,13 @@ class Worlds:
         with self.lock, self.connect() as db:
             return bool(db.execute("DELETE FROM worlds WHERE id = ? AND status != 'draft'", (world_id,)).rowcount)
 
+    def set_embedding_key(self, world_id, key_id):
+        with self.lock, self.connect() as db:
+            self.keys.require(db, key_id)
+            return bool(db.execute("""
+                UPDATE worlds SET key_id = ? WHERE id = ? AND status IN ('paused', 'failed', 'ready')
+            """, (key_id, world_id)).rowcount)
+
     def pause(self, world_id):
         with self.lock, self.connect() as db:
             active = self.active_chunk is not None and self.active_chunk[0] == world_id

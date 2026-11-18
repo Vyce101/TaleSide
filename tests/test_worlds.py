@@ -6,6 +6,7 @@ import time
 import unittest
 from functools import partial
 from pathlib import Path
+from struct import pack
 from types import SimpleNamespace
 from threading import Event, Thread
 from urllib.error import HTTPError
@@ -14,6 +15,7 @@ from uuid import uuid4
 
 from taleside.books import BookSource
 from taleside.embeddings import EmbeddingError
+from taleside.provider_keys import KeyConflict
 from taleside.server import Server
 from taleside.worlds import Worlds
 
@@ -114,16 +116,26 @@ class WorldTests(unittest.TestCase):
         world = self.prepare("World", [BookSource("Book.txt", b"abcdefgh")], 4, 0)
         self.assertTrue(self.worlds.accept(world["id"]))
         self.assertTrue(self.provider.started.wait(2))
+        work_key = self.worlds.keys.add("gemini", "Work", "fake-work-key")["id"]
+        self.assertFalse(self.worlds.set_embedding_key(world["id"], work_key))
         self.assertTrue(self.worlds.pause(world["id"]))
         self.assertEqual(self.worlds.detail(world["id"])["status"], "pausing")
+        with self.assertRaises(KeyConflict):
+            self.worlds.keys.replace(self.key, "fake-replacement")
+        self.worlds.keys.rename(self.key, "Personal key")
         self.assertFalse(self.worlds.resume(world["id"]))
         self.provider.release.set()
         wait_for(lambda: self.worlds.list()[0]["status"] == "paused")
         self.assertEqual(self.worlds.list()[0]["embedded_chunks"], 1)
         self.assertEqual(self.worlds.list()[0]["status"], "paused")
+        self.assertTrue(self.worlds.set_embedding_key(world["id"], work_key))
         self.assertTrue(self.worlds.resume(world["id"]))
         wait_for(lambda: self.worlds.list()[0]["status"] == "ready")
         self.assertEqual(self.provider.embedded, ["title: Book | text: abcd", "title: Book | text: efgh"])
+        self.assertEqual(self.provider.embed_requests, [
+            ("fake-personal-key", "gemini-embedding-2", 3072, "title: Book | text: abcd"),
+            ("fake-work-key", "gemini-embedding-2", 3072, "title: Book | text: efgh"),
+        ])
 
     def test_restarted_job_waits_for_resume_and_keeps_the_saved_vector(self):
         self.provider.release.clear()
@@ -208,6 +220,39 @@ class WorldTests(unittest.TestCase):
             ("fake-replacement-secret", "gemini-embedding-2", 3072, "title: Book | text: chapter"),
         ])
         self.assertEqual(self.worlds.keys.settings()["defaults"]["key_id"], alternate)
+
+    def test_legacy_world_resumes_at_768_dimensions_after_assigning_a_key(self):
+        self.provider.release.clear()
+        draft = self.prepare("World", [BookSource("Book.txt", b"abcdefgh")], 4, 0)
+        world_id = draft["id"]
+        self.worlds.accept(world_id)
+        self.assertTrue(self.provider.started.wait(2))
+        self.worlds.pause(world_id)
+        self.provider.release.set()
+        wait_for(lambda: self.worlds.detail(world_id)["status"] == "paused")
+        self.worlds.close()
+        saved_vector = pack("<768f", *([0.25] * 768))
+        with self.worlds.connect() as db:
+            db.execute("UPDATE chunks SET vector = ? WHERE vector IS NOT NULL", (saved_vector,))
+            db.execute("UPDATE worlds SET dimensions = 768")
+            db.execute("ALTER TABLE worlds DROP COLUMN key_id")
+            db.execute("ALTER TABLE worlds DROP COLUMN max_token_limit")
+            db.execute("DROP TABLE embedding_defaults")
+            db.execute("DROP TABLE provider_keys")
+
+        self.worlds = Worlds(self.database, self.provider)
+        world = self.worlds.detail(world_id)
+        self.assertEqual((world["dimensions"], world["max_token_limit"], world["key_id"]), (768, 8192, None))
+        key = self.worlds.keys.add("gemini", "New", "fake-new-key")["id"]
+        with self.assertRaises(KeyConflict):
+            self.worlds.resume(world_id)
+        self.assertTrue(self.worlds.set_embedding_key(world_id, key))
+        self.assertTrue(self.worlds.resume(world_id))
+        wait_for(lambda: self.worlds.detail(world_id)["status"] == "ready")
+        self.assertEqual(self.provider.embed_requests[-1],
+                         ("fake-new-key", "gemini-embedding-2", 768, "title: Book | text: efgh"))
+        with self.worlds.connect() as db:
+            self.assertEqual(db.execute("SELECT vector FROM chunks WHERE number = 1").fetchone()[0], saved_vector)
 
     def test_provider_key_api_omits_secrets_and_rejects_cross_origin_changes(self):
         with Server(self.worlds) as server:
