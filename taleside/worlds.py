@@ -20,6 +20,7 @@ from .embeddings import (
     embedding_input,
     valid_vector,
 )
+from .provider_keys import KEY_SCHEMA, ProviderKeys
 from .world_imports import CheckedBooks, check_books
 
 IMPORT_TIMEOUT_SECONDS = 30 * 60
@@ -34,6 +35,7 @@ CREATE TABLE IF NOT EXISTS worlds (
     max_token_limit INTEGER NOT NULL,
     max_chunk_size INTEGER NOT NULL,
     boundary_search_distance INTEGER NOT NULL,
+    key_id TEXT REFERENCES provider_keys ON DELETE SET NULL,
     error TEXT
 );
 CREATE TABLE IF NOT EXISTS books (
@@ -79,15 +81,18 @@ class Worlds:
         self.wake = Event()
         self.stopping = Event()
         self.lock = Lock()
+        self.keys = ProviderKeys(self.connect, self.lock)
         self.imports = {}
         self.active_chunk = None
         with self.connect() as db:
             db.execute("PRAGMA journal_mode = WAL")
-            db.executescript(SCHEMA)
+            db.executescript(KEY_SCHEMA + SCHEMA)
             db.execute("BEGIN")
             columns = {column["name"] for column in db.execute("PRAGMA table_info(worlds)")}
             if "max_token_limit" not in columns:
                 db.execute("ALTER TABLE worlds ADD COLUMN max_token_limit INTEGER NOT NULL DEFAULT 8192")
+            if "key_id" not in columns:
+                db.execute("ALTER TABLE worlds ADD COLUMN key_id TEXT REFERENCES provider_keys ON DELETE SET NULL")
             db.execute("UPDATE worlds SET status = 'paused' WHERE status IN ('creating', 'pausing')")
         self.worker = Thread(target=self.run, name="World embeddings", daemon=True)
         self.worker.start()

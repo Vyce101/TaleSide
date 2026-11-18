@@ -5,6 +5,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 MODEL = "gemini-embedding-2"
+PROVIDER = "gemini"
 DIMENSIONS = 3072
 TOKEN_LIMIT = 8192
 
