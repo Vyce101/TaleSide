@@ -1,0 +1,52 @@
+.tales-toolbar, .tales-toolbar-settings {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.tales-toolbar { justify-content: space-between; margin-bottom: 20px; }
+.tales-toolbar-settings label { display: flex; align-items: center; gap: 10px; }
+.tales-empty {
+  border: 1px dashed #c0e0cf55;
+  border-radius: 13px;
+  padding: 28px 16px;
+  text-align: center;
+  color: #c2d0c8;
+}
+.tale-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  gap: 12px;
+  align-items: center;
+  border-radius: 12px;
+  padding: 9px 12px;
+}
+.tale-row:hover, .tale-row:focus-within { background: #f1faed0e; }
+.tale-row .tale-pin, .tale-row-action { opacity: 0; }
+.tale-row :is(.icon-button):focus-visible, .tale-row:hover button, .tale-row:focus-within button { opacity: 1; }
+.tale-row.pinned .tale-pin { opacity: 1; color: #eacf8d; }
+.tale-title-line, .tale-name-edit { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.tale-title-line a { color: var(--color-text); font-weight: 650; text-decoration: none; overflow-wrap: anywhere; }
+.tale-title-line a:hover { text-decoration: underline; }
+.tale-preview, .tale-row-meta { margin: 0; color: #c0cfc6; font-size: 13px; }
+.tale-preview { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; line-height: 1.5; }
+.tale-divider { border: 0; border-top: 1px solid #e5ffee21; margin: 6px 12px; }
+#tales-error { margin-bottom: 10px; }
+
+.tale-name-edit input, #tales-panel select, .tale-setting-fields :is(input:not([type="checkbox"]), select, button) {
+  background: #081c16;
+  border: 1px solid #d3eee147;
+  border-radius: 8px;
+  color: var(--color-text);
+  padding: 7px 9px;
+  min-width: 0;
+}
+#tales-panel select { max-width: min(260px, 50vw); }
+@media (max-width: 540px) {
+  .tale-row { grid-template-columns: auto minmax(0, 1fr) auto; gap: 4px 6px; padding-inline: 4px; }
+  .tale-row-meta { grid-column: 2; grid-row: 2; }
+  .tale-row > .tale-row-action { grid-column: 3; grid-row: 1; }
+}
+@media (hover: none) {
+  .tale-row .tale-pin, .tale-row-action { opacity: 1; }
+}
