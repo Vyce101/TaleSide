@@ -214,9 +214,11 @@ body[data-view="tale"] .hero-frame::after { display: none; }
 }
 #tales-panel select { max-width: min(260px, 50vw); }
 .tale-setting-fields select { max-width: 62%; }
+#chat-profile { width: 100%; max-width: none; }
 #reset-wrappers { justify-self: end; }
 .tale-setting-fields button:hover:not(:disabled) { background: #24493d; }
 .tale-setting-fields button:disabled { opacity: .45; }
+.chat-profile-actions { display: flex; flex-wrap: wrap; gap: 6px; }
 #thinking-level-options { display: flex; gap: 4px; }
 #thinking-level-options button { flex: 1; }
 #thinking-level-options button[aria-pressed="true"] { background: #285247; }

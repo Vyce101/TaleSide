@@ -1,12 +1,13 @@
-import { element, errorText, fillSelect } from "./controls.js";
+import { editName, element, errorText, fillSelect } from "./controls.js";
 
 const wrapperNames = { world_info: "World Info", retrieved_passages: "Retrieved Passages", chat_history: "Chat History" };
 const modelLevels = { LOW: "Low", MEDIUM: "Medium", HIGH: "High", XHIGH: "XHigh" };
 
-export function initTaleSettings({ request, addKey, onWorldChange }) {
+export function initTaleSettings({ request, addKey, onWorldChange, confirm }) {
   const drawer = element("tale-settings");
   const body = drawer.querySelector(".tale-settings-body");
   const error = element("tale-settings-error");
+  const profile = element("chat-profile");
   const modelSelect = element("chat-model");
   const chatKey = element("chat-key");
   const add = element("add-chat-key");
@@ -21,6 +22,7 @@ export function initTaleSettings({ request, addKey, onWorldChange }) {
   let saving = Promise.resolve();
   let loading = 0;
   let changingKey = false;
+  let profileEdit;
   let opener;
 
   for (const [id, name] of Object.entries(wrapperNames)) {
@@ -78,8 +80,13 @@ export function initTaleSettings({ request, addKey, onWorldChange }) {
   function render() {
     renderRetrieval();
     if (!state) return;
-    const { settings, models } = state;
+    const { settings, profiles, models } = state;
     const model = models.find(model => model.id === settings.model);
+    fillSelect(profile, profiles, settings.profile_id, profiles.length ? "Select profile" : "No saved profiles");
+    for (const id of ["save", "rename", "delete"]) {
+      element(`profile-${id}`).disabled = !settings.profile_id || Boolean(profileEdit);
+    }
+    element("profile-create").disabled = Boolean(profileEdit);
     const providers = new Map();
     for (const option of models) {
       if (!providers.has(option.provider)) providers.set(option.provider, []);
@@ -149,6 +156,22 @@ export function initTaleSettings({ request, addKey, onWorldChange }) {
     save("/api/tale-settings", changes);
   }
 
+  function profileAction(action, fields) {
+    return save(`/api/chat-profiles/${action}`, fields);
+  }
+
+  function editProfile(action) {
+    if (profileEdit || !state) return;
+    const id = state.settings.profile_id;
+    const name = action === "rename" ? state.profiles.find(item => item.id === id).name : "";
+    profileEdit = editName(profile, name, "Profile name", value => profileAction(action, { id, name: value }), () => {
+      profileEdit = null;
+      render();
+      profile.focus();
+    }, message => errorText(error, message));
+    render();
+  }
+
   for (const input of controls) input.addEventListener("change", () => {
     if (input.type === "number" && !Number.isFinite(input.valueAsNumber)) {
       input.value = state.settings[input.dataset.setting];
@@ -165,6 +188,16 @@ export function initTaleSettings({ request, addKey, onWorldChange }) {
   }
   hubKey.addEventListener("change", () => changeRetrieval(hubKey.value));
   drawerKey.addEventListener("change", () => changeRetrieval(drawerKey.value));
+  profile.addEventListener("change", () => profileAction("select", { id: profile.value || null }));
+  element("profile-save").addEventListener("click", () => profileAction("save", { id: profile.value }));
+  element("profile-create").addEventListener("click", () => editProfile("create"));
+  element("profile-rename").addEventListener("click", () => editProfile("rename"));
+  element("profile-delete").addEventListener("click", async () => {
+    const { id, name } = state.profiles.find(item => item.id === state.settings.profile_id);
+    if (await confirm(`Delete “${name}”?`, "This removes the saved Chat Profile.", "Cancel", "Delete Profile", true)) {
+      profileAction("delete", { id });
+    }
+  });
   element("reset-wrappers").addEventListener("click", () => update({ wrappers: state.wrapper_defaults }));
   add.addEventListener("click", () => addKey({
     onAdded: key => save("/api/tale-settings", { chat_key_id: key.id }),
@@ -175,6 +208,9 @@ export function initTaleSettings({ request, addKey, onWorldChange }) {
     if (event.target === drawer && event.clientX < drawer.getBoundingClientRect().left) drawer.close();
   });
   drawer.addEventListener("close", () => {
+    profileEdit?.remove();
+    profileEdit = null;
+    profile.hidden = false;
     render();
     opener?.focus({ preventScroll: true });
   });

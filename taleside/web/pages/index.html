@@ -230,6 +230,18 @@
       <p class="studio-error" id="tale-settings-error" role="alert" hidden></p>
       <div class="tale-settings-shared">
         <details open>
+          <summary>Chat Profile</summary>
+          <div class="tale-setting-fields">
+            <div id="chat-profile-field"><select id="chat-profile" aria-label="Chat Profile"></select></div>
+            <div class="chat-profile-actions">
+              <button type="button" id="profile-save">Save</button>
+              <button type="button" id="profile-create">Save As</button>
+              <button type="button" id="profile-rename">Rename</button>
+              <button type="button" id="profile-delete">Delete</button>
+            </div>
+          </div>
+        </details>
+        <details open>
           <summary>Model &amp; Reasoning</summary>
           <div class="tale-setting-fields">
             <label>Chat Model <select id="chat-model" data-setting="model"></select></label>
