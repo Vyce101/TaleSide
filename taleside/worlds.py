@@ -97,6 +97,9 @@ class Worlds:
                 db.execute("ALTER TABLE worlds ADD COLUMN max_token_limit INTEGER NOT NULL DEFAULT 8192")
             if "key_id" not in columns:
                 db.execute("ALTER TABLE worlds ADD COLUMN key_id TEXT REFERENCES provider_keys ON DELETE SET NULL")
+            if "retrieval_key_id" not in columns:
+                db.execute("ALTER TABLE worlds ADD COLUMN retrieval_key_id TEXT REFERENCES provider_keys ON DELETE SET NULL")
+                db.execute("UPDATE worlds SET retrieval_key_id = key_id")
             if "last_tale_activity_at" not in columns:
                 db.execute("ALTER TABLE worlds ADD COLUMN last_tale_activity_at REAL")
             db.execute("UPDATE worlds SET status = 'paused' WHERE status IN ('creating', 'pausing')")
@@ -194,6 +197,7 @@ class Worlds:
                                         boundary_search_distance, key_id, status)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'creating')
                 """, pending.world_row)
+                db.execute("UPDATE worlds SET retrieval_key_id = key_id WHERE id = ?", (world_id,))
                 db.executemany("""
                     INSERT INTO books (world_id, number, name, filename, original, working, encoding, bom_size)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)

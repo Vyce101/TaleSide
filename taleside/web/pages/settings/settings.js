@@ -311,6 +311,10 @@ export function initSettings({ request, refresh, onPreviewChange }) {
         ? `${usage} ${affected} will automatically switch to “${impact.fallback.nickname}”.`
         : `${usage} This is your last Google Gemini key. Add and assign a new key before ${affected.toLowerCase()} can use Gemini again.`;
     }
+    if (impact.tales_use_key) {
+      const clearing = "This also clears the key wherever it is selected for Tales or saved Chat Profiles.";
+      description = used ? `${description} ${clearing}` : clearing;
+    }
     element("delete-key-description").textContent = description;
     confirmDelete.textContent = last ? "Delete Last Key" : used ? "Delete & Auto-Switch" : "Delete Key";
     confirmDelete.classList.toggle("danger-last-key", last);

@@ -1,7 +1,9 @@
 """Store Tales, their ordered messages, and active generations."""
+
 from time import time
 from uuid import uuid4
 
+from .embeddings import MODEL
 from .gemini_tales import GeminiTale
 from .provider_keys import KeyConflict, required_text
 from .tale_settings import SETTINGS_SCHEMA, edit_profile, settings_view, update_settings
@@ -66,6 +68,16 @@ class Tales:
             elif changes is not None:
                 update_settings(db, changes)
             return settings_view(db)
+
+    def set_retrieval_key(self, world_id, key_id):
+        with self.worlds.lock, self.worlds.connect() as db:
+            world = saved_world(db, world_id)
+            if world["status"] in ("creating", "pausing"):
+                raise KeyConflict("Wait for World creation to pause or finish.")
+            if world["model"] != MODEL:
+                raise KeyConflict("This World's embedding model is unavailable.")
+            self.worlds.keys.require(db, key_id, message="Choose a compatible Retrieval Key.")
+            db.execute("UPDATE worlds SET retrieval_key_id = ? WHERE id = ?", (key_id, world_id))
 
     def list(self, world_id):
         with self.worlds.lock, self.worlds.connect() as db:
@@ -144,3 +156,4 @@ class Tales:
         generation = self.active.get(tale_id)
         if generation:
             generation.cancel()
+

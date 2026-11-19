@@ -43,9 +43,9 @@ class ProviderKeys:
         return db.execute("SELECT * FROM provider_keys WHERE id = ? AND provider = ?",
                           (key_id, PROVIDER)).fetchone()
 
-    def require(self, db, key_id):
+    def require(self, db, key_id, *, message="Choose a saved Google Gemini key in World Settings."):
         if not isinstance(key_id, str) or (key := self._key(db, key_id)) is None:
-            raise KeyConflict("Choose a saved Google Gemini key in World Settings.")
+            raise KeyConflict(message)
         return key
 
     def secret(self, db, key_id):
@@ -149,6 +149,11 @@ class ProviderKeys:
             "worlds": [{"id": world["id"], "name": world["name"]} for world in worlds],
             "fallback": self._summary(fallback) if fallback else None,
             "busy": self._busy(key_id, worlds),
+            "tales_use_key": any(db.execute(f"SELECT 1 FROM {table} WHERE {column} = ? LIMIT 1",
+                                           (key_id,)).fetchone()
+                                 for table, column in (("worlds", "retrieval_key_id"),
+                                                       ("tale_settings", "chat_key_id"),
+                                                       ("chat_profiles", "chat_key_id"))),
         }
 
     def delete_impact(self, key_id):

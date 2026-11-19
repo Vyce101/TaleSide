@@ -7,6 +7,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from taleside.books import BookSource
+from taleside.provider_keys import KEY_SCHEMA
 from taleside.worlds import SCHEMA, Worlds
 from test_worlds import Provider, wait_for
 
@@ -38,3 +39,40 @@ class TaleTests(unittest.TestCase):
         self.assertTrue(self.worlds.discard(self.world))
         with self.worlds.connect() as db:
             self.assertEqual(db.execute("SELECT count(*) FROM tales").fetchone()[0], 0)
+    def test_profile_round_trip_and_key_deletion_clear_only_tale_assignments(self):
+        tales = self.worlds.tales
+        tales.set_retrieval_key(self.world, self.chat_key)
+        self.assertEqual(self.worlds.detail(self.world)["key_id"], self.key)
+        profile_id = tales.settings({"name": "Readers"}, "create")["settings"]["profile_id"]
+        tales.settings({"output_limit": 511})
+        tales.settings({"id": profile_id}, "select")
+        self.assertEqual(tales.settings()["settings"]["output_limit"], 65536)
+        tales.settings({"id": profile_id, "name": "New name"}, "rename")
+        self.assertEqual(tales.settings()["profiles"][0]["name"], "New name")
+        keys = self.worlds.keys
+        keys.delete(self.chat_key, keys.delete_impact(self.chat_key))
+        self.assertIsNone(self.worlds.detail(self.world)["retrieval_key_id"])
+        self.assertIsNone(tales.settings()["settings"]["chat_key_id"])
+        self.worlds.close()
+        self.worlds = Worlds(self.database, Provider())
+        tales = self.worlds.tales
+        tales.settings({"id": profile_id}, "select")
+        self.assertIsNone(tales.settings()["settings"]["chat_key_id"])
+        self.assertIsNone(self.worlds.detail(self.world)["retrieval_key_id"])
+        self.assertEqual(self.worlds.detail(self.world)["key_id"], self.key)
+        self.assertIsNone(tales.settings({"id": profile_id}, "delete")["settings"]["profile_id"])
+
+    def test_legacy_world_copies_its_existing_key_on_migration(self):
+        path = self.database.with_name("legacy.sqlite3")
+        key = uuid4().hex
+        with closing(sqlite3.connect(path)) as db, db:
+            db.executescript(KEY_SCHEMA + SCHEMA)
+            db.execute("INSERT INTO provider_keys VALUES (?, 'gemini', 'Saved key', X'00')", (key,))
+            db.execute("""
+                INSERT INTO worlds (id, name, status, model, dimensions, max_token_limit,
+                                    max_chunk_size, boundary_search_distance, key_id)
+                VALUES (?, 'Legacy', 'ready', 'gemini-embedding-2', 768, 8192, 8000, 1000, ?)
+            """, (self.world, key))
+        worlds = Worlds(path, Provider())
+        self.addCleanup(worlds.close)
+        self.assertEqual(worlds.detail(self.world)["retrieval_key_id"], key)
