@@ -5,6 +5,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 MODEL = "gemini-embedding-2"
+MODEL_001 = "gemini-embedding-001"
 PROVIDER = "gemini"
 DIMENSIONS = 3072
 TOKEN_LIMIT = 8192
@@ -15,6 +16,21 @@ MODEL_INFO = {
     "dimensions": DIMENSIONS,
     "max_token_limit": TOKEN_LIMIT,
 }
+MODELS = {
+    MODEL: MODEL_INFO,
+    # Embedding 001 reserves eight tokens beyond the text counted by countTokens.
+    MODEL_001: {**MODEL_INFO, "id": MODEL_001, "max_token_limit": 2040},
+}
+
+
+def embedding_body(model, dimensions, text):
+    content = {"parts": [{"text": text}]}
+    if model == MODEL_001:
+        return {"content": content, "outputDimensionality": dimensions}
+    return {
+        "content": content,
+        "embedContentConfig": {"outputDimensionality": dimensions, "autoTruncate": False},
+    }
 
 
 class EmbeddingError(Exception):
@@ -88,10 +104,7 @@ class Gemini:
         return total
 
     def embed(self, text):
-        response = self.request("embedContent", {
-            "content": {"parts": [{"text": text}]},
-            "embedContentConfig": {"outputDimensionality": self.dimensions, "autoTruncate": False},
-        })
+        response = self.request("embedContent", embedding_body(self.model, self.dimensions, text))
         try:
             values = response["embedding"]["values"]
         except (KeyError, TypeError):

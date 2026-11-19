@@ -6,7 +6,7 @@ from contextlib import closing
 from time import time
 from uuid import uuid4
 
-from .embeddings import MODEL, EmbeddingError
+from .embeddings import MODEL_001, MODELS, EmbeddingError
 from .gemini_tales import GeminiTale, Generation, GenerationCancelled, InputTooLarge
 from .provider_keys import KeyConflict, required_text, save_key_selection, selected_keys
 from .tale_retrieval import chat_request, passages, query_text, retrieval_index
@@ -82,7 +82,7 @@ class Tales:
     def set_retrieval_keys(self, world_id, key_ids):
         with self.worlds.lock, self.worlds.connect() as db:
             world = saved_world(db, world_id)
-            if world["model"] != MODEL:
+            if world["model"] not in MODELS:
                 raise KeyConflict("This World's embedding model is unavailable.")
             self.worlds.keys.validate_selection(db, key_ids, "Choose compatible Retrieval Keys.")
             save_key_selection(db, "world_retrieval_keys", world_id, key_ids)
@@ -278,6 +278,14 @@ class Tales:
 
     @staticmethod
     def embed(provider, world, next_key, messages):
+        if world["model"] == MODEL_001:
+            while messages:
+                text = query_text(messages)
+                count = provider.count(world["model"], next_key(), {"contents": [{"parts": [{"text": text}]}]})
+                if count <= world["max_token_limit"]:
+                    return provider.embed(world, next_key(), text)
+                messages = messages[1:]
+            raise InputTooLarge("Gemini's input limit was exceeded.")
         while True:
             try:
                 return provider.embed(world, next_key(), query_text(messages))

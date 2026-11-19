@@ -5,7 +5,7 @@ import socket
 from http.client import HTTPSConnection, HTTPException
 from threading import Event, Lock
 
-from .embeddings import EmbeddingError
+from .embeddings import EmbeddingError, embedding_body
 
 HOST = "generativelanguage.googleapis.com"
 
@@ -108,10 +108,8 @@ class GeminiTale:
             connection.close()
 
     def embed(self, world, key, text):
-        response, = self.packets(world["model"], key, "embedContent", {
-            "content": {"parts": [{"text": text}]},
-            "embedContentConfig": {"outputDimensionality": world["dimensions"], "autoTruncate": False},
-        })
+        body = embedding_body(world["model"], world["dimensions"], text)
+        response, = self.packets(world["model"], key, "embedContent", body)
         return response["embedding"]["values"]
 
     def count(self, model, key, body):

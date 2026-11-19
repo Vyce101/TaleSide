@@ -13,9 +13,7 @@ from .books import (
     normalize_lines,
 )
 from .embeddings import (
-    DIMENSIONS,
-    MODEL,
-    TOKEN_LIMIT,
+    MODELS,
     EmbeddingError,
     Gemini,
     embedding_input,
@@ -212,9 +210,10 @@ class Worlds:
                 start_number += db.execute("SELECT count(*) FROM books WHERE world_id = ?", (target,)).fetchone()[0]
             if not isinstance(name, str):
                 raise ValueError("World names must be text.")
-            if model != MODEL:
+            if not isinstance(model, str) or model not in MODELS:
                 raise ValueError("Choose a supported embedding model.")
-            dimensions = DIMENSIONS if dimensions is None else dimensions
+            spec = MODELS[model]
+            dimensions = spec["dimensions"] if dimensions is None else dimensions
             if not books:
                 raise ValueError("Select at least one TXT book.")
             if type(max_size) is not int or max_size < 1:
@@ -239,7 +238,7 @@ class Worlds:
             with self.lock:
                 if pending.cancelled.is_set():
                     raise ValueError("The import was cancelled.")
-                pending.world_row = (model, dimensions, TOKEN_LIMIT, max_size, search_distance,
+                pending.world_row = (model, dimensions, spec["max_token_limit"], max_size, search_distance,
                                      name.strip() or DEFAULT_WORLD_NAME)
                 pending.books = ready
                 pending.timer = Timer(IMPORT_TIMEOUT_SECONDS, self.decline, args=(world_id,))
@@ -271,7 +270,7 @@ class Worlds:
                     """, (*pending.world_row, target))
                     save_key_selection(db, "world_embedding_keys", target, pending.key_ids)
                     save_key_selection(db, "world_retrieval_keys", target, pending.key_ids)
-                    self.keys.remember(db, MODEL, pending.key_ids)
+                    self.keys.remember(db, pending.world_row[0], pending.key_ids)
                 else:
                     world = self._editable(db, target, pending.revision)
                     index_number = world["index_number"]
@@ -457,7 +456,8 @@ class Worlds:
             world = db.execute("SELECT * FROM worlds WHERE id = ? AND status = 'creating'", (world_id,)).fetchone()
             if world is None or self.stopping.is_set():
                 return
-            if world["model"] != MODEL or not 128 <= world["dimensions"] <= DIMENSIONS:
+            spec = MODELS.get(world["model"])
+            if spec is None or not 128 <= world["dimensions"] <= spec["dimensions"]:
                 raise EmbeddingError("This World's saved embedding model or dimensions are unavailable.")
             dimensions = world["dimensions"]
             vector_format = Struct(f"<{dimensions}f")

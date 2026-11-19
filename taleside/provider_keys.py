@@ -3,7 +3,7 @@
 from uuid import uuid4
 
 from . import key_protection
-from .embeddings import MODEL, PROVIDER, EmbeddingError
+from .embeddings import MODEL, MODELS, PROVIDER, EmbeddingError
 
 KEY_SCHEMA = """
 CREATE TABLE IF NOT EXISTS provider_keys (
@@ -152,9 +152,10 @@ class ProviderKeys:
                 ]
                 keys.append(summary)
             last = db.execute("SELECT model FROM embedding_defaults WHERE id = 1").fetchone()
-            key_ids = (selected_keys(db, "embedding_default_keys", 1) if last and last["model"] == MODEL
+            model = last["model"] if last and last["model"] in MODELS else MODEL
+            key_ids = (selected_keys(db, "embedding_default_keys", 1) if last and last["model"] in MODELS
                        else [key["id"] for key in keys if key["provider"] == PROVIDER][:1])
-            defaults = {"model": MODEL, "key_ids": key_ids}
+            defaults = {"model": model, "key_ids": key_ids}
             return {"keys": keys, "defaults": defaults}
 
     @staticmethod

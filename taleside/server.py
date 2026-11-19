@@ -17,7 +17,7 @@ from threading import Thread
 from urllib.parse import unquote, urlsplit
 
 from .books import BookSource
-from .embeddings import MODEL_INFO, EmbeddingError
+from .embeddings import MODELS, EmbeddingError
 from .provider_keys import KeyConflict
 from .tales import MissingTaleKey, TaleNotFound
 
@@ -65,7 +65,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json(INSTANCE)
             return
         if path == "/api/settings":
-            self.send_json({"models": [MODEL_INFO], **self.server.worlds.keys.settings()})
+            self.send_json({"models": list(MODELS.values()), **self.server.worlds.keys.settings()})
             return
         impact = re.fullmatch(r"/api/provider-keys/([0-9a-f]{32})/delete-impact", path)
         if impact:
