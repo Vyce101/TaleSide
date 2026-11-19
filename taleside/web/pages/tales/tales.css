@@ -152,6 +152,58 @@ body[data-view="tale"] .hero-frame::after { display: none; }
 .tale-composer-actions #stop-tale { background: #ad4449; color: white; font-size: 13px; }
 #send-tale:disabled { opacity: .55; }
 
+#tale-settings {
+  position: fixed;
+  inset: 0 0 0 auto;
+  width: min(100%, 456px);
+  height: 100dvh;
+  max-height: none;
+  max-width: none;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  border-left: 1px solid #d3eee12b;
+  background: #0b211a;
+  color: var(--color-text);
+}
+#tale-settings[open] { display: flex; flex-direction: column; animation: drawer-in 180ms ease-out both; }
+#tale-settings::backdrop { background: #030f0bb5; backdrop-filter: blur(8px); }
+@keyframes drawer-in { from { translate: 100% 0; } }
+#tale-settings header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 20px;
+  border-bottom: 1px solid #d3eee122;
+}
+#tale-settings h2 { font-size: 17px; margin: 0; }
+.tale-settings-body { overflow-y: auto; overscroll-behavior: contain; padding: 16px; }
+.tale-settings-shared, #tale-settings-world {
+  border: 1px solid #d3eee126;
+  border-radius: 16px;
+  background: #b6f4dc05;
+}
+#tale-settings-world { margin-top: 16px; }
+.tale-settings-shared details + details { border-top: 1px solid #d3eee126; }
+#tale-settings details > summary {
+  padding: 13px 16px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  font-weight: 650;
+  cursor: pointer;
+}
+.tale-setting-fields { display: grid; gap: 14px; padding: 4px 16px 16px; font-size: 14px; }
+.tale-setting-fields > label, .chat-key-field label, .tale-setting-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+}
+.tale-setting-row span:last-child { text-align: end; color: #bae7d2; }
+.tale-setting-fields fieldset { padding: 0; border: 0; margin: 0; min-width: 0; }
+.tale-setting-fields legend { margin-bottom: 6px; font-size: 13px; }
+.tale-setting-fields input[type="number"] { width: 8em; text-align: right; }
 .tale-name-edit input, #tales-panel select, .tale-setting-fields :is(input:not([type="checkbox"]), select, button) {
   background: #081c16;
   border: 1px solid #d3eee147;
@@ -161,6 +213,18 @@ body[data-view="tale"] .hero-frame::after { display: none; }
   min-width: 0;
 }
 #tales-panel select { max-width: min(260px, 50vw); }
+.tale-setting-fields select { max-width: 62%; }
+#reset-wrappers { justify-self: end; }
+.tale-setting-fields button:hover:not(:disabled) { background: #24493d; }
+.tale-setting-fields button:disabled { opacity: .45; }
+#thinking-level-options { display: flex; gap: 4px; }
+#thinking-level-options button { flex: 1; }
+#thinking-level-options button[aria-pressed="true"] { background: #285247; }
+#wrapper-pairs { display: grid; gap: 12px; }
+#wrapper-pairs fieldset { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; }
+#wrapper-pairs input { width: 100%; font-family: monospace; }
+#tale-settings-error { margin-bottom: 12px; }
+
 @media (max-width: 540px) {
   .tale-row { grid-template-columns: auto minmax(0, 1fr) auto; gap: 4px 6px; padding-inline: 4px; }
   .tale-row-meta { grid-column: 2; grid-row: 2; }
@@ -170,6 +234,6 @@ body[data-view="tale"] .hero-frame::after { display: none; }
   .tale-row .tale-pin, .tale-row-action { opacity: 1; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .tale-pulse i { animation: none; }
+  #tale-settings[open], .tale-pulse i { animation: none; }
   .tale-thoughts summary::after { transition: none; }
 }

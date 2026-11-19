@@ -224,6 +224,50 @@
       </div>
     </form>
   </main>
+  <dialog id="tale-settings" aria-labelledby="tale-settings-title">
+    <header><h2 id="tale-settings-title">Tale Settings</h2><button type="button" class="icon-button" id="close-tale-settings" aria-label="Close Tale Settings">×</button></header>
+    <div class="tale-settings-body">
+      <p class="studio-error" id="tale-settings-error" role="alert" hidden></p>
+      <div class="tale-settings-shared">
+        <details open>
+          <summary>Model &amp; Reasoning</summary>
+          <div class="tale-setting-fields">
+            <label>Chat Model <select id="chat-model" data-setting="model"></select></label>
+            <div class="chat-key-field" id="chat-key-field">
+              <label id="chat-key-label">Chat Key <select id="chat-key" data-setting="chat_key_id"></select></label>
+              <button type="button" id="add-chat-key">＋ Add Google Gemini Key</button>
+            </div>
+            <fieldset id="thinking-level"><legend>Thinking Level</legend><div id="thinking-level-options"></div></fieldset>
+            <label id="thought-signatures-control">Thought signatures <input type="checkbox" data-setting="thought_signatures"></label>
+            <label>Output Limit <input type="number" min="256" step="1" data-setting="output_limit"></label>
+          </div>
+        </details>
+        <details open>
+          <summary>Retrieval (RAG)</summary>
+          <div class="tale-setting-fields">
+            <label>Retrieved Chunks <input type="number" min="1" step="1" data-setting="retrieved_chunks"></label>
+            <label>Minimum Similarity <input type="number" min="0" max="1" step="any" data-setting="minimum_similarity"></label>
+            <label>Chunk Overlap <input type="number" min="0" step="1" data-setting="chunk_overlap"></label>
+            <label>Messages to Embed <input type="number" min="1" step="1" data-setting="messages_to_embed"></label>
+          </div>
+        </details>
+        <details open>
+          <summary>XML Wrappers</summary>
+          <div class="tale-setting-fields">
+            <button type="button" id="reset-wrappers">Reset to Defaults</button>
+            <div id="wrapper-pairs"></div>
+          </div>
+        </details>
+      </div>
+      <details id="tale-settings-world" open>
+        <summary>This World</summary>
+        <div class="tale-setting-fields">
+          <div class="tale-setting-row"><span>Embedding Model</span> <span id="tale-embedding-model"></span></div>
+          <label>World Retrieval Key <select id="drawer-retrieval-key"></select></label>
+        </div>
+      </details>
+    </div>
+  </dialog>
   <dialog class="studio-dialog" id="studio-dialog" aria-labelledby="dialog-title" aria-describedby="dialog-description">
     <h2 id="dialog-title"></h2>
     <p id="dialog-description"></p>
