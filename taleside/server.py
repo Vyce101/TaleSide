@@ -245,6 +245,17 @@ class Handler(BaseHTTPRequestHandler):
         worlds = self.server.worlds
         if action == "rename":
             updated = worlds.rename(world_id, self.read_json().get("name"))
+        elif action in ("book-order", "remove-book"):
+            fields = self.read_json()
+            if action == "book-order":
+                worlds.edit_books(world_id, fields.get("book_revision"), order=fields.get("book_ids"))
+            else:
+                book_id = fields.get("book_id")
+                if not isinstance(book_id, str) or not WORLD_ID.fullmatch(book_id):
+                    raise ValueError("Choose a book in this World.")
+                worlds.edit_books(world_id, fields.get("book_revision"), remove=book_id)
+            self.send_json({"world": worlds.detail(world_id)})
+            return
         elif action == "embedding-key":
             updated = worlds.set_embedding_keys(world_id, self.read_json().get("key_ids"))
         elif action == "retrieval-key":

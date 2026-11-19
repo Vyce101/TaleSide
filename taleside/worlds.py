@@ -254,6 +254,41 @@ class Worlds:
         self.wake.set()
         return True
 
+    @staticmethod
+    def _editable(db, world_id, revision):
+        world = db.execute("SELECT * FROM worlds WHERE id = ? AND status != 'draft'", (world_id,)).fetchone()
+        if world is None or type(revision) is not int or revision != world["book_revision"]:
+            raise KeyConflict("This World changed. Refresh it and try again.")
+        if world["status"] not in ("paused", "failed", "ready"):
+            raise KeyConflict("Pause indexing and wait for the current request to finish.")
+        return world
+
+    def edit_books(self, world_id, revision, *, order=None, remove=None):
+        with self.lock, self.connect() as db:
+            world = self._editable(db, world_id, revision)
+            book_ids = [row["id"] for row in db.execute(
+                "SELECT id FROM books WHERE world_id = ? ORDER BY number", (world_id,))]
+            if remove is not None:
+                if remove not in book_ids:
+                    raise ValueError("Choose a book in this World.")
+                if len(book_ids) == 1:
+                    raise ValueError("Keep at least one book in the World.")
+                db.execute("DELETE FROM books WHERE id = ?", (remove,))
+                order = [book_id for book_id in book_ids if book_id != remove]
+            elif (not isinstance(order, list) or len(order) != len(book_ids)
+                  or any(not isinstance(book_id, str) for book_id in order) or set(order) != set(book_ids)):
+                raise ValueError("Provide every saved book in the new order.")
+            # Move positions out of the way before updating the unique order.
+            db.execute("UPDATE books SET number = -number WHERE world_id = ?", (world_id,))
+            db.executemany("UPDATE books SET number = ? WHERE id = ?", enumerate(order, 1))
+            if remove is not None and world["status"] != "ready" and not db.execute("""
+                SELECT 1 FROM chunks c JOIN books b ON b.id = c.book_id
+                WHERE b.world_id = ? AND c.index_number = ? AND c.vector IS NULL LIMIT 1
+            """, (world_id, world["index_number"])).fetchone():
+                self.verify(db, world, Struct(f"<{world['dimensions']}f"))
+                db.execute("UPDATE worlds SET status = 'ready', error = NULL WHERE id = ?", (world_id,))
+            db.execute("UPDATE worlds SET book_revision = book_revision + 1 WHERE id = ?", (world_id,))
+
     def decline(self, world_id):
         with self.lock:
             return self._cancel_import_locked(world_id)
@@ -326,7 +361,10 @@ class Worlds:
             """, (world_id,)).fetchone()
             if world is None:
                 return False
+            if selected_keys(db, "world_embedding_keys", world_id) == key_ids:
+                return True
             save_key_selection(db, "world_embedding_keys", world_id, key_ids)
+            db.execute("UPDATE worlds SET book_revision = book_revision + 1 WHERE id = ?", (world_id,))
             return True
 
     def pause(self, world_id):

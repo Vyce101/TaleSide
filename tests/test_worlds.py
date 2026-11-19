@@ -165,6 +165,28 @@ class WorldTests(unittest.TestCase):
         wait_for(lambda: self.worlds.list()[0]["status"] == "ready")
         self.assertEqual(self.provider.embedded, ["title: Book | text: abcd", "title: Book | text: efgh"])
 
+    def test_paused_books_resume_in_current_order_and_keep_completed_chunks(self):
+        self.provider.release.clear()
+        draft = self.prepare("World", [BookSource("First.txt", b"abcdefgh"), BookSource("Second.txt", b"ijkl")], 4, 0)
+        world_id = draft["id"]
+        self.worlds.accept(world_id)
+        self.assertTrue(self.provider.started.wait(2))
+        world = self.worlds.detail(world_id)
+        first, second = world["books"]
+        with self.assertRaises(KeyConflict):
+            self.worlds.edit_books(world_id, world["book_revision"], order=[second["id"], first["id"]])
+        self.worlds.pause(world_id)
+        self.provider.release.set()
+        wait_for(lambda: self.worlds.detail(world_id)["status"] == "paused")
+        self.worlds.edit_books(world_id, world["book_revision"], order=[second["id"], first["id"]])
+        paused = self.worlds.detail(world_id)
+        self.assertEqual([(book["number"], book["embedded_chunks"]) for book in paused["books"]], [(1, 0), (2, 1)])
+        self.worlds.resume(world_id)
+        wait_for(lambda: self.worlds.detail(world_id)["status"] == "ready")
+        self.assertEqual(self.provider.embedded, [
+            "title: First | text: abcd", "title: Second | text: ijkl", "title: First | text: efgh",
+        ])
+
     def test_failed_request_while_pausing_can_be_retried(self):
         self.provider.release.clear()
         self.provider.vector = EmbeddingError("Gemini is unavailable.")
