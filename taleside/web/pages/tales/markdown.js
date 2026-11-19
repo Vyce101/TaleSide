@@ -6,10 +6,15 @@ markdown.renderer.rules.image = (tokens, index) => markdown.utils.escapeHtml(tok
 // Use an opening mark, content and its matching closing mark from the original text.
 const dialogue = /"[^"\n]+"|“[^”\n]+”|«[^»\n]+»|「[^」\n]+」/gu;
 
-export function renderReply(container, text) {
+export function renderMarkdown(container, text, { tintQuotes = false } = {}) {
   const template = document.createElement("template");
   template.innerHTML = markdown.render(text);
-  const walker = document.createTreeWalker(template.content, NodeFilter.SHOW_TEXT);
+  if (tintQuotes) tintDialogue(template.content);
+  container.replaceChildren(template.content);
+}
+
+function tintDialogue(fragment) {
+  const walker = document.createTreeWalker(fragment, NodeFilter.SHOW_TEXT);
   const groups = [];
   let nodes;
   let block;
@@ -43,7 +48,6 @@ export function renderReply(container, text) {
       }
     }
   }
-  container.replaceChildren(template.content);
 }
 
 function tintNode(node, start, end, matches, firstMatch) {

@@ -70,15 +70,15 @@ body[data-view="tale"] .hero-frame::after { display: none; }
   border-left: 2px solid #d6b5758f;
   background: linear-gradient(90deg, #ceae6415, transparent);
 }
-.tale-reply > :first-child { margin-top: 0; }
-.tale-reply > :last-child { margin-bottom: 0; }
-.tale-reply :is(h1, h2, h3, h4, h5, h6) { line-height: 1.25; }
-.tale-reply :is(pre, code) { background: #061612b5; border-radius: 4px; }
-.tale-reply pre { padding: 12px; overflow: auto; }
-.tale-reply code { padding: 2px 4px; }
-.tale-reply pre code { padding: 0; background: none; }
-.tale-reply blockquote { margin-inline: 0; padding-inline-start: 14px; border-inline-start: 2px solid #bad0c168; }
-.tale-reply a { color: #a8ecd1; }
+.tale-markdown > :first-child { margin-top: 0; }
+.tale-markdown > :last-child { margin-bottom: 0; }
+.tale-markdown :is(h1, h2, h3, h4, h5, h6) { line-height: 1.25; }
+.tale-markdown :is(pre, code) { background: #061612b5; border-radius: 4px; }
+.tale-markdown pre { padding: 12px; overflow: auto; }
+.tale-markdown code { padding: 2px 4px; }
+.tale-markdown pre code { padding: 0; background: none; }
+.tale-markdown blockquote { margin-inline: 0; padding-inline-start: 14px; border-inline-start: 2px solid #bad0c168; }
+.tale-markdown a { color: #a8ecd1; }
 .tale-dialogue { color: #ffd28c; }
 .tale-thoughts { margin-bottom: 12px; font-size: 13px; color: #c3d6cd; }
 .tale-thoughts summary {
@@ -109,7 +109,6 @@ body[data-view="tale"] .hero-frame::after { display: none; }
   margin-top: 8px;
   padding: 4px 14px;
   border-left: 2px solid #c8e4d34d;
-  white-space: pre-wrap;
 }
 .tale-stopped, .tale-send-status { color: #bdc9c2; font-size: 13px; }
 .tale-pulse { display: flex; gap: 7px; justify-content: center; margin: 14px 0; }

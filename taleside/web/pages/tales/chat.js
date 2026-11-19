@@ -1,5 +1,5 @@
 import { editName, element, errorText, iconButton } from "./controls.js";
-import { renderReply } from "./markdown.js";
+import { renderMarkdown } from "./markdown.js";
 
 function turnNode(message) {
   const turn = document.createElement("article");
@@ -15,23 +15,29 @@ function turnNode(message) {
   thoughts.className = "tale-thoughts";
   const label = document.createElement("summary");
   const thinking = document.createElement("div");
+  thinking.className = "tale-markdown";
   thoughts.append(label, thinking);
   const stopped = document.createElement("p");
   stopped.className = "tale-stopped";
   stopped.textContent = "Stopped";
-  reading.className = "tale-reply";
+  reading.className = "tale-reply tale-markdown";
   turn.append(thoughts, reading, stopped);
+  let renderedThinking;
+  let renderedReply;
   return {
     turn,
     render() {
       turn.hidden = !message.content && !message.thinking && message.status === "error";
       thoughts.hidden = !message.thinking;
       label.textContent = message.status === "generating" && !message.content ? "Thinking…" : "Thought process";
-      thinking.textContent = message.thinking;
       stopped.hidden = message.status !== "stopped";
-      if (reading.dataset.source !== message.content) {
-        renderReply(reading, message.content);
-        reading.dataset.source = message.content;
+      if (renderedThinking !== message.thinking) {
+        renderMarkdown(thinking, message.thinking);
+        renderedThinking = message.thinking;
+      }
+      if (renderedReply !== message.content) {
+        renderMarkdown(reading, message.content, { tintQuotes: true });
+        renderedReply = message.content;
       }
     },
   };
