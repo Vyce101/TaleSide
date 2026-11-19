@@ -16,12 +16,14 @@ from urllib.parse import unquote, urlsplit
 from .books import BookSource
 from .embeddings import MODEL_INFO, EmbeddingError
 from .provider_keys import KeyConflict
+from .tales import MissingTaleKey, TaleNotFound
 
 WEB_ROOT = Path(__file__).resolve().parent / "web"
 MIME_TYPES = {".js": "text/javascript", ".mjs": "text/javascript", ".woff2": "font/woff2"}
 APP_PAGE = "/pages/index.html"
 WORLD_ID = re.compile(r"[0-9a-f]{32}")
-WORLD_PAGE = re.compile(r"/worlds/(?:[0-9a-f]{32}|demo-[a-z0-9-]+)")
+WORLD_PAGE = re.compile(r"/worlds/(?:[0-9a-f]{32}(?:/tales/[0-9a-f]{32})?|demo-[a-z0-9-]+)")
+TALE_API = re.compile(r"/api/worlds/([0-9a-f]{32})/tales(?:/([0-9a-f]{32}))?(?:/([a-z-]+))?")
 INSTANCE_PATH = "/api/instance"
 INSTANCE = {"app": "TaleSide"}
 
@@ -71,6 +73,17 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path == "/api/worlds":
             self.send_json(self.server.worlds.list())
+            return
+        tales = self.server.worlds.tales
+        if path == "/api/tale-settings":
+            self.send_json(tales.settings())
+            return
+        match = TALE_API.fullmatch(path)
+        if match and not match[3]:
+            try:
+                self.send_json(tales.detail(match[1], match[2]) if match[2] else tales.list(match[1]))
+            except TaleNotFound as error:
+                self.api_error(str(error), HTTPStatus.NOT_FOUND)
             return
         if path.startswith("/api/worlds/"):
             world_id = path.removeprefix("/api/worlds/")
@@ -153,6 +166,18 @@ class Handler(BaseHTTPRequestHandler):
             return
         path = urlsplit(self.path).path
         try:
+            tales = self.server.worlds.tales
+            if path == "/api/tale-settings":
+                self.send_json(tales.settings(self.read_json()))
+                return
+            profile = re.fullmatch(r"/api/chat-profiles/(select|create|save|rename|delete)", path)
+            if profile:
+                self.send_json(tales.settings(self.read_json(), profile[1]))
+                return
+            match = TALE_API.fullmatch(path)
+            if match:
+                self.update_tale(*match.groups())
+                return
             if path == "/api/provider-keys":
                 details = self.read_json()
                 key = self.server.worlds.keys.add(details.get("provider"), details.get("nickname"),
@@ -170,6 +195,10 @@ class Handler(BaseHTTPRequestHandler):
                 self.update_key(item_id, action)
             else:
                 self.update_world(item_id, action)
+        except TaleNotFound as error:
+            self.api_error(str(error), HTTPStatus.NOT_FOUND)
+        except MissingTaleKey as error:
+            self.send_json({"error": str(error), "missing_key": error.field}, HTTPStatus.CONFLICT)
         except KeyConflict as error:
             self.api_error(str(error), HTTPStatus.CONFLICT)
         except ValueError as error:
@@ -217,6 +246,9 @@ class Handler(BaseHTTPRequestHandler):
             updated = worlds.rename(world_id, self.read_json().get("name"))
         elif action == "embedding-key":
             updated = worlds.set_embedding_key(world_id, self.read_json().get("key_id"))
+        elif action == "retrieval-key":
+            worlds.tales.set_retrieval_key(world_id, self.read_json().get("key_id"))
+            updated = True
         elif action == "discard":
             updated = worlds.discard(world_id)
         elif action == "pause":
@@ -230,6 +262,16 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json({"ok": True})
         else:
             self.api_error("This World has already changed state.", HTTPStatus.CONFLICT)
+
+    def update_tale(self, world_id, tale_id, action):
+        tales = self.server.worlds.tales
+        if tale_id is None and action in (None, "play"):
+            self.send_json(tales.create(world_id, resume=action == "play"))
+        elif tale_id and action in ("rename", "pin", "delete"):
+            tales.change(world_id, tale_id, action, self.read_json())
+            self.send_json({"ok": True})
+        else:
+            self.send_error(HTTPStatus.NOT_FOUND)
 
     def log_request(self, code="-", size="-"):
         if str(code)[0] in "45":
