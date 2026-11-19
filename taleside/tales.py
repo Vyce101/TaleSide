@@ -7,7 +7,7 @@ from uuid import uuid4
 
 from .embeddings import MODEL, EmbeddingError
 from .gemini_tales import GeminiTale, Generation, GenerationCancelled, InputTooLarge
-from .provider_keys import KeyConflict, required_text
+from .provider_keys import KeyConflict, required_text, save_key_selection, selected_keys
 from .tale_retrieval import chat_request, passages, query_text
 from .tale_settings import SETTINGS_SCHEMA, active_settings, edit_profile, settings_view, update_settings
 
@@ -78,15 +78,15 @@ class Tales:
                 update_settings(db, changes)
             return settings_view(db)
 
-    def set_retrieval_key(self, world_id, key_id):
+    def set_retrieval_keys(self, world_id, key_ids):
         with self.worlds.lock, self.worlds.connect() as db:
             world = saved_world(db, world_id)
             if world["status"] in ("creating", "pausing"):
                 raise KeyConflict("Wait for World creation to pause or finish.")
             if world["model"] != MODEL:
                 raise KeyConflict("This World's embedding model is unavailable.")
-            self.worlds.keys.require(db, key_id, message="Choose a compatible Retrieval Key.")
-            db.execute("UPDATE worlds SET retrieval_key_id = ? WHERE id = ?", (key_id, world_id))
+            self.worlds.keys.validate_selection(db, key_ids, "Choose compatible Retrieval Keys.")
+            save_key_selection(db, "world_retrieval_keys", world_id, key_ids)
 
     def list(self, world_id):
         with self.worlds.lock, self.worlds.connect() as db:
@@ -180,10 +180,11 @@ class Tales:
             if world["status"] != "ready" or world["model"] != MODEL:
                 raise KeyConflict("This World's embeddings are unavailable.")
             settings = active_settings(db)
+            retrieval_key_ids = selected_keys(db, "world_retrieval_keys", world_id)
             secrets = []
-            for key, field in ((world["retrieval_key_id"], "Retrieval Key"), (settings["chat_key_id"], "Chat Key")):
+            for key_ids, field in ((retrieval_key_ids, "Retrieval Key"), (settings["chat_key_ids"], "Chat Key")):
                 try:
-                    secrets.append(self.worlds.keys.secret(db, key))
+                    secrets.append(self.worlds.keys.secret(db, next(iter(key_ids), None)))
                 except (KeyConflict, EmbeddingError):
                     raise MissingTaleKey(field) from None
             history = []

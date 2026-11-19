@@ -21,7 +21,6 @@ CREATE TABLE IF NOT EXISTS embedding_defaults (
 );
 """
 
-
 SELECTION_OWNERS = (
     ("world_embedding_keys", "worlds", "TEXT", "key_id"),
     ("world_retrieval_keys", "worlds", "TEXT", "retrieval_key_id"),
@@ -126,7 +125,9 @@ class ProviderKeys:
     @staticmethod
     def _assignments(db, key_id):
         return db.execute("""
-            SELECT id, name, status FROM worlds WHERE key_id = ? AND status != 'draft' ORDER BY rowid
+            SELECT world.id, world.name, world.status
+            FROM worlds world JOIN world_embedding_keys selection ON selection.owner_id = world.id
+            WHERE selection.key_id = ? AND world.status != 'draft' ORDER BY world.rowid
         """, (key_id,)).fetchall()
 
     def _busy(self, key_id, assignments):
@@ -143,18 +144,19 @@ class ProviderKeys:
                     {"id": world["id"], "name": world["name"]} for world in self._assignments(db, key["id"])
                 ]
                 keys.append(summary)
-            last = db.execute("SELECT model, key_id FROM embedding_defaults").fetchone()
-            defaults = {"model": MODEL, "key_id": keys[0]["id"] if keys else None}
-            if last and last["model"] == MODEL:
-                defaults = dict(last)
+            last = db.execute("SELECT model FROM embedding_defaults WHERE id = 1").fetchone()
+            key_ids = (selected_keys(db, "embedding_default_keys", 1) if last and last["model"] == MODEL
+                       else [key["id"] for key in keys if key["provider"] == PROVIDER][:1])
+            defaults = {"model": MODEL, "key_ids": key_ids, "key_id": next(iter(key_ids), None)}
             return {"keys": keys, "defaults": defaults}
 
     @staticmethod
-    def remember(db, model, key_id):
+    def remember(db, model, key_ids):
         db.execute("""
-            INSERT INTO embedding_defaults (id, model, key_id) VALUES (1, ?, ?)
-            ON CONFLICT(id) DO UPDATE SET model = excluded.model, key_id = excluded.key_id
-        """, (model, key_id))
+            INSERT INTO embedding_defaults (id, model) VALUES (1, ?)
+            ON CONFLICT(id) DO UPDATE SET model = excluded.model
+        """, (model,))
+        save_key_selection(db, "embedding_default_keys", 1, key_ids)
 
     @staticmethod
     def _check_nickname(db, nickname, key_id):
@@ -196,11 +198,8 @@ class ProviderKeys:
             "key": self._summary(key),
             "worlds": [{"id": world["id"], "name": world["name"]} for world in worlds],
             "busy": self._busy(key_id, worlds),
-            "tales_use_key": any(db.execute(f"SELECT 1 FROM {table} WHERE {column} = ? LIMIT 1",
-                                           (key_id,)).fetchone()
-                                 for table, column in (("worlds", "retrieval_key_id"),
-                                                       ("tale_settings", "chat_key_id"),
-                                                       ("chat_profiles", "chat_key_id"))),
+            "tales_use_key": any(db.execute(f"SELECT 1 FROM {table} WHERE key_id = ? LIMIT 1", (key_id,)).fetchone()
+                                 for table in ("world_retrieval_keys", "tale_chat_keys", "chat_profile_keys")),
         }
 
     def delete_impact(self, key_id):

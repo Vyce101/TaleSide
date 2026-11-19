@@ -161,7 +161,7 @@ class Handler(BaseHTTPRequestHandler):
             books.append(BookSource(details["filename"], part.get_payload(decode=True), details.get("name")))
         return self.server.worlds.prepare(settings.get("name"), books, settings.get("max_chunk_size"),
                                           settings.get("boundary_search_distance"), model=settings.get("model"),
-                                          key_id=settings.get("key_id"), world_id=world_id)
+                                          key_ids=settings.get("key_ids", [settings.get("key_id")]), world_id=world_id)
 
     def do_POST(self):
         if not self.local_request() or self.headers.get("Origin") != self.server.url:
@@ -171,7 +171,11 @@ class Handler(BaseHTTPRequestHandler):
         try:
             tales = self.server.worlds.tales
             if path == "/api/tale-settings":
-                self.send_json(tales.settings(self.read_json()))
+                changes = self.read_json()
+                if "chat_key_id" in changes:
+                    key_id = changes.pop("chat_key_id")
+                    changes.setdefault("chat_key_ids", [] if key_id is None else [key_id])
+                self.send_json(tales.settings(changes))
                 return
             profile = re.fullmatch(r"/api/chat-profiles/(select|create|save|rename|delete)", path)
             if profile:
@@ -248,9 +252,11 @@ class Handler(BaseHTTPRequestHandler):
         if action == "rename":
             updated = worlds.rename(world_id, self.read_json().get("name"))
         elif action == "embedding-key":
-            updated = worlds.set_embedding_key(world_id, self.read_json().get("key_id"))
+            fields = self.read_json()
+            updated = worlds.set_embedding_keys(world_id, fields.get("key_ids", [fields.get("key_id")]))
         elif action == "retrieval-key":
-            worlds.tales.set_retrieval_key(world_id, self.read_json().get("key_id"))
+            fields = self.read_json()
+            worlds.tales.set_retrieval_keys(world_id, fields.get("key_ids", [fields.get("key_id")]))
             updated = True
         elif action == "discard":
             updated = worlds.discard(world_id)

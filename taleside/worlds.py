@@ -21,12 +21,16 @@ from .embeddings import (
     embedding_input,
     valid_vector,
 )
-from .provider_keys import KEY_SCHEMA, KeyConflict, ProviderKeys
+from .provider_keys import (
+    KEY_SCHEMA, SELECTION_SCHEMA, KeyConflict, ProviderKeys, migrate_key_selections,
+    save_key_selection, selected_keys,
+)
 from .tales import TALE_SCHEMA, Tales
 from .world_imports import CheckedBooks, check_books
 
 IMPORT_TIMEOUT_SECONDS = 30 * 60
 DEFAULT_WORLD_NAME = "TaleSide"
+EMBEDDING_KEY_REQUIRED = "Choose a saved Google Gemini key in World Settings."
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS worlds (
     id TEXT PRIMARY KEY,
@@ -70,7 +74,7 @@ CREATE TABLE IF NOT EXISTS chunks (
 
 @dataclass
 class PendingImport:
-    key_id: str
+    key_ids: list[str]
     cancelled: Event = field(default_factory=Event)
     checked: CheckedBooks | None = None
     world_row: tuple = ()
@@ -90,7 +94,7 @@ class Worlds:
         self.active_chunk = None
         with self.connect() as db:
             db.execute("PRAGMA journal_mode = WAL")
-            db.executescript(KEY_SCHEMA + SCHEMA + TALE_SCHEMA)
+            db.executescript(KEY_SCHEMA + SCHEMA + TALE_SCHEMA + SELECTION_SCHEMA)
             db.execute("BEGIN")
             columns = {column["name"] for column in db.execute("PRAGMA table_info(worlds)")}
             if "max_token_limit" not in columns:
@@ -102,6 +106,7 @@ class Worlds:
                 db.execute("UPDATE worlds SET retrieval_key_id = key_id")
             if "last_tale_activity_at" not in columns:
                 db.execute("ALTER TABLE worlds ADD COLUMN last_tale_activity_at REAL")
+            migrate_key_selections(db)
             db.execute("UPDATE worlds SET status = 'paused' WHERE status IN ('creating', 'pausing')")
             db.execute("UPDATE tale_messages SET status = 'error' WHERE status = 'generating'")
         self.worker = Thread(target=self.run, name="World embeddings", daemon=True)
@@ -129,7 +134,7 @@ class Worlds:
                 self._cancel_import_locked(world_id)
 
     def prepare(self, name, books, max_size=MAX_CHUNK_SIZE, search_distance=BOUNDARY_SEARCH_DISTANCE,
-                *, model, key_id, world_id=None):
+                *, model, key_ids, world_id=None):
         if not isinstance(name, str):
             raise ValueError("World names must be text.")
         if model != MODEL:
@@ -150,15 +155,16 @@ class Worlds:
                 raise ValueError("TaleSide is closing.")
             if db.execute("SELECT 1 FROM worlds WHERE id = ?", (world_id,)).fetchone():
                 raise ValueError("This import ID is already in use.")
+            self.keys.validate_selection(db, key_ids, EMBEDDING_KEY_REQUIRED, required=True)
             pending = self.imports.get(world_id)
             if pending is not None:
-                if pending.checked is not None and pending.key_id == key_id:
+                if pending.checked is not None and pending.key_ids == key_ids:
                     return pending.checked.report
                 raise ValueError("These books are already being checked.")
-            secret = self.keys.secret(db, key_id)
-            pending = PendingImport(key_id)
+            secret = self.keys.secret(db, key_ids[0])
+            pending = PendingImport(list(key_ids))
             self.imports[world_id] = pending
-            self.keys.checking[key_id] += 1
+            self.keys.checking.update(pending.key_ids)
 
         try:
             provider = self.provider(secret, model=model, dimensions=DIMENSIONS)
@@ -168,7 +174,7 @@ class Worlds:
                 if pending.cancelled.is_set():
                     raise ValueError("The import was cancelled.")
                 pending.world_row = (world_id, name.strip() or DEFAULT_WORLD_NAME, model, DIMENSIONS,
-                                     TOKEN_LIMIT, max_size, search_distance, key_id)
+                                     TOKEN_LIMIT, max_size, search_distance)
                 pending.checked = checked
                 pending.timer = Timer(IMPORT_TIMEOUT_SECONDS, self.decline, args=(world_id,))
                 pending.timer.daemon = True
@@ -176,9 +182,10 @@ class Worlds:
                 return checked.report
         finally:
             with self.lock:
-                self.keys.checking[key_id] -= 1
-                if not self.keys.checking[key_id]:
-                    del self.keys.checking[key_id]
+                for key_id in pending.key_ids:
+                    self.keys.checking[key_id] -= 1
+                    if not self.keys.checking[key_id]:
+                        del self.keys.checking[key_id]
                 if pending.timer is None and self.imports.get(world_id) is pending:
                     self._cancel_import_locked(world_id)
 
@@ -193,13 +200,14 @@ class Worlds:
                 checked = pending.checked
                 if checked.report["oversized_chunks"] and not allow_oversized:
                     return False
-                self.keys.require(db, pending.key_id)
+                self.keys.validate_selection(db, pending.key_ids, EMBEDDING_KEY_REQUIRED, required=True)
                 db.execute("""
                     INSERT INTO worlds (id, name, model, dimensions, max_token_limit, max_chunk_size,
-                                        boundary_search_distance, key_id, status)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'creating')
+                                        boundary_search_distance, status)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, 'creating')
                 """, pending.world_row)
-                db.execute("UPDATE worlds SET retrieval_key_id = key_id WHERE id = ?", (world_id,))
+                save_key_selection(db, "world_embedding_keys", world_id, pending.key_ids)
+                save_key_selection(db, "world_retrieval_keys", world_id, pending.key_ids)
                 db.executemany("""
                     INSERT INTO books (world_id, number, name, filename, original, working, encoding, bom_size)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -209,7 +217,7 @@ class Worlds:
                                         tokens, embed_end)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, checked.chunk_rows)
-                self.keys.remember(db, MODEL, pending.key_id)
+                self.keys.remember(db, MODEL, pending.key_ids)
             self._cancel_import_locked(world_id)
         self.wake.set()
         return True
@@ -237,6 +245,11 @@ class Worlds:
                 filters = (world_id,)
             worlds = [dict(row) for row in db.execute(query + " ORDER BY last_tale_activity_at DESC, rowid", filters)]
             for world in worlds:
+                del world["key_id"], world["retrieval_key_id"]
+                world["embedding_key_ids"] = selected_keys(db, "world_embedding_keys", world["id"])
+                world["retrieval_key_ids"] = selected_keys(db, "world_retrieval_keys", world["id"])
+                world["key_id"] = next(iter(world["embedding_key_ids"]), None)
+                world["retrieval_key_id"] = next(iter(world["retrieval_key_ids"]), None)
                 world["books"] = [dict(row) for row in db.execute("""
                     SELECT b.number, b.name, b.filename, count(*) AS total_chunks, count(c.vector) AS embedded_chunks
                     FROM books b JOIN chunks c ON c.world_id = b.world_id AND c.book_number = b.number
@@ -271,12 +284,16 @@ class Worlds:
                     generation.cancel()
             return bool(db.execute("DELETE FROM worlds WHERE id = ? AND status != 'draft'", (world_id,)).rowcount)
 
-    def set_embedding_key(self, world_id, key_id):
+    def set_embedding_keys(self, world_id, key_ids):
         with self.lock, self.connect() as db:
-            self.keys.require(db, key_id)
-            return bool(db.execute("""
-                UPDATE worlds SET key_id = ? WHERE id = ? AND status IN ('paused', 'failed', 'ready')
-            """, (key_id, world_id)).rowcount)
+            self.keys.validate_selection(db, key_ids, EMBEDDING_KEY_REQUIRED)
+            world = db.execute("""
+                SELECT 1 FROM worlds WHERE id = ? AND status IN ('paused', 'failed', 'ready')
+            """, (world_id,)).fetchone()
+            if world is None:
+                return False
+            save_key_selection(db, "world_embedding_keys", world_id, key_ids)
+            return True
 
     def pause(self, world_id):
         with self.lock, self.connect() as db:
@@ -288,11 +305,12 @@ class Worlds:
 
     def resume(self, world_id):
         with self.lock, self.connect() as db:
-            world = db.execute("SELECT key_id FROM worlds WHERE id = ? AND status IN ('paused', 'failed')",
+            world = db.execute("SELECT 1 FROM worlds WHERE id = ? AND status IN ('paused', 'failed')",
                                (world_id,)).fetchone()
             if world is None:
                 return False
-            self.keys.require(db, world["key_id"])
+            if not selected_keys(db, "world_embedding_keys", world_id):
+                raise KeyConflict(EMBEDDING_KEY_REQUIRED)
             db.execute("UPDATE worlds SET status = 'creating', error = NULL WHERE id = ?", (world_id,))
         self.wake.set()
         return True
@@ -338,7 +356,8 @@ class Worlds:
                 db.execute("UPDATE worlds SET status = 'ready' WHERE id = ?", (world["id"],))
                 return
             self.active_chunk = (world["id"], chunk["book_number"])
-            secret = self.keys.secret(db, world["key_id"])
+            key_ids = selected_keys(db, "world_embedding_keys", world_id)
+            secret = self.keys.secret(db, next(iter(key_ids), None))
 
         provider = self.provider(secret, model=world["model"], dimensions=dimensions)
         values = provider.embed(embedding_input(chunk["name"], chunk["text"]))

@@ -4,7 +4,7 @@ import json
 from math import isfinite
 from uuid import uuid4
 
-from .provider_keys import KeyConflict, required_text
+from .provider_keys import KeyConflict, ProviderKeys, required_text, save_key_selection, selected_keys
 
 HYDROGEN = "gemini-4-hydrogen"
 CHAT_MODELS = [{
@@ -38,14 +38,16 @@ CREATE TABLE IF NOT EXISTS tale_settings (
 def active_settings(db):
     row = db.execute("SELECT * FROM tale_settings WHERE id = 1").fetchone()
     if row is None:
-        return {**DEFAULTS, "chat_key_id": None, "profile_id": None}
-    return {**DEFAULTS, **json.loads(row["configuration"]), "chat_key_id": row["chat_key_id"],
+        return {**DEFAULTS, "chat_key_ids": [], "profile_id": None}
+    return {**DEFAULTS, **json.loads(row["configuration"]), "chat_key_ids": selected_keys(db, "tale_chat_keys", 1),
             "profile_id": row["profile_id"]}
 
 
 def settings_view(db):
+    settings = active_settings(db)
+    settings["chat_key_id"] = next(iter(settings["chat_key_ids"]), None)
     return {
-        "settings": active_settings(db),
+        "settings": settings,
         "profiles": [dict(row) for row in db.execute("SELECT id, name FROM chat_profiles ORDER BY rowid")],
         "models": CHAT_MODELS, "wrapper_defaults": WRAPPERS,
     }
@@ -54,14 +56,15 @@ def settings_view(db):
 def save_settings(db, settings):
     configuration = {field: settings[field] for field in DEFAULTS}
     db.execute("""
-        INSERT INTO tale_settings (id, configuration, chat_key_id, profile_id) VALUES (1, ?, ?, ?)
+        INSERT INTO tale_settings (id, configuration, profile_id) VALUES (1, ?, ?)
         ON CONFLICT(id) DO UPDATE SET configuration = excluded.configuration,
-        chat_key_id = excluded.chat_key_id, profile_id = excluded.profile_id
-    """, (json.dumps(configuration), settings["chat_key_id"], settings["profile_id"]))
+        profile_id = excluded.profile_id
+    """, (json.dumps(configuration), settings["profile_id"]))
+    save_key_selection(db, "tale_chat_keys", 1, settings["chat_key_ids"])
 
 
 def update_settings(db, changes):
-    if changes.keys() - (DEFAULTS.keys() | {"chat_key_id"}):
+    if changes.keys() - (DEFAULTS.keys() | {"chat_key_ids"}):
         raise ValueError("Unknown Tale setting.")
     current = active_settings(db)
     updated = {**current, **changes}
@@ -70,6 +73,11 @@ def update_settings(db, changes):
         raise ValueError("Choose a supported Chat Model.")
     if updated["model"] != current["model"]:
         updated.update(thinking_level=model["default_thinking_level"], output_limit=model["max_output"])
+        if "chat_key_ids" not in changes:
+            compatible = [row["id"] for row in db.execute(
+                "SELECT id FROM provider_keys WHERE provider = ? ORDER BY rowid", (model["provider"],)
+            )]
+            updated["chat_key_ids"] = [key for key in current["chat_key_ids"] if key in compatible] or compatible[:1]
     if updated["thinking_level"] not in model["thinking_levels"]:
         raise ValueError("Choose a supported Thinking Level.")
     output = updated["output_limit"]
@@ -77,17 +85,8 @@ def update_settings(db, changes):
         raise ValueError("Enter a whole number for Output Limit.")
     updated["output_limit"] = min(model["max_output"], max(256, output))
 
-    key = updated["chat_key_id"]
-    if key is not None and (not isinstance(key, str) or not db.execute(
-        "SELECT 1 FROM provider_keys WHERE id = ? AND provider = ?", (key, model["provider"])
-    ).fetchone()):
-        if "chat_key_id" in changes:
-            raise KeyConflict("Choose a compatible Chat Key in Tale Settings.")
-        updated["chat_key_id"] = None
-    if updated["model"] != current["model"] and updated["chat_key_id"] is None:
-        first_key = db.execute("SELECT id FROM provider_keys WHERE provider = ? ORDER BY rowid LIMIT 1",
-                               (model["provider"],)).fetchone()
-        updated["chat_key_id"] = first_key["id"] if first_key else None
+    ProviderKeys.validate_selection(db, updated["chat_key_ids"], "Choose compatible Chat Keys in Tale Settings.",
+                                    provider=model["provider"])
 
     for field, minimum in (("retrieved_chunks", 1), ("chunk_overlap", 0), ("messages_to_embed", 1)):
         if type(updated[field]) is not int or updated[field] < minimum:
@@ -112,9 +111,10 @@ def edit_profile(db, action, fields):
     if action == "create":
         name = required_text(fields.get("name"), "Enter a profile name.")
         profile_id = uuid4().hex
-        db.execute("INSERT INTO chat_profiles VALUES (?, ?, ?, ?)", (
-            profile_id, name, json.dumps({field: settings[field] for field in DEFAULTS}), settings["chat_key_id"],
+        db.execute("INSERT INTO chat_profiles (id, name, configuration) VALUES (?, ?, ?)", (
+            profile_id, name, json.dumps({field: settings[field] for field in DEFAULTS}),
         ))
+        save_key_selection(db, "chat_profile_keys", profile_id, settings["chat_key_ids"])
         save_settings(db, {**settings, "profile_id": profile_id})
         return
 
@@ -127,11 +127,13 @@ def edit_profile(db, action, fields):
         raise KeyConflict("This chat profile no longer exists.")
     elif action == "select":
         save_settings(db, {**DEFAULTS, **json.loads(profile["configuration"]),
-                            "chat_key_id": profile["chat_key_id"], "profile_id": profile_id})
+                            "chat_key_ids": selected_keys(db, "chat_profile_keys", profile_id),
+                            "profile_id": profile_id})
     elif action == "save":
-        db.execute("UPDATE chat_profiles SET configuration = ?, chat_key_id = ? WHERE id = ?", (
-            json.dumps({field: settings[field] for field in DEFAULTS}), settings["chat_key_id"], profile_id,
+        db.execute("UPDATE chat_profiles SET configuration = ? WHERE id = ?", (
+            json.dumps({field: settings[field] for field in DEFAULTS}), profile_id,
         ))
+        save_key_selection(db, "chat_profile_keys", profile_id, settings["chat_key_ids"])
     elif action == "rename":
         name = required_text(fields.get("name"), "Enter a profile name.")
         db.execute("UPDATE chat_profiles SET name = ? WHERE id = ?", (name, profile_id))
