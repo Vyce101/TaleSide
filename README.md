@@ -4,7 +4,7 @@
 
 **TaleSide** is an app in development for turning source material into persistent, interactive worlds.
 
-> **Status:** Early development (World creation preview).
+> **Status:** Early development (World creation and Tales preview).
 
 ## Vision
 
