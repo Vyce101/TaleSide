@@ -40,11 +40,13 @@ body[data-view="tale"] .hero-art img { object-position: center; }
 body[data-view="tale"] .hero-frame::after { display: none; }
 #tale-chat {
   --reading-width: 64ch;
+  --tale-header-clearance: calc(var(--top-bar-offset) + var(--top-bar-line-height) + 12px);
   position: fixed;
   inset: 0;
   isolation: isolate;
   display: flex;
   flex-direction: column;
+  padding-top: var(--tale-header-clearance);
   background: linear-gradient(90deg, #05211a12, #041c16ad 30%, #031a14df 50%, #041c16ad 70%, #05211a12),
               linear-gradient(0deg, #03120ff0, transparent 30%);
 }
@@ -54,7 +56,7 @@ body[data-view="tale"] .hero-frame::after { display: none; }
   overflow: auto;
   overscroll-behavior: contain;
   overflow-anchor: none;
-  padding: clamp(86px, 12vh, 128px) 16px 12px;
+  padding: max(16px, calc(clamp(86px, 12vh, 128px) - var(--tale-header-clearance))) 16px 12px;
 }
 .tale-column { width: 100%; max-width: var(--reading-width); margin-inline: auto; }
 .tale-chapter { display: flex; align-items: center; gap: clamp(10px, 2vw, 20px); margin: 0 0 28px; }

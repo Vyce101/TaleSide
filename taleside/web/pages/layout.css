@@ -13,10 +13,15 @@
     linear-gradient(0deg, #031713c9, transparent 72%);
 }
 
+.page-backdrop {
+  --top-bar-offset: calc(43 * var(--unit));
+  --top-bar-font-size: max(17px, calc(28 * var(--unit)));
+  --top-bar-line-height: calc(1.23 * var(--top-bar-font-size));
+}
 .top-bar {
   position: absolute;
   z-index: 2;
-  top: calc(43 * var(--unit));
+  top: var(--top-bar-offset);
   left: 4.67vw;
   right: 2.55vw;
   display: flex;
@@ -25,8 +30,8 @@
 }
 .top-bar nav, .utilities { display: flex; align-items: center; }
 .top-bar :is(nav, .top-bar-title) {
-  font-size: max(17px, calc(28 * var(--unit)));
-  line-height: 1.23;
+  font-size: var(--top-bar-font-size);
+  line-height: var(--top-bar-line-height);
   letter-spacing: .005em;
 }
 .top-bar nav { gap: calc(63 * var(--unit)); }
