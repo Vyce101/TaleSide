@@ -1,12 +1,15 @@
 """Store Tales, their ordered messages, and active generations."""
 
+import json
+import sqlite3
 from time import time
 from uuid import uuid4
 
-from .embeddings import MODEL
-from .gemini_tales import GeminiTale
+from .embeddings import MODEL, EmbeddingError
+from .gemini_tales import GeminiTale, Generation, GenerationCancelled, InputTooLarge
 from .provider_keys import KeyConflict, required_text
-from .tale_settings import SETTINGS_SCHEMA, edit_profile, settings_view, update_settings
+from .tale_retrieval import chat_request, passages, query_text
+from .tale_settings import CHAT_MODELS, SETTINGS_SCHEMA, active_settings, edit_profile, settings_view, update_settings
 
 TALE_SCHEMA = SETTINGS_SCHEMA + """
 CREATE TABLE IF NOT EXISTS tales (
@@ -37,6 +40,12 @@ class TaleNotFound(Exception):
     pass
 
 
+class MissingTaleKey(KeyConflict):
+    def __init__(self, field):
+        super().__init__(f"Choose a {field} in Tale Settings.")
+        self.field = field
+
+
 def saved_world(db, world_id):
     world = db.execute("SELECT * FROM worlds WHERE id = ? AND status != 'draft'", (world_id,)).fetchone()
     if world is None:
@@ -53,6 +62,13 @@ def saved_tale(db, world_id, tale_id):
 
 def activity(db, world_id, timestamp):
     db.execute("UPDATE worlds SET last_tale_activity_at = ? WHERE id = ?", (timestamp, world_id))
+
+
+def remove_oldest_exchange(messages):
+    for index, message in enumerate(messages[1:], 1):
+        if message["role"] == "user":
+            return messages[index:]
+    raise InputTooLarge("The newest message and book context exceed Gemini's input limit.")
 
 
 class Tales:
@@ -151,9 +167,146 @@ class Tales:
             elif action == "delete":
                 self.cancel_locked(tale_id)
                 db.execute("DELETE FROM tales WHERE id = ?", (tale_id,))
+            elif action == "stop":
+                generation = self.active.get(tale_id)
+                if generation and generation.id == fields.get("generation_id"):
+                    generation.cancel(user_stopped=fields.get("user_stopped") is True)
 
     def cancel_locked(self, tale_id):
         generation = self.active.get(tale_id)
         if generation:
             generation.cancel()
 
+    def begin(self, world_id, tale_id, content, generation_id):
+        content = required_text(content, "Enter a message.")
+        with self.worlds.lock, self.worlds.connect() as db:
+            world = saved_world(db, world_id)
+            tale = saved_tale(db, world_id, tale_id)
+            if tale_id in self.active:
+                raise KeyConflict("This Tale is already generating.")
+            if world["status"] != "ready" or world["model"] != MODEL:
+                raise KeyConflict("This World's embeddings are unavailable.")
+            settings = active_settings(db)
+            secrets = []
+            for key, field in ((world["retrieval_key_id"], "Retrieval Key"), (settings["chat_key_id"], "Chat Key")):
+                try:
+                    secrets.append(self.worlds.keys.secret(db, key))
+                except (KeyConflict, EmbeddingError):
+                    raise MissingTaleKey(field) from None
+            history = []
+            for row in db.execute("""
+                SELECT role, content, model, signed_parts FROM tale_messages
+                WHERE tale_id = ? AND content != '' ORDER BY id
+            """, (tale_id,)):
+                message = dict(row)
+                message["signed_parts"] = json.loads(message["signed_parts"] or "null")
+                history.append(message)
+            books = db.execute("SELECT number, name FROM books WHERE world_id = ? ORDER BY number", (world_id,)).fetchall()
+            if tale["automatic_title"] and not history:
+                title = " ".join(content.split())
+                if len(title) > 60:
+                    title = title[:59].rstrip() + "…"
+                db.execute("UPDATE tales SET title = ?, automatic_title = 0 WHERE id = ?", (title, tale_id))
+            now = time()
+            db.execute("UPDATE tales SET last_activity_at = ? WHERE id = ?", (now, tale_id))
+            activity(db, world_id, now)
+            db.execute("INSERT INTO tale_messages (tale_id, role, content) VALUES (?, 'user', ?)", (tale_id, content))
+            assistant = db.execute("""
+                INSERT INTO tale_messages (tale_id, role, model, status) VALUES (?, 'assistant', ?, 'generating')
+            """, (tale_id, settings["model"])).lastrowid
+            db.commit()
+            generation = self.active[tale_id] = Generation(world_id, generation_id)
+        history.append({"role": "user", "content": content})
+        return generation, assistant, world, books, settings, history, secrets
+
+    def generate(self, tale_id, prepared, emit):
+        generation, assistant, world, books, settings, history, (retrieval_key, chat_key) = prepared
+        status = "error"
+        signed_parts = []
+        try:
+            provider = self.provider(generation)
+            query = self.embed(provider, world, retrieval_key, history[-settings["messages_to_embed"]:])
+            generation.check()
+            with self.worlds.connect() as db:
+                excerpts = passages(db, world, query, settings, generation.cancelled)
+            generation.check()
+            model = next(model for model in CHAT_MODELS if model["id"] == settings["model"])
+            while True:
+                body = chat_request(world, books, excerpts, history, settings)
+                try:
+                    for part in provider.chat(model["id"], chat_key, body):
+                        generation.check()
+                        value = part.get("text", "")
+                        thought = part.get("thought") is True
+                        if isinstance(value, str) and value:
+                            field = "thinking" if thought else "reply"
+                            setattr(generation, field, getattr(generation, field) + value)
+                            emit({"type": field, "text": value})
+                        if not thought and settings["thought_signatures"] and isinstance(value, str):
+                            signature = part.get("thoughtSignature")
+                            if isinstance(signature, str) and signature:
+                                signed_parts.append({"text": value, "thoughtSignature": signature})
+                            elif isinstance(value, str) and value:
+                                if signed_parts and "thoughtSignature" not in signed_parts[-1]:
+                                    signed_parts[-1]["text"] += value
+                                else:
+                                    signed_parts.append({"text": value})
+                    status = "complete"
+                    break
+                except InputTooLarge:
+                    if generation.reply or generation.thinking:
+                        raise
+                    history = remove_oldest_exchange(history)
+                    while len(history) > 1:
+                        body = chat_request(world, books, excerpts, history, settings)
+                        try:
+                            count = provider.count(model["id"], chat_key, {
+                                "generateContentRequest": {"model": f"models/{model['id']}", **body},
+                            })
+                            if count <= model["context_limit"] - settings["output_limit"]:
+                                break
+                        except InputTooLarge:
+                            pass
+                        history = remove_oldest_exchange(history)
+        except GenerationCancelled:
+            pass
+        except (EmbeddingError, KeyError, TypeError, ValueError, sqlite3.Error):
+            status = "error"
+        finally:
+            if not any("thoughtSignature" in part for part in signed_parts):
+                signed_parts = None
+            try:
+                with self.worlds.lock:
+                    try:
+                        with self.worlds.connect() as db:
+                            if generation.cancelled.is_set():
+                                status = "stopped" if generation.user_stopped else "error"
+                            db.execute("""
+                                UPDATE tale_messages SET content = ?, thinking = ?, status = ?, signed_parts = ?
+                                WHERE id = ? AND tale_id = ?
+                            """, (generation.reply, generation.thinking, status,
+                                  json.dumps(signed_parts) if signed_parts else None, assistant, tale_id))
+                    finally:
+                        self.active.pop(tale_id, None)
+            finally:
+                emit({"type": "done", "status": status})
+
+    @staticmethod
+    def embed(provider, world, key, messages):
+        while True:
+            try:
+                return provider.embed(world, key, query_text(messages))
+            except InputTooLarge:
+                if len(messages) == 1:
+                    raise
+                messages = messages[1:]
+                while len(messages) > 1:
+                    try:
+                        count = provider.count(world["model"], key, {
+                            "contents": [{"parts": [{"text": query_text(messages)}]}],
+                        })
+                        if count <= world["max_token_limit"]:
+                            break
+                    except InputTooLarge:
+                        pass
+                    messages = messages[1:]

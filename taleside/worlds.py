@@ -123,6 +123,8 @@ class Worlds:
         self.wake.set()
         self.worker.join()
         with self.lock:
+            for generation in self.tales.active.values():
+                generation.cancel()
             for world_id in tuple(self.imports):
                 self._cancel_import_locked(world_id)
 
@@ -264,6 +266,9 @@ class Worlds:
 
     def discard(self, world_id):
         with self.lock, self.connect() as db:
+            for generation in self.tales.active.values():
+                if generation.world_id == world_id:
+                    generation.cancel()
             return bool(db.execute("DELETE FROM worlds WHERE id = ? AND status != 'draft'", (world_id,)).rowcount)
 
     def set_embedding_key(self, world_id, key_id):
