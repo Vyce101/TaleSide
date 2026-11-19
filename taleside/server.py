@@ -232,6 +232,16 @@ class Handler(BaseHTTPRequestHandler):
         worlds = self.server.worlds
         if action == "prepare":
             self.send_json(self.prepare_import(world_id))
+        elif action == "prepare-reindex":
+            fields = self.read_json()
+            target = fields.get("world_id")
+            if not isinstance(target, str) or not WORLD_ID.fullmatch(target):
+                raise ValueError("Choose a saved World.")
+            self.send_json(worlds.prepare(
+                None, (), fields.get("max_chunk_size"), fields.get("boundary_search_distance"),
+                model=fields.get("model"), key_ids=fields.get("key_ids"),
+                world_id=world_id, target=target, revision=fields.get("book_revision"), reindex=True,
+            ))
         elif action == "cancel":
             worlds.decline(world_id)
             self.send_json({"ok": True})

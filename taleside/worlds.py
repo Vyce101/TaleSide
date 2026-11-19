@@ -10,6 +10,8 @@ from uuid import uuid4
 from .books import (
     BOUNDARY_SEARCH_DISTANCE,
     MAX_CHUNK_SIZE,
+    BookSource,
+    Chunk,
     normalize_lines,
 )
 from .embeddings import (
@@ -92,6 +94,7 @@ class PendingImport:
     timer: Timer | None = None
     target: str | None = None
     revision: int | None = None
+    reindex: bool = False
 
 
 def migrate_books(db):
@@ -191,9 +194,10 @@ class Worlds:
                 self._cancel_import_locked(world_id)
 
     def prepare(self, name, books, max_size=MAX_CHUNK_SIZE, search_distance=BOUNDARY_SEARCH_DISTANCE,
-                *, model, key_ids, world_id=None, target=None, revision=None):
+                *, model, key_ids, world_id=None, target=None, revision=None, reindex=False):
         books = tuple(books)
         world_id = world_id or uuid4().hex
+        prepared = None
         start_number = 1
         dimensions = None
         with self.lock, self.connect() as db:
@@ -204,10 +208,23 @@ class Worlds:
             if target is not None:
                 world = self._editable(db, target, revision)
                 name = world["name"]
-                model, dimensions = world["model"], world["dimensions"]
-                max_size, search_distance = world["max_chunk_size"], world["boundary_search_distance"]
-                key_ids = []
-                start_number += db.execute("SELECT count(*) FROM books WHERE world_id = ?", (target,)).fetchone()[0]
+                if reindex:
+                    saved = db.execute("SELECT * FROM books WHERE world_id = ? ORDER BY number", (target,)).fetchall()
+                    books = [BookSource(book["filename"], book["original"], book["name"]) for book in saved]
+                    if max_size == world["max_chunk_size"] and search_distance == world["boundary_search_distance"]:
+                        prepared = {}
+                        for book in saved:
+                            chunks = db.execute("""
+                                SELECT start, end, original_start, original_end FROM chunks
+                                WHERE book_id = ? AND index_number = ? ORDER BY number
+                            """, (book["id"], world["index_number"]))
+                            prepared[book["number"]] = (book["working"], book["encoding"], book["bom_size"],
+                                                        tuple(Chunk(*chunk) for chunk in chunks))
+                else:
+                    model, dimensions = world["model"], world["dimensions"]
+                    max_size, search_distance = world["max_chunk_size"], world["boundary_search_distance"]
+                    key_ids = []
+                    start_number += db.execute("SELECT count(*) FROM books WHERE world_id = ?", (target,)).fetchone()[0]
             if not isinstance(name, str):
                 raise ValueError("World names must be text.")
             if not isinstance(model, str) or model not in MODELS:
@@ -222,19 +239,19 @@ class Worlds:
                 raise ValueError("Boundary Search Distance must be a nonnegative whole number.")
             if max_size > 2**63 - 1 or search_distance > 2**63 - 1:
                 raise ValueError("Chunk settings are too large to save.")
-            if target is None:
+            if target is None or reindex:
                 self.keys.validate_selection(db, key_ids, EMBEDDING_KEY_REQUIRED, required=True)
             existing = self.imports.get(world_id)
             if existing is not None:
                 if target is None and existing.target is None and existing.books is not None and existing.key_ids == key_ids:
                     return {"id": world_id, "chunk_count": len(existing.books.chunk_rows)}
                 raise ValueError("This import is already in progress.")
-            pending = PendingImport(list(key_ids), target=target, revision=revision)
+            pending = PendingImport(list(key_ids), target=target, revision=revision, reindex=reindex)
             self.imports[world_id] = pending
 
         try:
             ready = prepare_books(target or world_id, books, max_size, search_distance, pending.cancelled,
-                                  start_number=start_number)
+                                  start_number=start_number, prepared=prepared)
             with self.lock:
                 if pending.cancelled.is_set():
                     raise ValueError("The import was cancelled.")
@@ -258,7 +275,7 @@ class Worlds:
                 pending = self.imports.get(world_id)
                 if pending is None or pending.books is None:
                     return False
-                if pending.target is None:
+                if pending.target is None or pending.reindex:
                     self.keys.validate_selection(db, pending.key_ids, EMBEDDING_KEY_REQUIRED, required=True)
                 target = pending.target or world_id
                 index_number = 1
@@ -274,12 +291,16 @@ class Worlds:
                 else:
                     world = self._editable(db, target, pending.revision)
                     index_number = world["index_number"]
-                    db.execute("UPDATE worlds SET status = 'paused', error = NULL WHERE id = ?", (target,))
+                    if pending.reindex:
+                        index_number = self._start_reindex(db, world, pending)
+                    else:
+                        db.execute("UPDATE worlds SET status = 'paused', error = NULL WHERE id = ?", (target,))
                     db.execute("UPDATE worlds SET book_revision = book_revision + 1 WHERE id = ?", (target,))
-                db.executemany("""
-                    INSERT INTO books (id, world_id, number, name, filename, original, working, encoding, bom_size)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, ((uuid4().hex, *book) for book in pending.books.book_rows))
+                if not pending.reindex:
+                    db.executemany("""
+                        INSERT INTO books (id, world_id, number, name, filename, original, working, encoding, bom_size)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, ((uuid4().hex, *book) for book in pending.books.book_rows))
                 book_ids = dict(db.execute("SELECT number, id FROM books WHERE world_id = ?", (target,)))
                 db.executemany("""
                     INSERT INTO chunks (book_id, index_number, number, start, end, original_start, original_end,
@@ -298,6 +319,26 @@ class Worlds:
         if world["status"] not in ("paused", "failed", "ready"):
             raise KeyConflict("Pause indexing and wait for the current request to finish.")
         return world
+
+    @staticmethod
+    def _start_reindex(db, world, pending):
+        target = world["id"]
+        previous = retrieval_index(db, world)
+        index_number = world["index_number"] + 1
+        keep = previous["index_number"] if previous else 0
+        db.execute("""
+            DELETE FROM chunks WHERE index_number != ? AND book_id IN (SELECT id FROM books WHERE world_id = ?)
+        """, (keep, target))
+        prior = tuple(previous[field] for field in
+                      ("index_number", "model", "dimensions", "max_token_limit", "max_chunk_size")) if previous else (None,) * 5
+        db.execute("""
+            UPDATE worlds SET model = ?, dimensions = ?, max_token_limit = ?, max_chunk_size = ?,
+                boundary_search_distance = ?, index_number = ?, previous_index = ?, previous_model = ?,
+                previous_dimensions = ?, previous_token_limit = ?, previous_chunk_size = ?,
+                status = 'creating', reindexing = 1, error = NULL WHERE id = ?
+        """, (*pending.world_row[:5], index_number, *prior, target))
+        save_key_selection(db, "world_embedding_keys", target, pending.key_ids)
+        return index_number
 
     def edit_books(self, world_id, revision, *, order=None, remove=None):
         with self.lock, self.connect() as db:
@@ -322,7 +363,7 @@ class Worlds:
                 WHERE b.world_id = ? AND c.index_number = ? AND c.vector IS NULL LIMIT 1
             """, (world_id, world["index_number"])).fetchone():
                 self.verify(db, world, Struct(f"<{world['dimensions']}f"))
-                db.execute("UPDATE worlds SET status = 'ready', error = NULL WHERE id = ?", (world_id,))
+                db.execute("UPDATE worlds SET status = 'ready', reindexing = 0, error = NULL WHERE id = ?", (world_id,))
             db.execute("UPDATE worlds SET book_revision = book_revision + 1 WHERE id = ?", (world_id,))
 
     def decline(self, world_id):
@@ -353,6 +394,7 @@ class Worlds:
                 world["can_play"] = index is not None
                 world["retrieval_index"] = {field: index[field] for field in
                                             ("model", "dimensions", "max_token_limit")} if index else None
+                world["reindexing"] = bool(world["reindexing"])
                 world["embedding_key_ids"] = selected_keys(db, "world_embedding_keys", world["id"])
                 world["retrieval_key_ids"] = selected_keys(db, "world_retrieval_keys", world["id"])
                 world["books"] = [dict(row) for row in db.execute("""
@@ -371,7 +413,6 @@ class Worlds:
                 for field in ("index_number", "previous_index", "previous_model", "previous_dimensions",
                               "previous_token_limit", "previous_chunk_size"):
                     del world[field]
-                del world["reindexing"]
         return worlds
 
     def detail(self, world_id):
@@ -470,7 +511,7 @@ class Worlds:
             """, (world_id, world["index_number"])).fetchone()
             if chunk is None:
                 self.verify(db, world, vector_format)
-                db.execute("UPDATE worlds SET status = 'ready' WHERE id = ?", (world_id,))
+                db.execute("UPDATE worlds SET status = 'ready', reindexing = 0 WHERE id = ?", (world_id,))
                 return
             self.active_chunk = (world["id"], chunk["book_number"])
             key_ids = selected_keys(db, "world_embedding_keys", world_id)
@@ -492,10 +533,18 @@ class Worlds:
         if not valid_vector(list(vector_format.unpack(vector)), dimensions):
             raise EmbeddingError("Gemini returned an invalid embedding vector.")
         with self.lock, self.connect() as db:
-            db.execute("""
+            updated = db.execute("""
                 UPDATE chunks SET vector = ?, tokens = ?, embed_end = ?
                 WHERE book_id = ? AND index_number = ? AND number = ?
-            """, (vector, tokens, chunk["start"] + length, chunk["id"], world["index_number"], chunk["number"]))
+            """, (vector, tokens, chunk["start"] + length, chunk["id"], world["index_number"], chunk["number"])).rowcount
+            if updated and world["previous_index"] is not None:
+                db.execute("""
+                    DELETE FROM chunks WHERE index_number = ? AND book_id IN (SELECT id FROM books WHERE world_id = ?)
+                """, (world["previous_index"], world_id))
+                db.execute("""
+                    UPDATE worlds SET previous_index = NULL, previous_model = NULL, previous_dimensions = NULL,
+                        previous_token_limit = NULL, previous_chunk_size = NULL WHERE id = ?
+                """, (world_id,))
             db.execute("UPDATE worlds SET status = 'paused' WHERE id = ? AND status = 'pausing'", (world["id"],))
             self.active_chunk = None
 

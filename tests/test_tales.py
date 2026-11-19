@@ -2,6 +2,7 @@ import json
 import sqlite3
 import tempfile
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
 from pathlib import Path
 from threading import Event, Thread
@@ -35,6 +36,9 @@ class StoryProvider:
         self.reject_long_chat = False
         self.reject_long_retrieval = False
         self.retrieval_error = None
+        self.query_started = Event()
+        self.query_release = Event()
+        self.query_release.set()
 
     def __call__(self, generation):
         from types import SimpleNamespace
@@ -54,6 +58,9 @@ class StoryProvider:
 
     def embed(self, world, key, text):
         self.queries.append((world["model"], key, text))
+        self.query_started.set()
+        if not self.query_release.wait(3):
+            raise EmbeddingError("Query timed out.")
         if self.retrieval_error:
             raise self.retrieval_error
         if self.reject_long_retrieval and "\n\n" in text:
@@ -164,6 +171,57 @@ class TaleTests(unittest.TestCase):
         self.send("Find the matching passage.")
         system = self.provider.prompts[-1][2]["systemInstruction"]["parts"][0]["text"]
         self.assertIn("<retrieved_passages>\nefghi\n</retrieved_passages>", system)
+
+    def test_reindex_switches_to_replacement_at_first_vector_and_preserves_in_flight_retrieval(self):
+        self.open_server()
+        embedding = self.worlds.provider
+        self.addCleanup(embedding.release.set)
+        embedding.started.clear()
+        embedding.release.clear()
+        world = self.worlds.detail(self.world)
+        draft = uuid4().hex
+        route = f"/api/world-imports/{draft}"
+        settings = {
+            "world_id": self.world, "book_revision": world["book_revision"], "model": "gemini-embedding-001",
+            "key_ids": [self.key], "dimensions": 768, "max_chunk_size": 4, "boundary_search_distance": 0,
+        }
+        with self.request(route + "/prepare-reindex", settings) as response:
+            self.assertEqual(json.load(response)["chunk_count"], 5)
+        self.request(route + "/accept", {}).close()
+        self.assertTrue(embedding.started.wait(2))
+        self.assertEqual(self.worlds.detail(self.world)["retrieval_index"]["model"], "gemini-embedding-2")
+        self.provider.query_release.clear()
+        with ThreadPoolExecutor() as executor:
+            old_reply = executor.submit(self.send, "Use the previous index.")
+            try:
+                self.assertTrue(self.provider.query_started.wait(2))
+                self.worlds.pause(self.world)
+                embedding.release.set()
+                wait_for(lambda: self.worlds.detail(self.world)["status"] == "paused")
+            finally:
+                self.provider.query_release.set()
+            self.assertEqual(old_reply.result(4)[-1]["status"], "complete")
+        old_system = self.provider.prompts[-1][2]["systemInstruction"]["parts"][0]["text"]
+        self.assertIn("abcdef\n\nghi\n\njklmno", old_system)
+        current = self.worlds.detail(self.world)
+        self.assertEqual(current["embedded_chunks"], 1)
+        self.assertEqual(current["retrieval_index"]["dimensions"], 3072)
+        self.assertEqual(self.send("Use the new index.")[-1]["status"], "complete")
+        self.assertEqual(self.provider.queries[-1][0], "gemini-embedding-001")
+        new_system = self.provider.prompts[-1][2]["systemInstruction"]["parts"][0]["text"]
+        self.assertIn("<retrieved_passages>\nabcd\n</retrieved_passages>", new_system)
+        self.assertIn("Chunk Size = 4 Characters", new_system)
+        self.worlds.close()
+        self.worlds = Worlds(self.database, embedding)
+        recovered = self.worlds.detail(self.world)
+        self.assertEqual((recovered["status"], recovered["embedded_chunks"]), ("paused", 1))
+        self.assertEqual(len(self.worlds.tales.detail(self.world, self.tale)["messages"]), 4)
+        self.worlds.resume(self.world)
+        wait_for(lambda: self.worlds.detail(self.world)["status"] == "ready")
+        self.assertEqual([request[-1] for request in embedding.embed_requests[-5:]], [
+            "title: First | text: abcd", "title: First | text: efgh", "title: First | text: i",
+            "title: Second | text: jklm", "title: Second | text: no",
+        ])
 
     def test_tale_retrieval_uses_live_book_order_and_each_new_chunk_after_it_is_saved(self):
         self.open_server()

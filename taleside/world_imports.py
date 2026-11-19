@@ -11,7 +11,7 @@ class PreparedBooks:
     chunk_rows: list
 
 
-def prepare_books(world_id, books, max_size, search_distance, cancelled, *, start_number=1):
+def prepare_books(world_id, books, max_size, search_distance, cancelled, *, start_number=1, prepared=None):
     book_rows = []
     chunk_rows = []
     for book_number, source in enumerate(books, start_number):
@@ -19,7 +19,8 @@ def prepare_books(world_id, books, max_size, search_distance, cancelled, *, star
             raise ValueError("The import was cancelled.")
         if source.name is not None and not isinstance(source.name, str):
             raise ValueError("Book names must be text.")
-        working, encoding, bom_size, chunks = prepare_txt(source, max_size, search_distance)
+        working, encoding, bom_size, chunks = (prepared[book_number] if prepared is not None
+                                               else prepare_txt(source, max_size, search_distance))
         book_name = (source.name or "").strip() or source.filename[:-4]
         book_rows.append((world_id, book_number, book_name, source.filename,
                           source.original, working, encoding, bom_size))

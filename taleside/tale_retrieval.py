@@ -8,12 +8,18 @@ from .embeddings import MODELS, EmbeddingError, valid_vector
 
 
 def retrieval_index(db, world):
-    if world["model"] not in MODELS or not db.execute("""
+    index_number = world["previous_index"] or world["index_number"]
+    if not db.execute("""
         SELECT 1 FROM books b JOIN chunks c ON c.book_id = b.id
         WHERE b.world_id = ? AND c.index_number = ? AND c.vector IS NOT NULL LIMIT 1
-    """, (world["id"], world["index_number"])).fetchone():
+    """, (world["id"], index_number)).fetchone():
         return None
-    return world
+    index = dict(world)
+    if world["previous_index"] is not None:
+        index.update(index_number=index_number, model=world["previous_model"],
+                     dimensions=world["previous_dimensions"], max_token_limit=world["previous_token_limit"],
+                     max_chunk_size=world["previous_chunk_size"])
+    return index if index["model"] in MODELS else None
 
 
 def query_text(messages):

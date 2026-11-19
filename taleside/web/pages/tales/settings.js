@@ -55,7 +55,8 @@ export function initTaleSettings({ request, addKey, onWorldChange, confirm }) {
   }
 
   function renderRetrieval() {
-    const model = embeddingModels.find(model => model.id === world?.model);
+    const index = world?.retrieval_index ?? world;
+    const model = embeddingModels.find(model => model.id === index?.model);
     const compatible = keys.filter(key => key.provider === model?.provider);
     const disabled = !world || !compatible.length;
     const selected = retrievalChange && retrievalChange.worldId === world?.id
@@ -66,9 +67,9 @@ export function initTaleSettings({ request, addKey, onWorldChange, confirm }) {
       });
     }
     element("tale-settings-world").hidden = !world;
-    worldModel.textContent = world?.model ?? "";
-    worldSpecs.textContent = world
-      ? `${world.dimensions.toLocaleString()} dimensions · ${world.max_token_limit.toLocaleString()} max tokens`
+    worldModel.textContent = index?.model ?? "";
+    worldSpecs.textContent = index
+      ? `${index.dimensions.toLocaleString()} dimensions · ${index.max_token_limit.toLocaleString()} max tokens`
       : "";
   }
 
