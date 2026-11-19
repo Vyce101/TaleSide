@@ -29,3 +29,17 @@ Close the PowerShell window when you’re done to stop TaleSide.
 4. Click **Create** to start. TaleSide sends book titles and chunks of text to
    Google Gemini to count tokens and create embeddings. Once the World is saved,
    you can follow its progress from **Worlds**.
+
+## Start a Tale
+
+1. Open a Ready World and select **New Tale**, or use **Play** to resume its
+   most recently active Tale.
+2. Open **Tale Settings** and select a **Chat Key** for Gemini 4 Hydrogen.
+   The **Retrieval Key** starts with the key used to create the World. You can
+   change it independently in the Tales tab or Tale Settings.
+3. Send a message. TaleSide sends recent messages to Gemini Embedding 2 for
+   search. It sends World information, matching book passages, and the
+   conversation to Gemini 4 Hydrogen for the reply. With **Thought signatures**
+   on, TaleSide also sends the signatures Gemini returned for prior replies.
+
+Tales, messages, and chat profiles are saved in the local TaleSide database.

@@ -4,6 +4,8 @@
 
 ### Added
 
+- Tales for saved Worlds with book-grounded Gemini 4 Hydrogen chat, streaming thought summaries, and shared chat profiles.
+
 - Windows launcher that opens TaleSide in a local browser. Worlds and encrypted keys are stored in `data/` inside the TaleSide folder. Existing databases in `%LOCALAPPDATA%\TaleSide` must be moved to `data/` to keep using them.
 - Worlds homepage with an empty state and demo Worlds that show creation progress, pause, and failure states. The Worlds Preview selector is in **Settings → Developer Options**.
 - TXT processing that preserves original files, saves vectors from `gemini-embedding-2` using the World’s selected key, and resumes from saved progress.
