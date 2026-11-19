@@ -86,9 +86,9 @@ html[data-route-transition] #home { position: relative; min-height: 100dvh; }
   transition: transform 150ms ease;
 }
 .picker-trigger[aria-expanded="true"] svg { transform: rotate(180deg); }
-.picker-trigger:not(:disabled):hover { border-color: #ffffff66; }
+.picker-trigger:not(:disabled, [aria-disabled="true"]):hover { border-color: #ffffff66; }
 .picker-trigger:is(:focus-visible, [aria-expanded="true"]) { border-color: #ffffff8c; }
-.picker-trigger:disabled { color: var(--color-text-inactive); }
+.picker-trigger:is(:disabled, [aria-disabled="true"]) { color: var(--color-text-inactive); }
 .picker-menu {
   position: absolute;
   z-index: 3;

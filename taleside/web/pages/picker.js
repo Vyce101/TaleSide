@@ -1,4 +1,8 @@
-export function initPicker(id, labelId, onChange) {
+function sameSelection(first, second) {
+  return first?.length === second.length && second.every((id, index) => id === first[index]);
+}
+
+export function initPicker(id, labelId, onChange, { multiple = false, scrollContainer } = {}) {
   const picker = document.getElementById(id);
   const trigger = document.createElement("button");
   trigger.type = "button";
@@ -16,26 +20,49 @@ export function initPicker(id, labelId, onChange) {
   menu.hidden = true;
   menu.setAttribute("role", "listbox");
   menu.setAttribute("aria-labelledby", labelId);
+  if (multiple) menu.setAttribute("aria-multiselectable", "true");
   picker.append(trigger, menu);
   let options = [];
   let value;
+  let pendingSelection;
+  let placeholder;
   let renderedGroups;
 
-  function close(restoreFocus = false) {
+  function renderSelection() {
+    const selected = multiple ? (pendingSelection ?? value) : [value];
+    for (const option of options) option.setAttribute("aria-selected", String(selected.includes(option.value)));
+    label.textContent = selected.length > 1 ? `${selected.length} keys selected`
+      : options.find(option => option.value === selected[0])?.textContent ?? placeholder;
+  }
+
+  function close(restoreFocus = false, commit = true) {
     if (menu.hidden) return;
     trigger.setAttribute("aria-expanded", "false");
     if (restoreFocus) trigger.focus();
     menu.hidden = true;
+    if (!multiple) return;
+    const selected = pendingSelection;
+    pendingSelection = null;
+    const changed = commit && !sameSelection(value, selected);
+    if (changed) value = selected;
+    renderSelection();
+    if (changed) onChange(selected);
   }
 
   function open(position = 0) {
-    if (trigger.disabled || !options.length) return;
+    if (trigger.disabled || trigger.hasAttribute("aria-disabled") || !options.length) return;
+    if (multiple) pendingSelection = [...value];
     menu.hidden = false;
     const bounds = trigger.getBoundingClientRect();
-    const spaceBelow = window.innerHeight - bounds.bottom;
-    menu.toggleAttribute("data-above", spaceBelow < menu.offsetHeight + 12 && bounds.top > spaceBelow);
+    const container = scrollContainer?.getBoundingClientRect();
+    const spaceBelow = (container?.bottom ?? window.innerHeight) - bounds.bottom;
+    const spaceAbove = bounds.top - (container?.top ?? 0);
+    menu.style.removeProperty("max-height");
+    const above = spaceBelow < menu.offsetHeight + 12 && spaceAbove > spaceBelow;
+    menu.toggleAttribute("data-above", above);
+    if (container) menu.style.maxHeight = `min(300px, 55dvh, ${Math.max(0, (above ? spaceAbove : spaceBelow) - 8)}px)`;
     trigger.setAttribute("aria-expanded", "true");
-    const selected = options.find(option => option.value === value);
+    const selected = options.find(option => multiple ? value.includes(option.value) : option.value === value);
     (selected ?? options.at(position)).focus();
   }
 
@@ -76,6 +103,13 @@ export function initPicker(id, labelId, onChange) {
   menu.addEventListener("click", event => {
     const option = event.target.closest("button");
     if (!option) return;
+    if (multiple) {
+      pendingSelection = pendingSelection.includes(option.value)
+        ? pendingSelection.filter(id => id !== option.value)
+        : [...pendingSelection, option.value];
+      renderSelection();
+      return;
+    }
     close(true);
     if (option.value !== value) onChange(option.value);
   });
@@ -83,10 +117,10 @@ export function initPicker(id, labelId, onChange) {
   return {
     close,
     focus: () => trigger.focus(),
-    update(groups, selected, { disabled = false, placeholder = "" } = {}) {
+    update(groups, selected, { disabled = false, saving = false, placeholder: emptyLabel = "" } = {}) {
       const groupSignature = JSON.stringify(groups);
       if (groupSignature !== renderedGroups) {
-        close(menu.contains(document.activeElement));
+        close(menu.contains(document.activeElement), false);
         menu.replaceChildren();
         options = [];
         for (const { name, hint, divider, items } of groups) {
@@ -123,10 +157,13 @@ export function initPicker(id, labelId, onChange) {
         }
         renderedGroups = groupSignature;
       }
+      if (multiple && !sameSelection(value, selected)) close(menu.contains(document.activeElement), false);
+      if (disabled || saving) close(false, false);
       value = selected;
-      for (const option of options) option.setAttribute("aria-selected", String(option.value === value));
-      label.textContent = options.find(option => option.value === value)?.textContent ?? placeholder;
-      if (disabled) close();
+      placeholder = emptyLabel;
+      renderSelection();
+      if (saving) trigger.setAttribute("aria-disabled", "true");
+      else trigger.removeAttribute("aria-disabled");
       trigger.disabled = disabled;
     },
   };
