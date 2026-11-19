@@ -31,8 +31,9 @@ export function initPicker(id, labelId, onChange, { multiple = false, scrollCont
   function renderSelection() {
     const selected = multiple ? (pendingSelection ?? value) : [value];
     for (const option of options) option.setAttribute("aria-selected", String(selected.includes(option.value)));
-    label.textContent = selected.length > 1 ? `${selected.length} keys selected`
+    const text = selected.length > 1 ? `${selected.length} keys selected`
       : options.find(option => option.value === selected[0])?.textContent ?? placeholder;
+    if (label.textContent !== text) label.textContent = text;
   }
 
   function close(restoreFocus = false, commit = true) {

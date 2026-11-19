@@ -213,7 +213,7 @@ export function initWorldScreen({ request, onCreated, rename, discard, changeJob
   function updateEmbedding() {
     embedding.show({
       options: embeddingOptions, selection: draft ?? currentWorld, world: currentWorld,
-      busy, changingKey: Boolean(keyChange), jobPending,
+      busy, pendingKeyIds: keyChange?.keyIds, jobPending,
     });
     if (currentWorld) action.disabled = Boolean(keyChange || jobPending || currentWorld.status === "pausing"
       || (currentWorld.status === "ready" && currentWorld.id.startsWith("demo-")));
@@ -249,11 +249,11 @@ export function initWorldScreen({ request, onCreated, rename, discard, changeJob
     const world = currentWorld;
     if (!world || keyChange || !["paused", "failed", "ready"].includes(world.status)) return;
     setError("action-error", "");
-    const submission = changeKey(world, keyIds);
+    const submission = { keyIds };
     keyChange = submission;
     updateEmbedding();
     try {
-      await submission;
+      await changeKey(world, keyIds);
     } catch (error) {
       if (currentWorld?.id === world.id) setError("action-error", error.message);
     } finally {

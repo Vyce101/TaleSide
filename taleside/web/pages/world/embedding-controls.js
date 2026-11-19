@@ -36,7 +36,7 @@ export function initEmbeddingControls({ chooseModel, chooseKey, addKey }) {
       if (add.hidden) keyControl.focus();
       else add.focus();
     },
-    show({ options, selection, world, busy, changingKey, jobPending }) {
+    show({ options, selection, world, busy, pendingKeyIds, jobPending }) {
       const models = options?.models ?? [];
       const keys = options?.keys ?? [];
       const model = models.find(item => item.id === selection?.model);
@@ -44,7 +44,7 @@ export function initEmbeddingControls({ chooseModel, chooseKey, addKey }) {
       const specs = world ?? model;
       const demo = world?.id.startsWith("demo-");
       const active = busy || jobPending === "resume" || ["creating", "pausing"].includes(world?.status);
-      const keyLocked = active || changingKey;
+      const saving = Boolean(pendingKeyIds);
       const providerKeys = keys.filter(key => key.provider === model?.provider);
       const missingKeys = Boolean(model && !providerKeys.length && !demo);
       const keyItems = providerKeys.map(key => ({ id: key.id, label: key.nickname }));
@@ -59,14 +59,14 @@ export function initEmbeddingControls({ chooseModel, chooseKey, addKey }) {
         disabled: Boolean(world || busy || !models.length),
         placeholder: selection?.model ?? "Loading models…",
       });
-      keyControl.update([{ name: providerName, items: keyItems }], selection?.embedding_key_ids ?? [], {
+      keyControl.update([{ name: providerName, items: keyItems }], pendingKeyIds ?? selection?.embedding_key_ids ?? [], {
         disabled: Boolean(active || demo || !keyItems.length),
-        saving: changingKey,
+        saving,
         placeholder: demo ? "Demo key" : !options ? "Loading keys…" : "Select an API key",
       });
       keyPicker.hidden = missingKeys;
       add.hidden = !missingKeys;
-      add.disabled = Boolean(keyLocked);
+      add.disabled = Boolean(active || saving);
       add.lastElementChild.textContent = `Add ${providerName} Key`;
     },
   };

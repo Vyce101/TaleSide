@@ -29,8 +29,8 @@ export function initTaleSettings({ request, addKey, onWorldChange, confirm }) {
   let embeddingModels = [];
   let saving = Promise.resolve();
   let loading = 0;
-  let changingKey = false;
-  let changingChatKey = false;
+  let retrievalChange;
+  let pendingChatKeyIds;
   let profileEdit;
   let opener;
 
@@ -58,11 +58,12 @@ export function initTaleSettings({ request, addKey, onWorldChange, confirm }) {
     const model = embeddingModels.find(model => model.id === world?.model);
     const compatible = keys.filter(key => key.provider === model?.provider);
     const disabled = !world || ["creating", "pausing"].includes(world.status) || !compatible.length;
+    const selected = retrievalChange && retrievalChange.worldId === world?.id
+      ? retrievalChange.keyIds : world?.retrieval_key_ids ?? [];
     for (const picker of [hubKey, drawerKey]) {
-      picker.update([{ items: compatible.map(key => ({ id: key.id, label: key.nickname })) }],
-        world?.retrieval_key_ids ?? [], {
-          disabled, saving: changingKey, placeholder: compatible.length ? "Select keys" : "No compatible keys",
-        });
+      picker.update([{ items: compatible.map(key => ({ id: key.id, label: key.nickname })) }], selected, {
+        disabled, saving: Boolean(retrievalChange), placeholder: compatible.length ? "Select keys" : "No compatible keys",
+      });
     }
     element("tale-settings-world").hidden = !world;
     worldModel.textContent = world?.model ?? "";
@@ -72,9 +73,9 @@ export function initTaleSettings({ request, addKey, onWorldChange, confirm }) {
   }
 
   async function changeRetrieval(keyIds) {
-    if (!world || changingKey) return;
+    if (!world || retrievalChange) return;
     const worldId = world.id;
-    changingKey = true;
+    retrievalChange = { worldId, keyIds };
     renderRetrieval();
     try {
       await request(`/api/worlds/${worldId}/retrieval-key`, { method: "POST", json: { key_ids: keyIds } });
@@ -82,7 +83,7 @@ export function initTaleSettings({ request, addKey, onWorldChange, confirm }) {
     } catch (failure) {
       errorText(drawer.open ? error : element("tales-error"), failure.message);
     } finally {
-      changingKey = false;
+      retrievalChange = null;
       renderRetrieval();
     }
   }
@@ -120,8 +121,8 @@ export function initTaleSettings({ request, addKey, onWorldChange, confirm }) {
     add.hidden = Boolean(compatible.length);
     add.textContent = `＋ Add ${model.provider_name} Key`;
     chatKey.update([{ items: compatible.map(key => ({ id: key.id, label: key.nickname })) }],
-      settings.chat_key_ids.filter(id => compatibleIds.has(id)),
-      { disabled: !compatible.length, saving: changingChatKey, placeholder: "Select keys" });
+      (pendingChatKeyIds ?? settings.chat_key_ids).filter(id => compatibleIds.has(id)),
+      { disabled: !compatible.length, saving: Boolean(pendingChatKeyIds), placeholder: "Select keys" });
     element("thinking-level").hidden = !model.thinking_levels?.length;
     const levels = element("thinking-level-options");
     if (levels.dataset.model !== model.id) {
@@ -170,12 +171,12 @@ export function initTaleSettings({ request, addKey, onWorldChange, confirm }) {
   }
 
   async function saveChatKeys(keyIds) {
-    changingChatKey = true;
+    pendingChatKeyIds = keyIds;
     render();
     try {
       await save("/api/tale-settings", { chat_key_ids: keyIds });
     } finally {
-      changingChatKey = false;
+      pendingChatKeyIds = null;
       render();
     }
   }
