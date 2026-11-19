@@ -194,9 +194,9 @@ class WorldTests(unittest.TestCase):
         wait_for(lambda: self.worlds.detail(second["id"])["status"] == "ready")
         self.assertIsNone(self.worlds.detail(first["id"]))
         with self.worlds.connect() as db:
-            for table in ("books", "chunks"):
-                self.assertEqual(db.execute(f"SELECT count(*) FROM {table} WHERE world_id = ?",
-                                            (first["id"],)).fetchone()[0], 0)
+            self.assertEqual(db.execute("SELECT count(*) FROM books WHERE world_id = ?",
+                                        (first["id"],)).fetchone()[0], 0)
+            self.assertEqual(db.execute("SELECT count(*) FROM chunks").fetchone()[0], 1)
 
     def test_invalid_vector_and_provider_error_fail_without_saving_progress(self):
         self.provider.vector = [float("nan")] * 3072
@@ -330,12 +330,40 @@ class WorldTests(unittest.TestCase):
         with self.worlds.connect() as db:
             db.execute("UPDATE chunks SET vector = ? WHERE vector IS NOT NULL", (saved_vector,))
             db.execute("UPDATE worlds SET dimensions = 768")
+            db.executescript("""
+                BEGIN;
+                CREATE TABLE legacy_books (
+                    world_id TEXT REFERENCES worlds ON DELETE CASCADE, number INTEGER NOT NULL,
+                    name TEXT NOT NULL, filename TEXT NOT NULL, original BLOB NOT NULL, working TEXT NOT NULL,
+                    encoding TEXT NOT NULL, bom_size INTEGER NOT NULL, PRIMARY KEY (world_id, number)
+                );
+                INSERT INTO legacy_books
+                    SELECT world_id, number, name, filename, original, working, encoding, bom_size FROM books;
+                CREATE TABLE legacy_chunks (
+                    world_id TEXT NOT NULL, book_number INTEGER NOT NULL, number INTEGER NOT NULL,
+                    start INTEGER NOT NULL, end INTEGER NOT NULL, original_start INTEGER NOT NULL,
+                    original_end INTEGER NOT NULL, tokens INTEGER NOT NULL, embed_end INTEGER NOT NULL,
+                    vector BLOB, PRIMARY KEY (world_id, book_number, number),
+                    FOREIGN KEY (world_id, book_number) REFERENCES legacy_books ON DELETE CASCADE
+                );
+                INSERT INTO legacy_chunks
+                    SELECT b.world_id, b.number AS book_number, c.number, c.start, c.end,
+                           c.original_start, c.original_end, c.tokens, c.embed_end, c.vector
+                    FROM chunks c JOIN books b ON b.id = c.book_id;
+                DROP TABLE chunks;
+                DROP TABLE books;
+                ALTER TABLE legacy_books RENAME TO books;
+                ALTER TABLE legacy_chunks RENAME TO chunks;
+            """)
             for table, *_ in SELECTION_OWNERS:
                 db.execute(f"DROP TABLE {table}")
             db.execute("PRAGMA user_version = 0")
             db.execute("ALTER TABLE worlds DROP COLUMN retrieval_key_id")
             db.execute("ALTER TABLE worlds DROP COLUMN key_id")
             db.execute("ALTER TABLE worlds DROP COLUMN max_token_limit")
+            for column in ("index_number", "previous_index", "previous_model", "previous_dimensions",
+                           "previous_token_limit", "previous_chunk_size", "book_revision", "reindexing"):
+                db.execute(f"ALTER TABLE worlds DROP COLUMN {column}")
             db.execute("DROP TABLE embedding_defaults")
             db.execute("DROP TABLE provider_keys")
 

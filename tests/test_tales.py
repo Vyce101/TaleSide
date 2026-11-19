@@ -152,10 +152,14 @@ class TaleTests(unittest.TestCase):
     def test_retrieval_passes_whole_approved_chunk_and_adds_only_prior_chunk_text(self):
         self.open_server()
         with self.worlds.connect() as db:
-            db.execute("UPDATE chunks SET embed_end = 7 WHERE world_id = ? AND book_number = 1 AND number = 2",
-                       (self.world,))
-            db.execute("UPDATE chunks SET vector = ? WHERE world_id = ? AND number = 1",
-                       (bytes(3072 * 4), self.world))
+            db.execute("""
+                UPDATE chunks SET embed_end = 7 WHERE number = 2
+                AND book_id = (SELECT id FROM books WHERE world_id = ? AND number = 1)
+            """, (self.world,))
+            db.execute("""
+                UPDATE chunks SET vector = ? WHERE number = 1
+                AND book_id IN (SELECT id FROM books WHERE world_id = ?)
+            """, (bytes(3072 * 4), self.world))
         self.worlds.tales.settings({"chunk_overlap": 2, "retrieved_chunks": 1})
         self.send("Find the matching passage.")
         system = self.provider.prompts[-1][2]["systemInstruction"]["parts"][0]["text"]

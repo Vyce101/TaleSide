@@ -43,9 +43,20 @@ CREATE TABLE IF NOT EXISTS worlds (
     max_chunk_size INTEGER NOT NULL,
     boundary_search_distance INTEGER NOT NULL,
     key_id TEXT REFERENCES provider_keys ON DELETE SET NULL,
-    error TEXT
+    error TEXT,
+    index_number INTEGER NOT NULL DEFAULT 1,
+    previous_index INTEGER,
+    previous_model TEXT,
+    previous_dimensions INTEGER,
+    previous_token_limit INTEGER,
+    previous_chunk_size INTEGER,
+    book_revision INTEGER NOT NULL DEFAULT 0,
+    reindexing INTEGER NOT NULL DEFAULT 0
 );
+"""
+BOOK_SCHEMA = """
 CREATE TABLE IF NOT EXISTS books (
+    id TEXT PRIMARY KEY,
     world_id TEXT REFERENCES worlds ON DELETE CASCADE,
     number INTEGER NOT NULL,
     name TEXT NOT NULL,
@@ -54,11 +65,11 @@ CREATE TABLE IF NOT EXISTS books (
     working TEXT NOT NULL,
     encoding TEXT NOT NULL,
     bom_size INTEGER NOT NULL,
-    PRIMARY KEY (world_id, number)
+    UNIQUE (world_id, number)
 );
 CREATE TABLE IF NOT EXISTS chunks (
-    world_id TEXT NOT NULL,
-    book_number INTEGER NOT NULL,
+    book_id TEXT NOT NULL REFERENCES books ON DELETE CASCADE,
+    index_number INTEGER NOT NULL,
     number INTEGER NOT NULL,
     start INTEGER NOT NULL,
     end INTEGER NOT NULL,
@@ -67,10 +78,10 @@ CREATE TABLE IF NOT EXISTS chunks (
     tokens INTEGER NOT NULL,
     embed_end INTEGER NOT NULL,
     vector BLOB,
-    PRIMARY KEY (world_id, book_number, number),
-    FOREIGN KEY (world_id, book_number) REFERENCES books ON DELETE CASCADE
+    PRIMARY KEY (book_id, index_number, number)
 );
 """
+SCHEMA += BOOK_SCHEMA
 
 
 @dataclass
@@ -80,6 +91,27 @@ class PendingImport:
     books: PreparedBooks | None = None
     world_row: tuple = ()
     timer: Timer | None = None
+
+
+def migrate_books(db):
+    if "book_number" not in {column["name"] for column in db.execute("PRAGMA table_info(chunks)")}:
+        return
+    db.execute("ALTER TABLE books RENAME TO legacy_books")
+    db.execute("ALTER TABLE chunks RENAME TO legacy_chunks")
+    for statement in BOOK_SCHEMA.strip().rstrip(";").split(";"):
+        db.execute(statement)
+    db.execute("""
+        INSERT INTO books
+        SELECT lower(hex(randomblob(16))), world_id, number, name, filename, original, working, encoding, bom_size
+        FROM legacy_books
+    """)
+    db.execute("""
+        INSERT INTO chunks
+        SELECT b.id, 1, c.number, c.start, c.end, c.original_start, c.original_end, c.tokens, c.embed_end, c.vector
+        FROM legacy_chunks c JOIN books b ON b.world_id = c.world_id AND b.number = c.book_number
+    """)
+    db.execute("DROP TABLE legacy_chunks")
+    db.execute("DROP TABLE legacy_books")
 
 
 class Worlds:
@@ -107,6 +139,16 @@ class Worlds:
                 db.execute("UPDATE worlds SET retrieval_key_id = key_id")
             if "last_tale_activity_at" not in columns:
                 db.execute("ALTER TABLE worlds ADD COLUMN last_tale_activity_at REAL")
+            if "index_number" not in columns:
+                db.execute("ALTER TABLE worlds ADD COLUMN index_number INTEGER NOT NULL DEFAULT 1")
+                db.execute("ALTER TABLE worlds ADD COLUMN previous_index INTEGER")
+                db.execute("ALTER TABLE worlds ADD COLUMN previous_model TEXT")
+                db.execute("ALTER TABLE worlds ADD COLUMN previous_dimensions INTEGER")
+                db.execute("ALTER TABLE worlds ADD COLUMN previous_token_limit INTEGER")
+                db.execute("ALTER TABLE worlds ADD COLUMN previous_chunk_size INTEGER")
+                db.execute("ALTER TABLE worlds ADD COLUMN book_revision INTEGER NOT NULL DEFAULT 0")
+                db.execute("ALTER TABLE worlds ADD COLUMN reindexing INTEGER NOT NULL DEFAULT 0")
+            migrate_books(db)
             migrate_key_selections(db)
             db.execute("UPDATE worlds SET status = 'paused' WHERE status IN ('creating', 'pausing')")
             db.execute("UPDATE tale_messages SET status = 'error' WHERE status = 'generating'")
@@ -199,14 +241,15 @@ class Worlds:
                 save_key_selection(db, "world_retrieval_keys", world_id, pending.key_ids)
                 self.keys.remember(db, MODEL, pending.key_ids)
                 db.executemany("""
-                    INSERT INTO books (world_id, number, name, filename, original, working, encoding, bom_size)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """, pending.books.book_rows)
+                    INSERT INTO books (id, world_id, number, name, filename, original, working, encoding, bom_size)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, ((uuid4().hex, *book) for book in pending.books.book_rows))
+                book_ids = dict(db.execute("SELECT number, id FROM books WHERE world_id = ?", (world_id,)))
                 db.executemany("""
-                    INSERT INTO chunks (world_id, book_number, number, start, end, original_start, original_end,
+                    INSERT INTO chunks (book_id, index_number, number, start, end, original_start, original_end,
                                         tokens, embed_end)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, pending.books.chunk_rows)
+                """, ((book_ids[number], 1, *chunk) for number, *chunk in pending.books.chunk_rows))
             self._cancel_import_locked(world_id)
         self.wake.set()
         return True
@@ -238,10 +281,10 @@ class Worlds:
                 world["embedding_key_ids"] = selected_keys(db, "world_embedding_keys", world["id"])
                 world["retrieval_key_ids"] = selected_keys(db, "world_retrieval_keys", world["id"])
                 world["books"] = [dict(row) for row in db.execute("""
-                    SELECT b.number, b.name, b.filename, count(*) AS total_chunks, count(c.vector) AS embedded_chunks
-                    FROM books b JOIN chunks c ON c.world_id = b.world_id AND c.book_number = b.number
-                    WHERE b.world_id = ? GROUP BY b.number ORDER BY b.number
-                """, (world["id"],))]
+                    SELECT b.id, b.number, b.name, b.filename, count(*) AS total_chunks, count(c.vector) AS embedded_chunks
+                    FROM books b JOIN chunks c ON c.book_id = b.id AND c.index_number = ?
+                    WHERE b.world_id = ? GROUP BY b.id ORDER BY b.number
+                """, (world["index_number"], world["id"]))]
                 total = sum(book["total_chunks"] for book in world["books"])
                 done = sum(book["embedded_chunks"] for book in world["books"])
                 active_book = None
@@ -250,6 +293,10 @@ class Worlds:
                 world.update(total_chunks=total, embedded_chunks=done,
                              active_book=active_book,
                              progress=100 if world["status"] == "ready" else min(99, done * 100 // (total or 1)))
+                for field in ("index_number", "previous_index", "previous_model", "previous_dimensions",
+                              "previous_token_limit", "previous_chunk_size"):
+                    del world[field]
+                del world["reindexing"]
         return worlds
 
     def detail(self, world_id):
@@ -333,12 +380,12 @@ class Worlds:
             dimensions = world["dimensions"]
             vector_format = Struct(f"<{dimensions}f")
             chunk = db.execute("""
-                SELECT c.book_number, c.number, c.start, c.tokens, b.name,
+                SELECT b.id, b.number AS book_number, c.number, c.start, c.tokens, b.name,
                        substr(b.working, c.start + 1, c.embed_end - c.start) AS text
-                FROM chunks c JOIN books b ON b.world_id = c.world_id AND b.number = c.book_number
-                WHERE c.world_id = ? AND c.vector IS NULL
-                ORDER BY c.book_number, c.number LIMIT 1
-            """, (world_id,)).fetchone()
+                FROM chunks c JOIN books b ON b.id = c.book_id
+                WHERE b.world_id = ? AND c.index_number = ? AND c.vector IS NULL
+                ORDER BY b.number, c.number LIMIT 1
+            """, (world_id, world["index_number"])).fetchone()
             if chunk is None:
                 self.verify(db, world, vector_format)
                 db.execute("UPDATE worlds SET status = 'ready' WHERE id = ?", (world_id,))
@@ -365,8 +412,8 @@ class Worlds:
         with self.lock, self.connect() as db:
             db.execute("""
                 UPDATE chunks SET vector = ?, tokens = ?, embed_end = ?
-                WHERE world_id = ? AND book_number = ? AND number = ?
-            """, (vector, tokens, chunk["start"] + length, world_id, chunk["book_number"], chunk["number"]))
+                WHERE book_id = ? AND index_number = ? AND number = ?
+            """, (vector, tokens, chunk["start"] + length, chunk["id"], world["index_number"], chunk["number"]))
             db.execute("UPDATE worlds SET status = 'paused' WHERE id = ? AND status = 'pausing'", (world["id"],))
             self.active_chunk = None
 
@@ -374,8 +421,8 @@ class Worlds:
         books = db.execute("SELECT * FROM books WHERE world_id = ? ORDER BY number", (world["id"],))
         for book in books:
             chunks = db.execute("""
-                SELECT * FROM chunks WHERE world_id = ? AND book_number = ? ORDER BY number
-            """, (world["id"], book["number"]))
+                SELECT * FROM chunks WHERE book_id = ? AND index_number = ? ORDER BY number
+            """, (book["id"], world["index_number"]))
             start, source_start = 0, book["bom_size"]
             for number, chunk in enumerate(chunks, 1):
                 end, source_end = chunk["end"], chunk["original_end"]

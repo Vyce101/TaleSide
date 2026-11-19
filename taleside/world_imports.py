@@ -23,6 +23,6 @@ def prepare_books(world_id, books, max_size, search_distance, cancelled):
         book_name = (source.name or "").strip() or source.filename[:-4]
         book_rows.append((world_id, book_number, book_name, source.filename,
                           source.original, working, encoding, bom_size))
-        chunk_rows.extend((world_id, book_number, number, chunk.start, chunk.end, chunk.original_start, chunk.original_end,
+        chunk_rows.extend((book_number, number, chunk.start, chunk.end, chunk.original_start, chunk.original_end,
                            0, chunk.end) for number, chunk in enumerate(chunks, 1))
     return PreparedBooks(book_rows, chunk_rows)

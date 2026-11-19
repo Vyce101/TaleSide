@@ -18,9 +18,10 @@ def passages(db, world, query, settings, cancelled):
     vector_format = Struct(f"<{dimensions}f")
     query_length = sqrt(sum(value * value for value in query))
     chunks = db.execute("""
-        SELECT book_number, number, start, end, vector FROM chunks
-        WHERE world_id = ? AND vector IS NOT NULL ORDER BY book_number, number
-    """, (world["id"],))
+        SELECT b.number AS book_number, c.book_id, c.number, c.start, c.end, c.vector
+        FROM chunks c JOIN books b ON b.id = c.book_id
+        WHERE b.world_id = ? AND c.index_number = ? AND c.vector IS NOT NULL ORDER BY b.number, c.number
+    """, (world["id"], world["index_number"]))
 
     def matches():
         for chunk in chunks:
@@ -47,13 +48,13 @@ def passages(db, world, query, settings, cancelled):
         start = chunk["start"]
         if settings["chunk_overlap"] and chunk["number"] > 1:
             prior = db.execute("""
-                SELECT start FROM chunks WHERE world_id = ? AND book_number = ? AND number = ?
-            """, (world["id"], book, chunk["number"] - 1)).fetchone()
+                SELECT start FROM chunks WHERE book_id = ? AND index_number = ? AND number = ?
+            """, (chunk["book_id"], world["index_number"], chunk["number"] - 1)).fetchone()
             if prior:
                 start = max(prior["start"], start - settings["chunk_overlap"], covered_end)
         text, = db.execute("""
-            SELECT substr(working, ?, ?) FROM books WHERE world_id = ? AND number = ?
-        """, (start + 1, chunk["end"] - start, world["id"], book)).fetchone()
+            SELECT substr(working, ?, ?) FROM books WHERE id = ?
+        """, (start + 1, chunk["end"] - start, chunk["book_id"])).fetchone()
         excerpts.append(text)
         covered_end = chunk["end"]
     return excerpts
