@@ -74,7 +74,7 @@ export function initSettings({ request, refresh, onPreviewChange }) {
     delete overlay.dataset.closing;
     overlay.hidden = false;
     overlay.inert = false;
-    home.inert = studio.inert = true;
+    home.inert = studio.inert = element("tale-chat").inert = true;
     document.body.dataset.settingsOpen = "";
     gear.setAttribute("aria-expanded", "true");
     element("app-settings-title").focus({ preventScroll: true });
@@ -94,7 +94,7 @@ export function initSettings({ request, refresh, onPreviewChange }) {
     if (editing) finishRename(editing);
     if (focus) gear.focus({ preventScroll: true });
     overlay.inert = true;
-    home.inert = studio.inert = false;
+    home.inert = studio.inert = element("tale-chat").inert = false;
     delete document.body.dataset.settingsOpen;
     gear.setAttribute("aria-expanded", "false");
     if (immediate || reducedMotion.matches) {
