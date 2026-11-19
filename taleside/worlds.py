@@ -22,6 +22,7 @@ from .embeddings import (
     valid_vector,
 )
 from .provider_keys import KEY_SCHEMA, KeyConflict, ProviderKeys
+from .tales import TALE_SCHEMA, Tales
 from .world_imports import CheckedBooks, check_books
 
 IMPORT_TIMEOUT_SECONDS = 30 * 60
@@ -84,18 +85,22 @@ class Worlds:
         self.stopping = Event()
         self.lock = Lock()
         self.keys = ProviderKeys(self.connect, self.lock)
+        self.tales = Tales(self)
         self.imports = {}
         self.active_chunk = None
         with self.connect() as db:
             db.execute("PRAGMA journal_mode = WAL")
-            db.executescript(KEY_SCHEMA + SCHEMA)
+            db.executescript(KEY_SCHEMA + SCHEMA + TALE_SCHEMA)
             db.execute("BEGIN")
             columns = {column["name"] for column in db.execute("PRAGMA table_info(worlds)")}
             if "max_token_limit" not in columns:
                 db.execute("ALTER TABLE worlds ADD COLUMN max_token_limit INTEGER NOT NULL DEFAULT 8192")
             if "key_id" not in columns:
                 db.execute("ALTER TABLE worlds ADD COLUMN key_id TEXT REFERENCES provider_keys ON DELETE SET NULL")
+            if "last_tale_activity_at" not in columns:
+                db.execute("ALTER TABLE worlds ADD COLUMN last_tale_activity_at REAL")
             db.execute("UPDATE worlds SET status = 'paused' WHERE status IN ('creating', 'pausing')")
+            db.execute("UPDATE tale_messages SET status = 'error' WHERE status = 'generating'")
         self.worker = Thread(target=self.run, name="World embeddings", daemon=True)
         self.worker.start()
 
@@ -224,7 +229,7 @@ class Worlds:
             if world_id is not None:
                 query += " AND id = ?"
                 filters = (world_id,)
-            worlds = [dict(row) for row in db.execute(query + " ORDER BY rowid", filters)]
+            worlds = [dict(row) for row in db.execute(query + " ORDER BY last_tale_activity_at DESC, rowid", filters)]
             for world in worlds:
                 world["books"] = [dict(row) for row in db.execute("""
                     SELECT b.number, b.name, b.filename, count(*) AS total_chunks, count(c.vector) AS embedded_chunks
