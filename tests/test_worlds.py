@@ -223,32 +223,24 @@ class WorldTests(unittest.TestCase):
         ])
         self.assertEqual(self.worlds.keys.settings()["defaults"]["key_id"], alternate)
 
-    def test_delete_rechecks_world_names_and_uses_the_oldest_remaining_key(self):
-        older = self.worlds.keys.add("gemini", "Older", "fake-older-key")["id"]
-        newer = self.worlds.keys.add("gemini", "Newer", "fake-newer-key")["id"]
+    def test_delete_rechecks_world_names_and_leaves_the_selection_empty(self):
+        alternate = self.worlds.keys.add("gemini", "Alternate", "fake-alternate-key")["id"]
         draft = self.prepare("World", [BookSource("Book.txt", b"chapter")])
         self.worlds.accept(draft["id"])
         wait_for(lambda: self.worlds.detail(draft["id"])["status"] == "ready")
         impact = self.worlds.keys.delete_impact(self.key)
-        self.assertEqual(impact["fallback"]["id"], older)
         self.assertEqual(impact["worlds"], [{"id": draft["id"], "name": "World"}])
         self.worlds.rename(draft["id"], "Renamed")
         with self.assertRaises(KeyConflict):
             self.worlds.keys.delete(self.key, impact)
         self.worlds.keys.delete(self.key, self.worlds.keys.delete_impact(self.key))
-        self.assertEqual(self.worlds.detail(draft["id"])["key_id"], older)
-        self.assertEqual(self.worlds.keys.settings()["defaults"]["key_id"], older)
-
-        unused_impact = self.worlds.keys.delete_impact(newer)
-        self.assertEqual(unused_impact["worlds"], [])
-        self.assertIsNone(unused_impact["fallback"])
-        self.worlds.keys.delete(newer, unused_impact)
-        self.worlds.keys.delete(older, self.worlds.keys.delete_impact(older))
         world = self.worlds.detail(draft["id"])
         self.assertEqual(world["status"], "ready")
         self.assertEqual(world["embedded_chunks"], 1)
         self.assertIsNone(world["key_id"])
-        self.assertEqual(self.worlds.keys.settings()["keys"], [])
+        self.assertIsNone(world["retrieval_key_id"])
+        self.assertIsNone(self.worlds.keys.settings()["defaults"]["key_id"])
+        self.assertEqual([key["id"] for key in self.worlds.keys.settings()["keys"]], [alternate])
 
     def test_pending_import_blocks_key_deletion_only_while_checking(self):
         self.provider.count_release.clear()

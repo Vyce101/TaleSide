@@ -91,7 +91,7 @@ class ProviderKeys:
                 keys.append(summary)
             last = db.execute("SELECT model, key_id FROM embedding_defaults").fetchone()
             defaults = {"model": MODEL, "key_id": keys[0]["id"] if keys else None}
-            if last and last["key_id"] and last["model"] == MODEL:
+            if last and last["model"] == MODEL:
                 defaults = dict(last)
             return {"keys": keys, "defaults": defaults}
 
@@ -138,16 +138,9 @@ class ProviderKeys:
     def _delete_impact(self, db, key_id):
         key = self.require(db, key_id)
         worlds = self._assignments(db, key_id)
-        fallback = None
-        if worlds:
-            fallback = db.execute("""
-                SELECT id, provider, nickname FROM provider_keys WHERE provider = ? AND id != ?
-                ORDER BY rowid LIMIT 1
-            """, (key["provider"], key_id)).fetchone()
         return {
             "key": self._summary(key),
             "worlds": [{"id": world["id"], "name": world["name"]} for world in worlds],
-            "fallback": self._summary(fallback) if fallback else None,
             "busy": self._busy(key_id, worlds),
             "tales_use_key": any(db.execute(f"SELECT 1 FROM {table} WHERE {column} = ? LIMIT 1",
                                            (key_id,)).fetchone()
@@ -167,7 +160,4 @@ class ProviderKeys:
                 raise KeyConflict("Wait for book checks to finish and pause any Worlds using this key.")
             if impact != confirmed_impact:
                 raise KeyConflict("Key usage changed. Review the updated delete confirmation.")
-            fallback = impact["fallback"]
-            db.execute("UPDATE worlds SET key_id = ? WHERE key_id = ?",
-                       (fallback["id"] if fallback else None, key_id))
             db.execute("DELETE FROM provider_keys WHERE id = ?", (key_id,))

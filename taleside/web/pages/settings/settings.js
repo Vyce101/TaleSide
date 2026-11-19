@@ -300,24 +300,15 @@ export function initSettings({ request, refresh, onPreviewChange }) {
 
   function showDeleteImpact(impact) {
     element("delete-key-title").textContent = `Delete “${impact.key.nickname}”?`;
-    const used = impact.worlds.length > 0;
-    const last = used && !impact.fallback;
-    let description = "This key is unused. Delete it from TaleSide?";
-    if (used) {
-      const singular = impact.worlds.length === 1;
-      const usage = `${describeWorlds(impact.worlds)} currently ${singular ? "uses" : "use"} this key.`;
-      const affected = singular ? "This World" : "These Worlds";
-      description = impact.fallback
-        ? `${usage} ${affected} will automatically switch to “${impact.fallback.nickname}”.`
-        : `${usage} This is your last Google Gemini key. Add and assign a new key before ${affected.toLowerCase()} can use Gemini again.`;
+    const effects = [];
+    if (impact.worlds.length) {
+      effects.push(`This removes the key from the Embedding Key selections for ${describeWorlds(impact.worlds)}.`);
     }
     if (impact.tales_use_key) {
-      const clearing = "This also clears the key wherever it is selected for Tales or saved Chat Profiles.";
-      description = used ? `${description} ${clearing}` : clearing;
+      effects.push("This removes the key wherever it is selected for retrieval, chat, or saved Chat Profiles.");
     }
-    element("delete-key-description").textContent = description;
-    confirmDelete.textContent = last ? "Delete Last Key" : used ? "Delete & Auto-Switch" : "Delete Key";
-    confirmDelete.classList.toggle("danger-last-key", last);
+    if (effects.length) effects.push("If a selection becomes empty, choose a key the next time you need it.");
+    element("delete-key-description").textContent = effects.join(" ") || "Delete this key from TaleSide?";
     confirmDelete.disabled = impact.busy;
     showError("delete-key-error", impact.busy ? "Wait for book checks to finish and pause any Worlds using this key." : "");
   }
