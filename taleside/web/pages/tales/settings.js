@@ -57,7 +57,7 @@ export function initTaleSettings({ request, addKey, onWorldChange, confirm }) {
   function renderRetrieval() {
     const model = embeddingModels.find(model => model.id === world?.model);
     const compatible = keys.filter(key => key.provider === model?.provider);
-    const disabled = !world || ["creating", "pausing"].includes(world.status) || !compatible.length;
+    const disabled = !world || !compatible.length;
     const selected = retrievalChange && retrievalChange.worldId === world?.id
       ? retrievalChange.keyIds : world?.retrieval_key_ids ?? [];
     for (const picker of [hubKey, drawerKey]) {

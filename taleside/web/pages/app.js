@@ -118,7 +118,7 @@ function refreshWorlds(force = false) {
   const number = ++requestNumber;
   worldRequest = request("/api/worlds").then(worlds => {
     if (number !== requestNumber) return;
-    savedWorlds = worlds;
+    savedWorlds = worlds.map(world => ({ ...world, can_play: world.can_play ?? (world.status === "ready") }));
     if (connectionError) showHomeMessage("");
     connectionError = false;
     updateViews();

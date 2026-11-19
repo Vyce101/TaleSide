@@ -2,13 +2,14 @@
 
 import json
 import sqlite3
+from contextlib import closing
 from time import time
 from uuid import uuid4
 
 from .embeddings import MODEL, EmbeddingError
 from .gemini_tales import GeminiTale, Generation, GenerationCancelled, InputTooLarge
 from .provider_keys import KeyConflict, required_text, save_key_selection, selected_keys
-from .tale_retrieval import chat_request, passages, query_text
+from .tale_retrieval import chat_request, passages, query_text, retrieval_index
 from .tale_settings import SETTINGS_SCHEMA, active_settings, edit_profile, settings_view, update_settings
 
 TALE_SCHEMA = SETTINGS_SCHEMA + """
@@ -81,8 +82,6 @@ class Tales:
     def set_retrieval_keys(self, world_id, key_ids):
         with self.worlds.lock, self.worlds.connect() as db:
             world = saved_world(db, world_id)
-            if world["status"] in ("creating", "pausing"):
-                raise KeyConflict("Wait for World creation to pause or finish.")
             if world["model"] != MODEL:
                 raise KeyConflict("This World's embedding model is unavailable.")
             self.worlds.keys.validate_selection(db, key_ids, "Choose compatible Retrieval Keys.")
@@ -125,7 +124,7 @@ class Tales:
     def create(self, world_id, *, resume=False):
         with self.worlds.lock, self.worlds.connect() as db:
             world = saved_world(db, world_id)
-            if world["status"] != "ready":
+            if retrieval_index(db, world) is None:
                 raise KeyConflict("This World is still being prepared.")
             if resume:
                 latest = db.execute("""
@@ -173,11 +172,11 @@ class Tales:
     def begin(self, world_id, tale_id, content, generation_id):
         content = required_text(content, "Enter a message.")
         with self.worlds.lock, self.worlds.connect() as db:
-            world = saved_world(db, world_id)
+            world = retrieval_index(db, saved_world(db, world_id))
             tale = saved_tale(db, world_id, tale_id)
             if tale_id in self.active:
                 raise KeyConflict("This Tale is already generating.")
-            if world["status"] != "ready" or world["model"] != MODEL:
+            if world is None:
                 raise KeyConflict("This World's embeddings are unavailable.")
             settings = active_settings(db)
             retrieval_key_ids = selected_keys(db, "world_retrieval_keys", world_id)
@@ -206,13 +205,18 @@ class Tales:
             assistant = db.execute("""
                 INSERT INTO tale_messages (tale_id, role, model, status) VALUES (?, 'assistant', ?, 'generating')
             """, (tale_id, settings["model"])).lastrowid
-            db.commit()
+            snapshot = self.worlds.retrieval_snapshot()
+            try:
+                db.commit()
+            except sqlite3.Error:
+                snapshot.close()
+                raise
             generation = self.active[tale_id] = Generation(world_id, generation_id)
         history.append({"role": "user", "content": content})
-        return generation, assistant, world, books, settings, history, retrieval_key_ids
+        return generation, assistant, world, books, settings, history, retrieval_key_ids, snapshot
 
     def generate(self, tale_id, prepared, emit):
-        generation, assistant, world, books, settings, history, retrieval_key_ids = prepared
+        generation, assistant, world, books, settings, history, retrieval_key_ids, snapshot = prepared
         status = "error"
         signed_parts = []
 
@@ -222,11 +226,11 @@ class Tales:
                 return self.worlds.keys.next_secret(db, purpose, key_ids)
 
         try:
-            provider = self.provider(generation)
-            query = self.embed(provider, world, lambda: next_key("retrieval", retrieval_key_ids),
-                               history[-settings["messages_to_embed"]:])
-            generation.check()
-            with self.worlds.connect() as db:
+            with closing(snapshot) as db:
+                provider = self.provider(generation)
+                query = self.embed(provider, world, lambda: next_key("retrieval", retrieval_key_ids),
+                                   history[-settings["messages_to_embed"]:])
+                generation.check()
                 excerpts = passages(db, world, query, settings, generation.cancelled)
             generation.check()
             body = chat_request(world, books, excerpts, history, settings)

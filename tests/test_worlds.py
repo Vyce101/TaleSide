@@ -205,6 +205,7 @@ class WorldTests(unittest.TestCase):
         self.assertFalse(self.worlds.accept(add["id"]))
         world = self.worlds.detail(world_id)
         self.assertEqual(world["status"], "paused")
+        self.assertTrue(world["can_play"])
         self.assertEqual([(b["number"], b["name"], b["embedded_chunks"]) for b in world["books"]],
                          [(1, "Second", 1), (2, "Third", 0)])
         self.worlds.close()

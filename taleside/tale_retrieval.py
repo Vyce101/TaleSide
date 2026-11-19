@@ -4,7 +4,16 @@ from heapq import nlargest
 from math import sqrt
 from struct import Struct
 
-from .embeddings import EmbeddingError, valid_vector
+from .embeddings import MODEL, EmbeddingError, valid_vector
+
+
+def retrieval_index(db, world):
+    if world["model"] != MODEL or not db.execute("""
+        SELECT 1 FROM books b JOIN chunks c ON c.book_id = b.id
+        WHERE b.world_id = ? AND c.index_number = ? AND c.vector IS NOT NULL LIMIT 1
+    """, (world["id"], world["index_number"])).fetchone():
+        return None
+    return world
 
 
 def query_text(messages):

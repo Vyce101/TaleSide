@@ -73,7 +73,9 @@ export function initTaleChat({ request, settings, onActivity }) {
     submit.hidden = active;
     stop.hidden = !active || !generation?.controller;
     stop.disabled = Boolean(generation?.stopping);
-    submit.disabled = active || !input.value.trim();
+    const waiting = current?.world?.can_play === false;
+    submit.disabled = active || waiting || !input.value.trim();
+    element("tale-index-status").hidden = !waiting || active;
     pulse.hidden = !active;
   }
 
@@ -175,7 +177,7 @@ export function initTaleChat({ request, settings, onActivity }) {
     const tale = current;
     const draft = input.value;
     const text = draft.trim();
-    if (!tale || !text || generation) return;
+    if (!tale || !text || generation || tale.world?.can_play === false) return;
     const controller = new AbortController();
     const active = { controller, id: crypto.randomUUID().replaceAll("-", ""), api: tale.api };
     generation = active;
@@ -316,6 +318,7 @@ export function initTaleChat({ request, settings, onActivity }) {
       if (!current || !world) return;
       current.world = world;
       if (current.loaded) prompt.textContent = `Ask anything about ${world.name}.`;
+      updateComposer();
     },
   };
 }

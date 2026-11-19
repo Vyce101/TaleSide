@@ -156,7 +156,7 @@ export function initTaleHub({ request, navigate, confirm, settings, onActivity }
   }
 
   async function openTale(current, resume) {
-    if (!current || current.status !== "ready" || opening) return;
+    if (!current?.can_play || opening) return;
     const operation = opening = {};
     add.disabled = true;
     errorText(error);
@@ -170,7 +170,7 @@ export function initTaleHub({ request, navigate, confirm, settings, onActivity }
     } finally {
       if (opening === operation) {
         opening = null;
-        add.disabled = world?.status !== "ready";
+        add.disabled = !world?.can_play;
       }
     }
   }
@@ -192,7 +192,7 @@ export function initTaleHub({ request, navigate, confirm, settings, onActivity }
         errorText(error);
       }
       world = current;
-      add.disabled = current?.status !== "ready" || Boolean(opening);
+      add.disabled = !current?.can_play || Boolean(opening);
       refresh();
     },
   };

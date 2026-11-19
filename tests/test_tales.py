@@ -165,6 +165,63 @@ class TaleTests(unittest.TestCase):
         system = self.provider.prompts[-1][2]["systemInstruction"]["parts"][0]["text"]
         self.assertIn("<retrieved_passages>\nefghi\n</retrieved_passages>", system)
 
+    def test_tale_retrieval_uses_live_book_order_and_each_new_chunk_after_it_is_saved(self):
+        self.open_server()
+        embedding = self.worlds.provider
+        self.addCleanup(embedding.release.set)
+        world = self.worlds.detail(self.world)
+        first, second = world["books"]
+        self.request(f"/api/worlds/{self.world}/book-order", {
+            "book_revision": world["book_revision"], "book_ids": [second["id"], first["id"]],
+        }).close()
+        self.send("Read the second book first.")
+        system = self.provider.prompts[-1][2]["systemInstruction"]["parts"][0]["text"]
+        self.assertIn("Book 1 - Second\nBook 2 - First", system)
+        self.assertIn("jklmno\n\nabcdef", system)
+
+        world = self.worlds.detail(self.world)
+        self.request(f"/api/worlds/{self.world}/remove-book", {
+            "book_revision": world["book_revision"], "book_id": first["id"],
+        }).close()
+        world = self.worlds.detail(self.world)
+        draft = self.worlds.prepare(None, [BookSource("New.txt", b"pqrstuvwxyz")], model=None, key_ids=None,
+                                    target=self.world, revision=world["book_revision"])
+        self.worlds.accept(draft["id"])
+        self.send("What passages are available now?")
+        system = self.provider.prompts[-1][2]["systemInstruction"]["parts"][0]["text"]
+        self.assertIn("<retrieved_passages>\njklmno\n</retrieved_passages>", system)
+
+        embedding.started.clear()
+        embedding.release.clear()
+        self.worlds.resume(self.world)
+        self.assertTrue(embedding.started.wait(2))
+        self.worlds.pause(self.world)
+        embedding.release.set()
+        wait_for(lambda: self.worlds.detail(self.world)["status"] == "paused")
+        self.send("Read the first passage from the new book.")
+        system = self.provider.prompts[-1][2]["systemInstruction"]["parts"][0]["text"]
+        self.assertIn("<retrieved_passages>\njklmno\n\npqrstu\n</retrieved_passages>", system)
+
+    def test_initial_index_can_play_after_its_first_saved_embedding(self):
+        embedding = self.worlds.provider
+        self.addCleanup(embedding.release.set)
+        embedding.started.clear()
+        embedding.release.clear()
+        draft = self.worlds.prepare("New World", [BookSource("New.txt", b"ABCDEFGHIJ")], 4, 0,
+                                    model="gemini-embedding-2", key_ids=[self.key])
+        self.world = self.worlds.accept(draft["id"])
+        self.assertTrue(embedding.started.wait(2))
+        self.assertFalse(self.worlds.detail(self.world)["can_play"])
+        self.worlds.pause(self.world)
+        embedding.release.set()
+        wait_for(lambda: self.worlds.detail(self.world)["status"] == "paused")
+        self.assertTrue(self.worlds.detail(self.world)["can_play"])
+        self.tale = self.worlds.tales.create(self.world)["id"]
+        self.open_server()
+        self.assertEqual(self.send("Find the available passage.")[-1]["status"], "complete")
+        system = self.provider.prompts[-1][2]["systemInstruction"]["parts"][0]["text"]
+        self.assertIn("<retrieved_passages>\nABCD\n</retrieved_passages>", system)
+
     def test_chat_length_rejection_keeps_full_history_and_ends_the_send(self):
         self.open_server()
         self.send("First question.")

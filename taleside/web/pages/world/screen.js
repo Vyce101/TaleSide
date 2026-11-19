@@ -213,8 +213,9 @@ export function initWorldScreen({ request, onCreated, rename, discard, changeJob
       options: embeddingOptions, selection: draft ?? currentWorld, world: currentWorld,
       busy, pendingKeyIds: keyChange?.keyIds, jobPending,
     });
-    if (currentWorld) action.disabled = Boolean(keyChange || jobPending || currentWorld.status === "pausing"
-      || (currentWorld.status === "ready" && currentWorld.id.startsWith("demo-")));
+    if (currentWorld) action.disabled = currentWorld.status === "ready"
+      ? !currentWorld.can_play
+      : Boolean(keyChange || jobPending || currentWorld.status === "pausing");
   }
 
   function applyDraftDefaults() {

@@ -27,6 +27,7 @@ from .provider_keys import (
     save_key_selection, selected_keys,
 )
 from .tales import TALE_SCHEMA, Tales
+from .tale_retrieval import retrieval_index
 from .world_imports import PreparedBooks, prepare_books
 
 IMPORT_TIMEOUT_SECONDS = 30 * 60
@@ -167,6 +168,19 @@ class Worlds:
                 yield db
         finally:
             db.close()
+
+    def retrieval_snapshot(self):
+        # The request thread opens the snapshot and the generation thread closes it.
+        db = sqlite3.connect(self.database, check_same_thread=False)
+        db.row_factory = sqlite3.Row
+        try:
+            db.execute("PRAGMA query_only = ON")
+            db.execute("BEGIN")
+            db.execute("SELECT id FROM worlds LIMIT 1").fetchone()
+            return db
+        except sqlite3.Error:
+            db.close()
+            raise
 
     def close(self):
         self.stopping.set()
@@ -336,6 +350,10 @@ class Worlds:
             worlds = [dict(row) for row in db.execute(query + " ORDER BY last_tale_activity_at DESC, rowid", filters)]
             for world in worlds:
                 del world["key_id"], world["retrieval_key_id"]
+                index = retrieval_index(db, world)
+                world["can_play"] = index is not None
+                world["retrieval_index"] = {field: index[field] for field in
+                                            ("model", "dimensions", "max_token_limit")} if index else None
                 world["embedding_key_ids"] = selected_keys(db, "world_embedding_keys", world["id"])
                 world["retrieval_key_ids"] = selected_keys(db, "world_retrieval_keys", world["id"])
                 world["books"] = [dict(row) for row in db.execute("""
