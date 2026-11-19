@@ -184,6 +184,7 @@ export function initWorldScreen({ request, onCreated, rename, discard, changeJob
     request,
     onReportChange: describeSetup,
   });
+  const bookImport = createWorldImport({ request });
 
   function canEditWorld(world) {
     return !!world && !jobPending && !bookChange && !keyChange && !world.id.startsWith("demo-")
@@ -197,22 +198,27 @@ export function initWorldScreen({ request, onCreated, rename, discard, changeJob
         "Cancel", "Remove Book", true);
       if (!confirmed || currentWorld?.id !== world.id || !canEditWorld(currentWorld)) return false;
     }
-    books.showError("");
+    if (actionName !== "add") books.showError("");
     const operation = bookChange = {};
     const work = element("books-work");
-    work.textContent = "Saving book changes…";
+    work.textContent = actionName === "add" ? "Adding books…" : "Saving book changes…";
     work.hidden = false;
     books.setLocked(true);
     updateEmbedding();
     try {
       const book_revision = world.book_revision;
-      const fields = actionName === "book-order" ? { book_ids: value } : { book_id: value.id };
-      await request(`/api/worlds/${world.id}/${actionName}`, {
-        method: "POST", json: { ...fields, book_revision },
-      });
+      if (actionName === "add") {
+        if (!await bookImport.save({ world_id: world.id, book_revision }, value)) return false;
+      } else {
+        const fields = actionName === "book-order" ? { book_ids: value } : { book_id: value.id };
+        await request(`/api/worlds/${world.id}/${actionName}`, {
+          method: "POST", json: { ...fields, book_revision },
+        });
+      }
       await refreshWorlds(true);
       return bookChange === operation;
     } catch (error) {
+      bookImport.cancel();
       if (bookChange === operation) books.showError(error.message);
       return false;
     } finally {
@@ -337,6 +343,7 @@ export function initWorldScreen({ request, onCreated, rename, discard, changeJob
 
   function reset(isCreate) {
     embedding.reset();
+    bookImport.cancel();
     bookChange = null;
     currentWorld = null;
     draft = isCreate ? {} : null;
@@ -538,6 +545,7 @@ export function initWorldScreen({ request, onCreated, rename, discard, changeJob
   }
 
   window.addEventListener("pagehide", worldImport.cancel);
+  window.addEventListener("pagehide", bookImport.cancel);
   window.addEventListener("pageshow", event => {
     if (event.persisted && isDirty()) {
       reset(true);

@@ -66,17 +66,24 @@ export function initBooksPanel(onEdit, editSaved) {
   }
 
   function addFiles(files) {
-    if (saved || locked) return;
+    if (locked || (saved && !canEditSaved())) return;
     const rejected = [];
+    const added = [];
     for (const file of files) {
       if (!/\.txt$/i.test(file.name) || !file.size) {
         rejected.push(file.name);
         continue;
       }
-      selected.push({ file, filename: file.name, name: file.name.slice(0, -4) });
+      added.push({ file, filename: file.name, name: file.name.slice(0, -4) });
     }
     picker.value = "";
     showError(rejected.length ? `Select nonempty TXT files. Skipped ${rejected.join(", ")}.` : "");
+    if (!added.length) return;
+    if (saved) {
+      editSaved(saved, "add", added);
+      return;
+    }
+    selected.push(...added);
     render();
     onEdit();
   }
@@ -352,7 +359,7 @@ export function initBooksPanel(onEdit, editSaved) {
       : saved?.status === "failed"
         ? `${complete} of ${books.length} Indexed · Error requires attention`
         : `${complete} of ${books.length} Books Indexed`;
-    add.hidden = Boolean(saved);
+    add.hidden = Boolean(saved) && !editable;
     drop.hidden = Boolean(saved) || books.length > 0;
     add.disabled = browse.disabled = locked;
     const nextBook = saved?.books.find(book => book.embedded_chunks < book.total_chunks)?.number;
@@ -395,7 +402,7 @@ export function initBooksPanel(onEdit, editSaved) {
   }
 
   function isFileDrop(event) {
-    return !saved && !locked && event.dataTransfer.types.includes("Files");
+    return !locked && (!saved || canEditSaved()) && event.dataTransfer.types.includes("Files");
   }
 
   add.addEventListener("click", () => picker.click());
