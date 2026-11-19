@@ -22,6 +22,47 @@ CREATE TABLE IF NOT EXISTS embedding_defaults (
 """
 
 
+SELECTION_OWNERS = (
+    ("world_embedding_keys", "worlds", "TEXT", "key_id"),
+    ("world_retrieval_keys", "worlds", "TEXT", "retrieval_key_id"),
+    ("embedding_default_keys", "embedding_defaults", "INTEGER", "key_id"),
+    ("tale_chat_keys", "tale_settings", "INTEGER", "chat_key_id"),
+    ("chat_profile_keys", "chat_profiles", "TEXT", "chat_key_id"),
+)
+SELECTION_SCHEMA = "".join(f"""
+CREATE TABLE IF NOT EXISTS {table} (
+    owner_id {owner_type} NOT NULL REFERENCES {owner_table} ON DELETE CASCADE,
+    key_id TEXT NOT NULL REFERENCES provider_keys ON DELETE CASCADE,
+    position INTEGER NOT NULL,
+    PRIMARY KEY (owner_id, key_id),
+    UNIQUE (owner_id, position)
+);
+""" for table, owner_table, owner_type, _ in SELECTION_OWNERS)
+
+
+def migrate_key_selections(db):
+    if db.execute("PRAGMA user_version").fetchone()[0] >= 1:
+        return
+    for table, owner_table, _, old_column in SELECTION_OWNERS:
+        db.execute(f"""
+            INSERT INTO {table} (owner_id, key_id, position)
+            SELECT id, {old_column}, 0 FROM {owner_table} WHERE {old_column} IS NOT NULL
+        """)
+    db.execute("PRAGMA user_version = 1")
+
+
+def selected_keys(db, table, owner_id):
+    return [row["key_id"] for row in db.execute(
+        f"SELECT key_id FROM {table} WHERE owner_id = ? ORDER BY position", (owner_id,)
+    )]
+
+
+def save_key_selection(db, table, owner_id, key_ids):
+    db.execute(f"DELETE FROM {table} WHERE owner_id = ?", (owner_id,))
+    db.executemany(f"INSERT INTO {table} (owner_id, key_id, position) VALUES (?, ?, ?)",
+                   ((owner_id, key_id, position) for position, key_id in enumerate(key_ids)))
+
+
 class KeyConflict(Exception):
     """A credential or its assignments changed before an action could complete."""
 
@@ -54,6 +95,19 @@ class ProviderKeys:
             return key_protection.unprotect(key["protected_secret"])
         except (ImportError, OSError, ValueError):
             raise EmbeddingError("Could not open this API key. Replace it in App Settings.") from None
+
+    @staticmethod
+    def validate_selection(db, key_ids, message, *, provider=PROVIDER, required=False):
+        if not isinstance(key_ids, list) or any(not isinstance(key_id, str) for key_id in key_ids):
+            raise ValueError("Provide a list of saved key IDs.")
+        if len(set(key_ids)) != len(key_ids):
+            raise ValueError("Select each key only once.")
+        if required and not key_ids:
+            raise KeyConflict(message)
+        for key_id in key_ids:
+            if db.execute("SELECT 1 FROM provider_keys WHERE id = ? AND provider = ?",
+                          (key_id, provider)).fetchone() is None:
+                raise KeyConflict(message)
 
     @staticmethod
     def _protected(secret):
