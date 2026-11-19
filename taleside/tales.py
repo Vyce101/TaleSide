@@ -9,7 +9,7 @@ from .embeddings import MODEL, EmbeddingError
 from .gemini_tales import GeminiTale, Generation, GenerationCancelled, InputTooLarge
 from .provider_keys import KeyConflict, required_text
 from .tale_retrieval import chat_request, passages, query_text
-from .tale_settings import CHAT_MODELS, SETTINGS_SCHEMA, active_settings, edit_profile, settings_view, update_settings
+from .tale_settings import SETTINGS_SCHEMA, active_settings, edit_profile, settings_view, update_settings
 
 TALE_SCHEMA = SETTINGS_SCHEMA + """
 CREATE TABLE IF NOT EXISTS tales (
@@ -62,13 +62,6 @@ def saved_tale(db, world_id, tale_id):
 
 def activity(db, world_id, timestamp):
     db.execute("UPDATE worlds SET last_tale_activity_at = ? WHERE id = ?", (timestamp, world_id))
-
-
-def remove_oldest_exchange(messages):
-    for index, message in enumerate(messages[1:], 1):
-        if message["role"] == "user":
-            return messages[index:]
-    raise InputTooLarge("The newest message and book context exceed Gemini's input limit.")
 
 
 class Tales:
@@ -230,44 +223,25 @@ class Tales:
             with self.worlds.connect() as db:
                 excerpts = passages(db, world, query, settings, generation.cancelled)
             generation.check()
-            model = next(model for model in CHAT_MODELS if model["id"] == settings["model"])
-            while True:
-                body = chat_request(world, books, excerpts, history, settings)
-                try:
-                    for part in provider.chat(model["id"], chat_key, body):
-                        generation.check()
-                        value = part.get("text", "")
-                        thought = part.get("thought") is True
-                        if isinstance(value, str) and value:
-                            field = "thinking" if thought else "reply"
-                            setattr(generation, field, getattr(generation, field) + value)
-                            emit({"type": field, "text": value})
-                        if not thought and settings["thought_signatures"] and isinstance(value, str):
-                            signature = part.get("thoughtSignature")
-                            if isinstance(signature, str) and signature:
-                                signed_parts.append({"text": value, "thoughtSignature": signature})
-                            elif isinstance(value, str) and value:
-                                if signed_parts and "thoughtSignature" not in signed_parts[-1]:
-                                    signed_parts[-1]["text"] += value
-                                else:
-                                    signed_parts.append({"text": value})
-                    status = "complete"
-                    break
-                except InputTooLarge:
-                    if generation.reply or generation.thinking:
-                        raise
-                    history = remove_oldest_exchange(history)
-                    while len(history) > 1:
-                        body = chat_request(world, books, excerpts, history, settings)
-                        try:
-                            count = provider.count(model["id"], chat_key, {
-                                "generateContentRequest": {"model": f"models/{model['id']}", **body},
-                            })
-                            if count <= model["context_limit"] - settings["output_limit"]:
-                                break
-                        except InputTooLarge:
-                            pass
-                        history = remove_oldest_exchange(history)
+            body = chat_request(world, books, excerpts, history, settings)
+            for part in provider.chat(settings["model"], chat_key, body):
+                generation.check()
+                value = part.get("text", "")
+                thought = part.get("thought") is True
+                if isinstance(value, str) and value:
+                    field = "thinking" if thought else "reply"
+                    setattr(generation, field, getattr(generation, field) + value)
+                    emit({"type": field, "text": value})
+                if not thought and settings["thought_signatures"] and isinstance(value, str):
+                    signature = part.get("thoughtSignature")
+                    if isinstance(signature, str) and signature:
+                        signed_parts.append({"text": value, "thoughtSignature": signature})
+                    elif value:
+                        if signed_parts and "thoughtSignature" not in signed_parts[-1]:
+                            signed_parts[-1]["text"] += value
+                        else:
+                            signed_parts.append({"text": value})
+            status = "complete"
         except GenerationCancelled:
             pass
         except (EmbeddingError, KeyError, TypeError, ValueError, sqlite3.Error):

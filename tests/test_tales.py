@@ -31,14 +31,15 @@ class StoryProvider:
         self.wait = False
         self.fail = False
         self.cancelled = Event()
-        self.trim = False
+        self.reject_long_chat = False
+        self.reject_long_retrieval = False
 
     def __call__(self, generation):
         from types import SimpleNamespace
 
         def chat(model, key, prompt):
             self.prompts.append((model, key, prompt))
-            if self.trim and len(prompt["contents"]) > 1:
+            if self.reject_long_chat and len(prompt["contents"]) > 1:
                 raise InputTooLarge("Too long")
             yield from self.parts
             if self.fail:
@@ -51,7 +52,7 @@ class StoryProvider:
 
     def embed(self, world, key, text):
         self.queries.append((world["model"], key, text))
-        if self.trim and "\n\n" in text:
+        if self.reject_long_retrieval and "\n\n" in text:
             raise InputTooLarge("Too long")
         return [1] * world["dimensions"]
 
@@ -156,17 +157,27 @@ class TaleTests(unittest.TestCase):
         system = self.provider.prompts[-1][2]["systemInstruction"]["parts"][0]["text"]
         self.assertIn("<retrieved_passages>\nefghi\n</retrieved_passages>", system)
 
-    def test_input_rejection_trims_history_without_discarding_saved_messages(self):
+    def test_chat_length_rejection_keeps_full_history_and_ends_the_send(self):
         self.open_server()
         self.send("First question.")
         self.send("Second question.")
-        self.provider.trim = True
-        self.assertEqual(self.send("Latest question.")[-1], {"type": "done", "status": "complete"})
-        self.assertEqual(self.provider.queries[-1][2], "task: search result | query: Latest question.")
-        self.assertEqual(self.provider.prompts[-1][2]["contents"],
-                         [{"role": "user", "parts": [{"text": "<chat_history>\nLatest question.\n</chat_history>"}]}])
-        self.assertEqual(len(self.worlds.tales.detail(self.world, self.tale)["messages"]), 6)
-        self.assertEqual(len(self.provider.counts), 1)
+        self.provider.reject_long_chat = True
+        self.assertEqual(self.send("Latest question."), [{"type": "done", "status": "error"}])
+        _, key, prompt = self.provider.prompts[2]
+        self.assertEqual(key, "fake-chat")
+        self.assertEqual(len(self.provider.prompts), 3)
+        self.assertEqual(self.provider.counts, [])
+        self.assertEqual([part["text"] for message in prompt["contents"] if message["role"] == "user"
+                          for part in message["parts"]],
+                         ["<chat_history>\nFirst question.", "Second question.", "Latest question.\n</chat_history>"])
+        messages = self.worlds.tales.detail(self.world, self.tale)["messages"]
+        self.assertEqual([message["content"] for message in messages if message["role"] == "user"],
+                         ["First question.", "Second question.", "Latest question."])
+        self.assertEqual(messages[-1]["status"], "error")
+
+        self.provider.reject_long_chat = False
+        self.assertEqual(self.send("Try again.")[-1]["status"], "complete")
+        self.assertEqual(self.provider.prompts[-1][1], "fake-chat")
 
     def test_stop_and_disconnect_keep_partial_text_and_prevent_overlapping_sends(self):
         self.open_server()
