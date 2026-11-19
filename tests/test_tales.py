@@ -34,6 +34,7 @@ class StoryProvider:
         self.cancelled = Event()
         self.reject_long_chat = False
         self.reject_long_retrieval = False
+        self.retrieval_error = None
 
     def __call__(self, generation):
         from types import SimpleNamespace
@@ -53,6 +54,8 @@ class StoryProvider:
 
     def embed(self, world, key, text):
         self.queries.append((world["model"], key, text))
+        if self.retrieval_error:
+            raise self.retrieval_error
         if self.reject_long_retrieval and "\n\n" in text:
             raise InputTooLarge("Too long")
         return [1] * world["dimensions"]
@@ -163,6 +166,7 @@ class TaleTests(unittest.TestCase):
         self.send("First question.")
         self.send("Second question.")
         self.provider.reject_long_chat = True
+        self.request("/api/tale-settings", {"chat_key_ids": [self.chat_key, self.key]}).close()
         self.assertEqual(self.send("Latest question."), [{"type": "done", "status": "error"}])
         _, key, prompt = self.provider.prompts[2]
         self.assertEqual(key, "fake-chat")
@@ -178,6 +182,31 @@ class TaleTests(unittest.TestCase):
 
         self.provider.reject_long_chat = False
         self.assertEqual(self.send("Try again.")[-1]["status"], "complete")
+        self.assertEqual(self.provider.prompts[-1][1], "fake-retrieval")
+
+    def test_retrieval_length_checks_rotate_separately_from_chat(self):
+        self.open_server()
+        self.send("First question.")
+        selection = [self.key, self.chat_key]
+        self.request(f"/api/worlds/{self.world}/retrieval-key", {"key_ids": selection}).close()
+        self.request("/api/tale-settings", {"chat_key_ids": selection, "messages_to_embed": 3}).close()
+        self.provider.reject_long_retrieval = True
+        self.assertEqual(self.send("Latest question.")[-1]["status"], "complete")
+        self.assertEqual([request[1] for request in self.provider.queries[1:]],
+                         ["fake-retrieval", "fake-retrieval", "fake-chat"])
+        self.assertEqual(self.provider.queries[-1][2], "task: search result | query: Latest question.")
+        self.assertEqual([request[1] for request in self.provider.counts], ["fake-chat"])
+        self.assertEqual(self.provider.prompts[-1][1], "fake-retrieval")
+
+        self.provider.retrieval_error = EmbeddingError("Gemini returned HTTP 429.")
+        self.assertEqual(self.send("Another question."), [{"type": "done", "status": "error"}])
+        self.assertEqual(len(self.provider.queries), 5)
+        self.assertEqual(self.provider.queries[-1][1], "fake-retrieval")
+        self.assertEqual(len(self.provider.prompts), 2)
+        self.provider.retrieval_error = None
+        self.provider.reject_long_retrieval = False
+        self.assertEqual(self.send("Try again.")[-1]["status"], "complete")
+        self.assertEqual(self.provider.queries[-1][1], "fake-chat")
         self.assertEqual(self.provider.prompts[-1][1], "fake-chat")
 
     def test_stop_and_disconnect_keep_partial_text_and_prevent_overlapping_sends(self):

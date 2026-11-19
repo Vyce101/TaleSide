@@ -181,12 +181,10 @@ class Tales:
                 raise KeyConflict("This World's embeddings are unavailable.")
             settings = active_settings(db)
             retrieval_key_ids = selected_keys(db, "world_retrieval_keys", world_id)
-            secrets = []
-            for key_ids, field in ((retrieval_key_ids, "Retrieval Key"), (settings["chat_key_ids"], "Chat Key")):
-                try:
-                    secrets.append(self.worlds.keys.secret(db, next(iter(key_ids), None)))
-                except (KeyConflict, EmbeddingError):
-                    raise MissingTaleKey(field) from None
+            if not retrieval_key_ids:
+                raise MissingTaleKey("Retrieval Key")
+            if not settings["chat_key_ids"]:
+                raise MissingTaleKey("Chat Key")
             history = []
             for row in db.execute("""
                 SELECT role, content, model, signed_parts FROM tale_messages
@@ -211,20 +209,28 @@ class Tales:
             db.commit()
             generation = self.active[tale_id] = Generation(world_id, generation_id)
         history.append({"role": "user", "content": content})
-        return generation, assistant, world, books, settings, history, secrets
+        return generation, assistant, world, books, settings, history, retrieval_key_ids
 
     def generate(self, tale_id, prepared, emit):
-        generation, assistant, world, books, settings, history, (retrieval_key, chat_key) = prepared
+        generation, assistant, world, books, settings, history, retrieval_key_ids = prepared
         status = "error"
         signed_parts = []
+
+        def next_key(purpose, key_ids):
+            with self.worlds.lock, self.worlds.connect() as db:
+                generation.check()
+                return self.worlds.keys.next_secret(db, purpose, key_ids)
+
         try:
             provider = self.provider(generation)
-            query = self.embed(provider, world, retrieval_key, history[-settings["messages_to_embed"]:])
+            query = self.embed(provider, world, lambda: next_key("retrieval", retrieval_key_ids),
+                               history[-settings["messages_to_embed"]:])
             generation.check()
             with self.worlds.connect() as db:
                 excerpts = passages(db, world, query, settings, generation.cancelled)
             generation.check()
             body = chat_request(world, books, excerpts, history, settings)
+            chat_key = next_key("chat", settings["chat_key_ids"])
             for part in provider.chat(settings["model"], chat_key, body):
                 generation.check()
                 value = part.get("text", "")
@@ -245,7 +251,7 @@ class Tales:
             status = "complete"
         except GenerationCancelled:
             pass
-        except (EmbeddingError, KeyError, TypeError, ValueError, sqlite3.Error):
+        except (EmbeddingError, KeyConflict, KeyError, TypeError, ValueError, sqlite3.Error):
             status = "error"
         finally:
             if not any("thoughtSignature" in part for part in signed_parts):
@@ -267,17 +273,17 @@ class Tales:
                 emit({"type": "done", "status": status})
 
     @staticmethod
-    def embed(provider, world, key, messages):
+    def embed(provider, world, next_key, messages):
         while True:
             try:
-                return provider.embed(world, key, query_text(messages))
+                return provider.embed(world, next_key(), query_text(messages))
             except InputTooLarge:
                 if len(messages) == 1:
                     raise
                 messages = messages[1:]
                 while len(messages) > 1:
                     try:
-                        count = provider.count(world["model"], key, {
+                        count = provider.count(world["model"], next_key(), {
                             "contents": [{"parts": [{"text": query_text(messages)}]}],
                         })
                         if count <= world["max_token_limit"]:
