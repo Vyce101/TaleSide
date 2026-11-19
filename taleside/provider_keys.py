@@ -77,6 +77,7 @@ class ProviderKeys:
         self.connect = connect
         self.lock = lock
         self.checking = Counter()
+        self.next_position = {}
 
     @staticmethod
     def _key(db, key_id):
@@ -107,6 +108,15 @@ class ProviderKeys:
             if db.execute("SELECT 1 FROM provider_keys WHERE id = ? AND provider = ?",
                           (key_id, provider)).fetchone() is None:
                 raise KeyConflict(message)
+
+    def next_secret(self, db, purpose, key_ids):
+        # Advance before opening the credential so a failed attempt also takes its turn.
+        if not key_ids:
+            raise KeyConflict("Choose a saved Google Gemini key.")
+        selection = (purpose, tuple(key_ids))
+        position = self.next_position.get(selection, 0)
+        self.next_position[selection] = (position + 1) % len(key_ids)
+        return self.secret(db, key_ids[position])
 
     @staticmethod
     def _protected(secret):

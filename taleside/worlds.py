@@ -161,15 +161,20 @@ class Worlds:
                 if pending.checked is not None and pending.key_ids == key_ids:
                     return pending.checked.report
                 raise ValueError("These books are already being checked.")
-            secret = self.keys.secret(db, key_ids[0])
             pending = PendingImport(list(key_ids))
             self.imports[world_id] = pending
             self.keys.checking.update(pending.key_ids)
 
         try:
-            provider = self.provider(secret, model=model, dimensions=DIMENSIONS)
+            def count(text):
+                with self.lock, self.connect() as db:
+                    if pending.cancelled.is_set():
+                        raise ValueError("The import was cancelled.")
+                    secret = self.keys.next_secret(db, "embedding", pending.key_ids)
+                return self.provider(secret, model=model, dimensions=DIMENSIONS).count(text)
+
             checked = check_books(world_id, books, max_size, search_distance, TOKEN_LIMIT,
-                                  provider.count, pending.cancelled)
+                                  count, pending.cancelled)
             with self.lock:
                 if pending.cancelled.is_set():
                     raise ValueError("The import was cancelled.")
@@ -357,7 +362,7 @@ class Worlds:
                 return
             self.active_chunk = (world["id"], chunk["book_number"])
             key_ids = selected_keys(db, "world_embedding_keys", world_id)
-            secret = self.keys.secret(db, next(iter(key_ids), None))
+            secret = self.keys.next_secret(db, "embedding", key_ids)
 
         provider = self.provider(secret, model=world["model"], dimensions=dimensions)
         values = provider.embed(embedding_input(chunk["name"], chunk["text"]))

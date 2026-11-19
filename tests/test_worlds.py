@@ -24,6 +24,7 @@ class Provider:
     def __init__(self):
         self.embedded = []
         self.vector = None
+        self.count_error = None
         self.embed_requests = []
         self.count_requests = []
         self.count_started = Event()
@@ -44,6 +45,8 @@ class Provider:
         self.count_started.set()
         if not self.count_release.wait(3):
             raise EmbeddingError("Request timed out.")
+        if self.count_error:
+            raise self.count_error
         return len(text)
 
     def embed(self, secret, model, dimensions, text):
@@ -222,6 +225,55 @@ class WorldTests(unittest.TestCase):
             ("fake-replacement-secret", "gemini-embedding-2", 3072, "title: Book | text: chapter"),
         ])
         self.assertEqual(self.worlds.keys.settings()["defaults"]["key_ids"], [alternate])
+
+    def test_book_checks_and_embeddings_share_rotation_after_failed_attempts(self):
+        alternate = self.worlds.keys.add("gemini", "Work", "fake-work-key")["id"]
+        selection = [self.key, alternate]
+        books = [BookSource("Book.txt", b"abcdefgh")]
+        self.provider.count_error = EmbeddingError("Gemini returned HTTP 429.")
+        with self.assertRaises(EmbeddingError):
+            self.prepare("World", books, 4, 0, key_ids=selection)
+        self.assertEqual([request[0] for request in self.provider.count_requests], ["fake-personal-key"])
+
+        self.provider.count_error = None
+        draft = self.prepare("World", books, 4, 0, key_ids=selection)
+        self.assertEqual([request[0] for request in self.provider.count_requests],
+                         ["fake-personal-key", "fake-work-key", "fake-personal-key"])
+        self.provider.vector = EmbeddingError("Gemini returned HTTP 429.")
+        world_id = draft["id"]
+        self.worlds.accept(world_id)
+        wait_for(lambda: self.worlds.detail(world_id)["status"] == "failed")
+        self.assertEqual([request[0] for request in self.provider.embed_requests], ["fake-work-key"])
+        self.assertEqual(self.worlds.detail(world_id)["embedded_chunks"], 0)
+
+        self.provider.vector = None
+        self.worlds.resume(world_id)
+        wait_for(lambda: self.worlds.detail(world_id)["status"] == "ready")
+        self.assertEqual([request[0] for request in self.provider.embed_requests],
+                         ["fake-work-key", "fake-personal-key", "fake-work-key"])
+        self.assertEqual(self.provider.embedded, [
+            "title: Book | text: abcd", "title: Book | text: abcd", "title: Book | text: efgh",
+        ])
+
+    def test_reopening_keeps_saved_selections_but_restarts_rotation_at_the_first_key(self):
+        work = self.worlds.keys.add("gemini", "Work", "fake-work-key")["id"]
+        other = self.worlds.keys.add("gemini", "Other", "fake-other-key")["id"]
+        selection = [work, self.key, other]
+        books = [BookSource("Book.txt", b"chapter")]
+        draft = self.prepare("World", books, key_ids=selection)
+        self.worlds.accept(draft["id"])
+        wait_for(lambda: self.worlds.detail(draft["id"])["status"] == "ready")
+        self.assertEqual(self.provider.count_requests[-1][0], "fake-work-key")
+        self.assertEqual(self.provider.embed_requests[-1][0], "fake-personal-key")
+
+        self.worlds.close()
+        self.worlds = Worlds(self.database, self.provider)
+        world = self.worlds.detail(draft["id"])
+        self.assertEqual(world["embedding_key_ids"], selection)
+        self.assertEqual(world["retrieval_key_ids"], selection)
+        self.assertEqual(self.worlds.keys.settings()["defaults"]["key_ids"], selection)
+        self.prepare("Another World", books, key_ids=selection)
+        self.assertEqual(self.provider.count_requests[-1][0], "fake-work-key")
 
     def test_delete_rechecks_world_names_and_keeps_only_other_selected_keys(self):
         unused = self.worlds.keys.add("gemini", "Unused", "fake-unused-key")["id"]
