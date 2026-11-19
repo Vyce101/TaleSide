@@ -10,6 +10,8 @@ export function initTaleSettings({ request, addKey, onWorldChange, confirm }) {
   const error = element("tale-settings-error");
   const profile = element("chat-profile");
   const modelSelect = element("chat-model");
+  const worldModel = element("tale-embedding-model");
+  const worldSpecs = element("tale-embedding-specs");
   const chatKeyField = element("chat-key-selection");
   const add = element("add-chat-key");
   const chatKey = initPicker("chat-key", "chat-key-label", keyIds => saveChatKeys(keyIds).catch(() => {}), {
@@ -63,8 +65,9 @@ export function initTaleSettings({ request, addKey, onWorldChange, confirm }) {
         });
     }
     element("tale-settings-world").hidden = !world;
-    element("tale-embedding-model").textContent = world
-      ? `${world.model} · ${world.dimensions.toLocaleString()} dimensions · ${world.max_token_limit.toLocaleString()} max tokens`
+    worldModel.textContent = world?.model ?? "";
+    worldSpecs.textContent = world
+      ? `${world.dimensions.toLocaleString()} dimensions · ${world.max_token_limit.toLocaleString()} max tokens`
       : "";
   }
 

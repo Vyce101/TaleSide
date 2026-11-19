@@ -204,13 +204,15 @@ body[data-view="tale"] .hero-frame::after { display: none; }
   cursor: pointer;
 }
 .tale-setting-fields { display: grid; gap: 14px; padding: 4px 16px 16px; font-size: 14px; }
-.tale-setting-fields > label, .tale-setting-row {
+.tale-setting-fields > label {
   display: flex;
   gap: 10px;
   align-items: center;
   justify-content: space-between;
 }
-.tale-setting-row span:last-child { text-align: end; color: #bae7d2; }
+.tale-embedding-model { display: grid; gap: 3px; line-height: 1.4; }
+.tale-embedding-model strong { color: #bae7d2; font-weight: 600; overflow-wrap: anywhere; }
+.tale-embedding-model small { color: #c3d6cd; font-size: 12px; }
 .tale-setting-fields fieldset { padding: 0; border: 0; margin: 0; min-width: 0; }
 .tale-setting-fields legend { margin-bottom: 6px; font-size: 13px; }
 .tale-setting-fields input[type="number"] { width: 8em; text-align: right; }
