@@ -159,9 +159,13 @@ class Handler(BaseHTTPRequestHandler):
                     or part.get("content-transfer-encoding") is not None):
                 raise ValueError("The upload contains an invalid book.")
             books.append(BookSource(details["filename"], part.get_payload(decode=True), details.get("name")))
+        target = settings.get("world_id")
+        if target is not None and (not isinstance(target, str) or not WORLD_ID.fullmatch(target)):
+            raise ValueError("Choose a saved World.")
         return self.server.worlds.prepare(settings.get("name"), books, settings.get("max_chunk_size"),
                                           settings.get("boundary_search_distance"), model=settings.get("model"),
-                                          key_ids=settings.get("key_ids"), world_id=world_id)
+                                          key_ids=settings.get("key_ids"), world_id=world_id,
+                                          target=target, revision=settings.get("book_revision"))
 
     def do_POST(self):
         if not self.local_request() or self.headers.get("Origin") != self.server.url:
@@ -233,8 +237,9 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json({"ok": True})
         elif action == "accept":
             self.read_json()
-            if worlds.accept(world_id):
-                self.send_json({"world": worlds.detail(world_id)}, HTTPStatus.CREATED)
+            target = worlds.accept(world_id)
+            if target:
+                self.send_json({"world": worlds.detail(target)}, HTTPStatus.CREATED)
             else:
                 self.api_error("This import expired. Try again.",
                                HTTPStatus.CONFLICT)

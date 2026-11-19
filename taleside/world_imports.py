@@ -11,10 +11,10 @@ class PreparedBooks:
     chunk_rows: list
 
 
-def prepare_books(world_id, books, max_size, search_distance, cancelled):
+def prepare_books(world_id, books, max_size, search_distance, cancelled, *, start_number=1):
     book_rows = []
     chunk_rows = []
-    for book_number, source in enumerate(books, 1):
+    for book_number, source in enumerate(books, start_number):
         if cancelled.is_set():
             raise ValueError("The import was cancelled.")
         if source.name is not None and not isinstance(source.name, str):

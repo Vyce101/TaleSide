@@ -168,8 +168,7 @@ class WorldTests(unittest.TestCase):
     def test_paused_books_resume_in_current_order_and_keep_completed_chunks(self):
         self.provider.release.clear()
         draft = self.prepare("World", [BookSource("First.txt", b"abcdefgh"), BookSource("Second.txt", b"ijkl")], 4, 0)
-        world_id = draft["id"]
-        self.worlds.accept(world_id)
+        world_id = self.worlds.accept(draft["id"])
         self.assertTrue(self.provider.started.wait(2))
         world = self.worlds.detail(world_id)
         first, second = world["books"]
@@ -186,6 +185,35 @@ class WorldTests(unittest.TestCase):
         self.assertEqual(self.provider.embedded, [
             "title: First | text: abcd", "title: Second | text: ijkl", "title: First | text: efgh",
         ])
+
+    def test_additions_wait_for_resume_and_stale_approvals_cannot_restore_removed_books(self):
+        draft = self.prepare("World", [BookSource("First.txt", b"first"), BookSource("Second.txt", b"second")])
+        world_id = self.worlds.accept(draft["id"])
+        wait_for(lambda: self.worlds.detail(world_id)["status"] == "ready")
+        world = self.worlds.detail(world_id)
+        revision = world["book_revision"]
+        stale = self.prepare(None, [BookSource("Stale.txt", b"stale")], target=world_id, revision=revision)
+        self.worlds.edit_books(world_id, revision, remove=world["books"][0]["id"])
+        with self.assertRaises(KeyConflict):
+            self.worlds.accept(stale["id"])
+        world = self.worlds.detail(world_id)
+        with self.assertRaisesRegex(ValueError, "at least one"):
+            self.worlds.edit_books(world_id, world["book_revision"], remove=world["books"][0]["id"])
+        add = self.prepare(None, [BookSource("Third.txt", b"third")],
+                           target=world_id, revision=world["book_revision"])
+        self.assertEqual(self.worlds.accept(add["id"]), world_id)
+        self.assertFalse(self.worlds.accept(add["id"]))
+        world = self.worlds.detail(world_id)
+        self.assertEqual(world["status"], "paused")
+        self.assertEqual([(b["number"], b["name"], b["embedded_chunks"]) for b in world["books"]],
+                         [(1, "Second", 1), (2, "Third", 0)])
+        self.worlds.close()
+        self.worlds = Worlds(self.database, self.provider)
+        self.assertEqual(self.worlds.detail(world_id)["status"], "paused")
+        self.worlds.resume(world_id)
+        wait_for(lambda: self.worlds.detail(world_id)["status"] == "ready")
+        self.assertEqual(self.provider.embedded, ["title: First | text: first", "title: Second | text: second",
+                                                  "title: Third | text: third"])
 
     def test_failed_request_while_pausing_can_be_retried(self):
         self.provider.release.clear()

@@ -91,6 +91,8 @@ class PendingImport:
     books: PreparedBooks | None = None
     world_row: tuple = ()
     timer: Timer | None = None
+    target: str | None = None
+    revision: int | None = None
 
 
 def migrate_books(db):
@@ -177,18 +179,28 @@ class Worlds:
                 self._cancel_import_locked(world_id)
 
     def prepare(self, name, books, max_size=MAX_CHUNK_SIZE, search_distance=BOUNDARY_SEARCH_DISTANCE,
-                *, model, key_ids, world_id=None):
+                *, model, key_ids, world_id=None, target=None, revision=None):
         books = tuple(books)
         world_id = world_id or uuid4().hex
+        start_number = 1
+        dimensions = None
         with self.lock, self.connect() as db:
             if self.stopping.is_set():
                 raise ValueError("TaleSide is closing.")
             if db.execute("SELECT 1 FROM worlds WHERE id = ?", (world_id,)).fetchone():
                 raise ValueError("This import ID is already in use.")
+            if target is not None:
+                world = self._editable(db, target, revision)
+                name = world["name"]
+                model, dimensions = world["model"], world["dimensions"]
+                max_size, search_distance = world["max_chunk_size"], world["boundary_search_distance"]
+                key_ids = []
+                start_number += db.execute("SELECT count(*) FROM books WHERE world_id = ?", (target,)).fetchone()[0]
             if not isinstance(name, str):
                 raise ValueError("World names must be text.")
             if model != MODEL:
                 raise ValueError("Choose a supported embedding model.")
+            dimensions = DIMENSIONS if dimensions is None else dimensions
             if not books:
                 raise ValueError("Select at least one TXT book.")
             if type(max_size) is not int or max_size < 1:
@@ -197,21 +209,23 @@ class Worlds:
                 raise ValueError("Boundary Search Distance must be a nonnegative whole number.")
             if max_size > 2**63 - 1 or search_distance > 2**63 - 1:
                 raise ValueError("Chunk settings are too large to save.")
-            self.keys.validate_selection(db, key_ids, EMBEDDING_KEY_REQUIRED, required=True)
+            if target is None:
+                self.keys.validate_selection(db, key_ids, EMBEDDING_KEY_REQUIRED, required=True)
             existing = self.imports.get(world_id)
             if existing is not None:
-                if existing.books is not None and existing.key_ids == key_ids:
+                if target is None and existing.target is None and existing.books is not None and existing.key_ids == key_ids:
                     return {"id": world_id, "chunk_count": len(existing.books.chunk_rows)}
                 raise ValueError("This import is already in progress.")
-            pending = PendingImport(list(key_ids))
+            pending = PendingImport(list(key_ids), target=target, revision=revision)
             self.imports[world_id] = pending
 
         try:
-            ready = prepare_books(world_id, books, max_size, search_distance, pending.cancelled)
+            ready = prepare_books(target or world_id, books, max_size, search_distance, pending.cancelled,
+                                  start_number=start_number)
             with self.lock:
                 if pending.cancelled.is_set():
                     raise ValueError("The import was cancelled.")
-                pending.world_row = (model, DIMENSIONS, TOKEN_LIMIT, max_size, search_distance,
+                pending.world_row = (model, dimensions, TOKEN_LIMIT, max_size, search_distance,
                                      name.strip() or DEFAULT_WORLD_NAME)
                 pending.books = ready
                 pending.timer = Timer(IMPORT_TIMEOUT_SECONDS, self.decline, args=(world_id,))
@@ -227,32 +241,41 @@ class Worlds:
         with self.lock:
             with self.connect() as db:
                 if db.execute("SELECT 1 FROM worlds WHERE id = ? AND status != 'draft'", (world_id,)).fetchone():
-                    return True
+                    return world_id
                 pending = self.imports.get(world_id)
                 if pending is None or pending.books is None:
                     return False
-                self.keys.validate_selection(db, pending.key_ids, EMBEDDING_KEY_REQUIRED, required=True)
-                db.execute("""
-                    INSERT INTO worlds (model, dimensions, max_token_limit, max_chunk_size,
-                                        boundary_search_distance, name, id, status)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, 'creating')
-                """, (*pending.world_row, world_id))
-                save_key_selection(db, "world_embedding_keys", world_id, pending.key_ids)
-                save_key_selection(db, "world_retrieval_keys", world_id, pending.key_ids)
-                self.keys.remember(db, MODEL, pending.key_ids)
+                if pending.target is None:
+                    self.keys.validate_selection(db, pending.key_ids, EMBEDDING_KEY_REQUIRED, required=True)
+                target = pending.target or world_id
+                index_number = 1
+                if pending.target is None:
+                    db.execute("""
+                        INSERT INTO worlds (model, dimensions, max_token_limit, max_chunk_size,
+                                            boundary_search_distance, name, id, status)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, 'creating')
+                    """, (*pending.world_row, target))
+                    save_key_selection(db, "world_embedding_keys", target, pending.key_ids)
+                    save_key_selection(db, "world_retrieval_keys", target, pending.key_ids)
+                    self.keys.remember(db, MODEL, pending.key_ids)
+                else:
+                    world = self._editable(db, target, pending.revision)
+                    index_number = world["index_number"]
+                    db.execute("UPDATE worlds SET status = 'paused', error = NULL WHERE id = ?", (target,))
+                    db.execute("UPDATE worlds SET book_revision = book_revision + 1 WHERE id = ?", (target,))
                 db.executemany("""
                     INSERT INTO books (id, world_id, number, name, filename, original, working, encoding, bom_size)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, ((uuid4().hex, *book) for book in pending.books.book_rows))
-                book_ids = dict(db.execute("SELECT number, id FROM books WHERE world_id = ?", (world_id,)))
+                book_ids = dict(db.execute("SELECT number, id FROM books WHERE world_id = ?", (target,)))
                 db.executemany("""
                     INSERT INTO chunks (book_id, index_number, number, start, end, original_start, original_end,
                                         tokens, embed_end)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, ((book_ids[number], 1, *chunk) for number, *chunk in pending.books.chunk_rows))
+                """, ((book_ids[number], index_number, *chunk) for number, *chunk in pending.books.chunk_rows))
             self._cancel_import_locked(world_id)
         self.wake.set()
-        return True
+        return target
 
     @staticmethod
     def _editable(db, world_id, revision):
@@ -351,6 +374,9 @@ class Worlds:
             for generation in self.tales.active.values():
                 if generation.world_id == world_id:
                     generation.cancel()
+            for operation, pending in tuple(self.imports.items()):
+                if pending.target == world_id:
+                    self._cancel_import_locked(operation)
             return bool(db.execute("DELETE FROM worlds WHERE id = ? AND status != 'draft'", (world_id,)).rowcount)
 
     def set_embedding_keys(self, world_id, key_ids):
