@@ -11,6 +11,9 @@ from email.parser import BytesParser
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from queue import Empty, Queue
+from select import select
+from threading import Thread
 from urllib.parse import unquote, urlsplit
 
 from .books import BookSource
@@ -267,11 +270,51 @@ class Handler(BaseHTTPRequestHandler):
         tales = self.server.worlds.tales
         if tale_id is None and action in (None, "play"):
             self.send_json(tales.create(world_id, resume=action == "play"))
-        elif tale_id and action in ("rename", "pin", "delete"):
+        elif tale_id and action == "generate":
+            fields = self.read_json()
+            generation_id = fields.get("generation_id")
+            if not isinstance(generation_id, str) or not WORLD_ID.fullmatch(generation_id):
+                raise ValueError("A valid generation ID is required.")
+            prepared = tales.begin(world_id, tale_id, fields.get("content"), generation_id)
+            self.stream_tale(tales, tale_id, prepared)
+        elif tale_id and action in ("rename", "pin", "delete", "stop"):
             tales.change(world_id, tale_id, action, self.read_json())
             self.send_json({"ok": True})
         else:
             self.send_error(HTTPStatus.NOT_FOUND)
+
+    def stream_tale(self, tales, tale_id, prepared):
+        generation = prepared[0]
+        events = Queue()
+        worker = Thread(target=tales.generate, args=(tale_id, prepared, events.put), daemon=True)
+        worker.start()
+        self.close_connection = True
+        completed = False
+        try:
+            self.send_response(HTTPStatus.OK)
+            self.send_header("Content-Type", "application/x-ndjson")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.end_headers()
+            while True:
+                readable, _, _ = select([self.connection], [], [], 0)
+                if readable and not self.connection.recv(1, socket.MSG_PEEK):
+                    return
+                try:
+                    event = events.get(timeout=.1)
+                except Empty:
+                    if not worker.is_alive():
+                        return
+                    continue
+                self.wfile.write((json.dumps(event) + "\n").encode())
+                if event["type"] == "done":
+                    completed = True
+                    return
+        except OSError:
+            pass
+        finally:
+            if not completed and worker.is_alive():
+                generation.cancel()
 
     def log_request(self, code="-", size="-"):
         if str(code)[0] in "45":
