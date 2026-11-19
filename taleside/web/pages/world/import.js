@@ -9,7 +9,7 @@ export function createWorldImport({ request, onReportChange }) {
     request(`${route}/cancel`, { method: "POST", keepalive: true }).catch(() => {});
   }
 
-  async function save(settings, books) {
+  async function save(settings, books, { reindex = false } = {}) {
     if (!attempt) {
       const id = crypto.randomUUID().replaceAll("-", "");
       attempt = {
@@ -23,9 +23,9 @@ export function createWorldImport({ request, onReportChange }) {
     const { route, controller: { signal } } = submission;
     try {
       if (!submission.report) {
-        submission.report = await request(`${route}/prepare`, {
-          method: "POST", body: bookUpload(settings, books), signal,
-        });
+        submission.report = reindex
+          ? await request(`${route}/prepare-reindex`, { method: "POST", json: settings, signal })
+          : await request(`${route}/prepare`, { method: "POST", body: bookUpload(settings, books), signal });
       }
       if (attempt !== submission) return null;
       onReportChange?.();

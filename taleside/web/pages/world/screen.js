@@ -1,6 +1,7 @@
 import { initBooksPanel } from "./books-panel.js";
 import { initEmbeddingControls } from "./embedding-controls.js";
 import { createWorldImport } from "./import.js";
+import { initReindex } from "./reindex.js";
 
 const element = id => document.getElementById(id);
 const content = element("world-content");
@@ -185,6 +186,7 @@ export function initWorldScreen({ request, onCreated, rename, discard, changeJob
     onReportChange: describeSetup,
   });
   const bookImport = createWorldImport({ request });
+  const reindex = initReindex({ request, refreshWorlds, canEdit: canEditWorld });
 
   function canEditWorld(world) {
     return !!world && !jobPending && !bookChange && !keyChange && !world.id.startsWith("demo-")
@@ -264,6 +266,7 @@ export function initWorldScreen({ request, onCreated, rename, discard, changeJob
     if (currentWorld) action.disabled = currentWorld.status === "ready"
       ? !currentWorld.can_play
       : Boolean(bookChange || keyChange || jobPending || currentWorld.status === "pausing");
+    reindex.show(currentWorld, embeddingOptions);
   }
 
   function applyDraftDefaults() {
@@ -343,6 +346,7 @@ export function initWorldScreen({ request, onCreated, rename, discard, changeJob
 
   function reset(isCreate) {
     embedding.reset();
+    reindex.close();
     bookImport.cancel();
     bookChange = null;
     currentWorld = null;
@@ -546,6 +550,7 @@ export function initWorldScreen({ request, onCreated, rename, discard, changeJob
 
   window.addEventListener("pagehide", worldImport.cancel);
   window.addEventListener("pagehide", bookImport.cancel);
+  window.addEventListener("pagehide", reindex.close);
   window.addEventListener("pageshow", event => {
     if (event.persisted && isDirty()) {
       reset(true);
@@ -580,7 +585,7 @@ export function initWorldScreen({ request, onCreated, rename, discard, changeJob
       access.hidden = true;
       const status = pending === "pause" ? "pausing" : world.status;
       studio.dataset.status = status;
-      element("world-status").textContent = statusLabels[status];
+      element("world-status").textContent = world.reindexing && status === "creating" ? "Reindexing" : statusLabels[status];
       element("world-title").textContent = world.name;
       showWorldCover();
       const count = world.books.length;

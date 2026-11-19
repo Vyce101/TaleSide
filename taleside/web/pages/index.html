@@ -113,7 +113,6 @@
                 Artwork
               </button>
             </div>
-            <p class="import-note" id="import-note" role="status" hidden>TaleSide sends book text to Gemini to count tokens and create embeddings.</p>
             <p class="studio-error" id="action-error" role="alert" hidden></p>
           </div>
         </section>
@@ -207,6 +206,10 @@
                 <small class="setting-feedback" id="boundary-distance-feedback" hidden></small>
               </label>
               <label class="setting-value"><input id="boundary-distance" type="number" min="0" step="1" value="1000" aria-describedby="boundary-distance-feedback" required> <span aria-hidden="true">chars</span></label>
+            </div>
+            <div class="setting" id="reindex-setting" hidden>
+              <div>Reindex World <small>Rebuild embeddings from the saved books.</small></div>
+              <button type="button" class="studio-pill" id="open-reindex">Reindex World</button>
             </div>
           </div>
         </div>
@@ -304,6 +307,23 @@
         </div>
       </details>
     </div>
+  </dialog>
+  <dialog class="studio-dialog" id="reindex-dialog" aria-labelledby="reindex-title" aria-describedby="reindex-description">
+    <h2 id="reindex-title">Reindex World</h2>
+    <p id="reindex-description">TaleSide sends book text to Gemini to rebuild embeddings. Changing chunk settings also changes how the saved books are split.</p>
+    <form id="reindex-form">
+      <label for="reindex-model">Embedding Model</label>
+      <select id="reindex-model" required></select>
+      <span id="reindex-keys-label">Embedding Keys</span>
+      <div class="setting-picker" id="reindex-keys"></div>
+      <label for="reindex-size">Maximum Chunk Size (characters)</label>
+      <input id="reindex-size" type="number" min="1" step="1" required>
+      <label for="reindex-boundary">Boundary Search Distance (characters)</label>
+      <input id="reindex-boundary" type="number" min="0" step="1" required>
+      <p class="studio-error" id="reindex-error" role="alert" hidden></p>
+      <button type="button" class="studio-pill" id="cancel-reindex">Cancel</button>
+      <button type="submit" class="studio-pill primary" id="submit-reindex">Start Reindexing</button>
+    </form>
   </dialog>
   <dialog class="studio-dialog" id="studio-dialog" aria-labelledby="dialog-title" aria-describedby="dialog-description">
     <h2 id="dialog-title"></h2>
