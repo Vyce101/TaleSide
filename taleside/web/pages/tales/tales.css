@@ -111,7 +111,7 @@ body[data-view="tale"] .hero-frame::after { display: none; }
   border-left: 2px solid #c8e4d34d;
   white-space: pre-wrap;
 }
-.tale-stopped { color: #bdc9c2; font-size: 13px; }
+.tale-stopped, .tale-send-status { color: #bdc9c2; font-size: 13px; }
 .tale-pulse { display: flex; gap: 7px; justify-content: center; margin: 14px 0; }
 .tale-pulse i { width: 5px; height: 5px; border-radius: 100%; background: currentColor; opacity: .5; animation: tale-pulse 1.2s ease infinite; }
 .tale-pulse i:nth-child(2) { animation-delay: .14s; }

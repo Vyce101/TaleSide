@@ -37,6 +37,14 @@ function turnNode(message) {
   };
 }
 
+function showDeliveryStatus(turn, message) {
+  const status = document.createElement("small");
+  status.className = "tale-send-status";
+  status.setAttribute("role", "status");
+  status.textContent = message;
+  turn.append(status);
+}
+
 export function initTaleChat({ request, settings, onActivity }) {
   const reading = element("tale-reading");
   const chapter = element("tale-chapter");
@@ -116,6 +124,7 @@ export function initTaleChat({ request, settings, onActivity }) {
     const userStopped = active.stopping || !leaving;
     active.stopping = true;
     updateComposer();
+    if (!leaving && !active.assistant) return;
     const options = {
       method: "POST", keepalive: leaving,
       json: { generation_id: active.id, user_stopped: userStopped },
@@ -164,12 +173,18 @@ export function initTaleChat({ request, settings, onActivity }) {
   async function send(event) {
     event.preventDefault();
     const tale = current;
-    const text = input.value.trim();
+    const draft = input.value;
+    const text = draft.trim();
     if (!tale || !text || generation) return;
     const controller = new AbortController();
     const active = { controller, id: crypto.randomUUID().replaceAll("-", ""), api: tale.api };
     generation = active;
+    const user = append({ role: "user", content: text });
+    prompt.hidden = true;
+    input.value = "";
+    resetHeight();
     updateComposer();
+    input.focus({ preventScroll: true });
     bottom();
     let accepted = false;
     try {
@@ -181,17 +196,24 @@ export function initTaleChat({ request, settings, onActivity }) {
       if (current !== tale) return;
       if (!response.ok) {
         const result = await response.json().catch(() => ({}));
+        if (current !== tale) return;
+        if (input.value) {
+          showDeliveryStatus(user.turn, result.error ?? "Send failed.");
+        } else {
+          user.turn.remove();
+          prompt.hidden = messages.childElementCount > 0;
+          input.value = draft;
+          resetHeight();
+        }
         if (result.missing_key) settings.open(settingsButton, result.missing_key);
         return;
       }
       accepted = true;
-      prompt.hidden = true;
-      append({ role: "user", content: text });
+      const follow = nearBottom();
       active.assistant = { role: "assistant", content: "", thinking: "", status: "generating" };
       active.node = append(active.assistant);
-      input.value = "";
-      resetHeight();
-      bottom();
+      if (active.stopping) stopRequest(active);
+      if (follow) bottom();
       request(tale.api).then(saved => {
         if (current !== tale) return;
         tale.title = saved.title;
@@ -222,7 +244,9 @@ export function initTaleChat({ request, settings, onActivity }) {
         await reader.cancel().catch(() => {});
       }
     } catch {
-      // The server retains any partial turn from a disconnected request.
+      if (!accepted && current === tale && !controller.signal.aborted) {
+        showDeliveryStatus(user.turn, "Couldn’t confirm delivery.");
+      }
     } finally {
       if (current === tale && generation === active) {
         active.recovering = accepted && active.assistant.status === "generating";
