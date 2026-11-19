@@ -18,7 +18,7 @@ from .embeddings import MODEL_INFO, EmbeddingError
 from .provider_keys import KeyConflict
 
 WEB_ROOT = Path(__file__).resolve().parent / "web"
-MIME_TYPES = {".js": "text/javascript", ".woff2": "font/woff2"}
+MIME_TYPES = {".js": "text/javascript", ".mjs": "text/javascript", ".woff2": "font/woff2"}
 APP_PAGE = "/pages/index.html"
 WORLD_ID = re.compile(r"[0-9a-f]{32}")
 WORLD_PAGE = re.compile(r"/worlds/(?:[0-9a-f]{32}|demo-[a-z0-9-]+)")
