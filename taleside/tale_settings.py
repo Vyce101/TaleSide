@@ -44,10 +44,8 @@ def active_settings(db):
 
 
 def settings_view(db):
-    settings = active_settings(db)
-    settings["chat_key_id"] = next(iter(settings["chat_key_ids"]), None)
     return {
-        "settings": settings,
+        "settings": active_settings(db),
         "profiles": [dict(row) for row in db.execute("SELECT id, name FROM chat_profiles ORDER BY rowid")],
         "models": CHAT_MODELS, "wrapper_defaults": WRAPPERS,
     }

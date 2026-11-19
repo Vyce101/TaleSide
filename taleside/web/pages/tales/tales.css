@@ -7,7 +7,8 @@
   flex-wrap: wrap;
 }
 .tales-toolbar { justify-content: space-between; margin-bottom: 20px; }
-.tales-toolbar-settings label { display: flex; align-items: center; gap: 10px; }
+.tale-key-field { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.tales-toolbar-settings .setting-picker { width: min(200px, 47vw); }
 .tales-empty {
   border: 1px dashed #c0e0cf55;
   border-radius: 13px;
@@ -194,7 +195,7 @@ body[data-view="tale"] .hero-frame::after { display: none; }
   cursor: pointer;
 }
 .tale-setting-fields { display: grid; gap: 14px; padding: 4px 16px 16px; font-size: 14px; }
-.tale-setting-fields > label, .chat-key-field label, .tale-setting-row {
+.tale-setting-fields > label, .tale-setting-row {
   display: flex;
   gap: 10px;
   align-items: center;
@@ -204,7 +205,7 @@ body[data-view="tale"] .hero-frame::after { display: none; }
 .tale-setting-fields fieldset { padding: 0; border: 0; margin: 0; min-width: 0; }
 .tale-setting-fields legend { margin-bottom: 6px; font-size: 13px; }
 .tale-setting-fields input[type="number"] { width: 8em; text-align: right; }
-.tale-name-edit input, #tales-panel select, .tale-setting-fields :is(input:not([type="checkbox"]), select, button) {
+.tale-name-edit input, .tale-setting-fields :is(input:not([type="checkbox"]), select, button:not(.picker-trigger, [role="option"])) {
   background: #081c16;
   border: 1px solid #d3eee147;
   border-radius: 8px;
@@ -212,11 +213,11 @@ body[data-view="tale"] .hero-frame::after { display: none; }
   padding: 7px 9px;
   min-width: 0;
 }
-#tales-panel select { max-width: min(260px, 50vw); }
+.tale-setting-fields .setting-picker { width: min(62%, 220px); }
 .tale-setting-fields select { max-width: 62%; }
 #chat-profile { width: 100%; max-width: none; }
 #reset-wrappers { justify-self: end; }
-.tale-setting-fields button:hover:not(:disabled) { background: #24493d; }
+.tale-setting-fields button:hover:not(:disabled, .picker-trigger, [role="option"]) { background: #24493d; }
 .tale-setting-fields button:disabled { opacity: .45; }
 .chat-profile-actions { display: flex; flex-wrap: wrap; gap: 6px; }
 #thinking-level-options { display: flex; gap: 4px; }

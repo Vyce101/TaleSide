@@ -171,11 +171,7 @@ class Handler(BaseHTTPRequestHandler):
         try:
             tales = self.server.worlds.tales
             if path == "/api/tale-settings":
-                changes = self.read_json()
-                if "chat_key_id" in changes:
-                    key_id = changes.pop("chat_key_id")
-                    changes.setdefault("chat_key_ids", [] if key_id is None else [key_id])
-                self.send_json(tales.settings(changes))
+                self.send_json(tales.settings(self.read_json()))
                 return
             profile = re.fullmatch(r"/api/chat-profiles/(select|create|save|rename|delete)", path)
             if profile:
@@ -254,8 +250,7 @@ class Handler(BaseHTTPRequestHandler):
         elif action == "embedding-key":
             updated = worlds.set_embedding_keys(world_id, self.read_json().get("key_ids"))
         elif action == "retrieval-key":
-            fields = self.read_json()
-            worlds.tales.set_retrieval_keys(world_id, fields.get("key_ids", [fields.get("key_id")]))
+            worlds.tales.set_retrieval_keys(world_id, self.read_json().get("key_ids"))
             updated = True
         elif action == "discard":
             updated = worlds.discard(world_id)

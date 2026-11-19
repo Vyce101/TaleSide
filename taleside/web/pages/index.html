@@ -130,7 +130,10 @@
         <div class="tales-toolbar">
           <button class="studio-pill" id="new-tale" type="button">＋ New Tale</button>
           <div class="tales-toolbar-settings">
-            <label>Retrieval Key <select id="hub-retrieval-key"></select></label>
+            <div class="tale-key-field">
+              <span id="hub-retrieval-key-label">Retrieval Key</span>
+              <div class="setting-picker" id="hub-retrieval-key"></div>
+            </div>
             <button class="studio-pill" id="hub-tale-settings" type="button">Tale Settings</button>
           </div>
         </div>
@@ -256,7 +259,10 @@
           <div class="tale-setting-fields">
             <label>Chat Model <select id="chat-model" data-setting="model"></select></label>
             <div class="chat-key-field" id="chat-key-field">
-              <label id="chat-key-label">Chat Key <select id="chat-key" data-setting="chat_key_id"></select></label>
+              <div class="tale-key-field" id="chat-key-selection">
+                <span id="chat-key-label">Chat Key</span>
+                <div class="setting-picker" id="chat-key"></div>
+              </div>
               <button type="button" id="add-chat-key">＋ Add Google Gemini Key</button>
             </div>
             <fieldset id="thinking-level"><legend>Thinking Level</legend><div id="thinking-level-options"></div></fieldset>
@@ -285,7 +291,10 @@
         <summary>This World</summary>
         <div class="tale-setting-fields">
           <div class="tale-setting-row"><span>Embedding Model</span> <span id="tale-embedding-model"></span></div>
-          <label>World Retrieval Key <select id="drawer-retrieval-key"></select></label>
+          <div class="tale-key-field">
+            <span id="drawer-retrieval-key-label">World Retrieval Key</span>
+            <div class="setting-picker" id="drawer-retrieval-key"></div>
+          </div>
         </div>
       </details>
     </div>

@@ -253,7 +253,6 @@ class Worlds:
                 del world["key_id"], world["retrieval_key_id"]
                 world["embedding_key_ids"] = selected_keys(db, "world_embedding_keys", world["id"])
                 world["retrieval_key_ids"] = selected_keys(db, "world_retrieval_keys", world["id"])
-                world["retrieval_key_id"] = next(iter(world["retrieval_key_ids"]), None)
                 world["books"] = [dict(row) for row in db.execute("""
                     SELECT b.number, b.name, b.filename, count(*) AS total_chunks, count(c.vector) AS embedded_chunks
                     FROM books b JOIN chunks c ON c.world_id = b.world_id AND c.book_number = b.number

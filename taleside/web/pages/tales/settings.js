@@ -1,3 +1,4 @@
+import { initPicker } from "../picker.js";
 import { editName, element, errorText, fillSelect } from "./controls.js";
 
 const wrapperNames = { world_info: "World Info", retrieved_passages: "Retrieved Passages", chat_history: "Chat History" };
@@ -9,10 +10,15 @@ export function initTaleSettings({ request, addKey, onWorldChange, confirm }) {
   const error = element("tale-settings-error");
   const profile = element("chat-profile");
   const modelSelect = element("chat-model");
-  const chatKey = element("chat-key");
+  const chatKeyField = element("chat-key-selection");
   const add = element("add-chat-key");
-  const hubKey = element("hub-retrieval-key");
-  const drawerKey = element("drawer-retrieval-key");
+  const chatKey = initPicker("chat-key", "chat-key-label", keyIds => saveChatKeys(keyIds).catch(() => {}), {
+    multiple: true, scrollContainer: body,
+  });
+  const hubKey = initPicker("hub-retrieval-key", "hub-retrieval-key-label", changeRetrieval, { multiple: true });
+  const drawerKey = initPicker("drawer-retrieval-key", "drawer-retrieval-key-label", changeRetrieval, {
+    multiple: true, scrollContainer: body,
+  });
   const controls = [...drawer.querySelectorAll("[data-setting]")];
   const wrappers = {};
   let state;
@@ -22,6 +28,7 @@ export function initTaleSettings({ request, addKey, onWorldChange, confirm }) {
   let saving = Promise.resolve();
   let loading = 0;
   let changingKey = false;
+  let changingChatKey = false;
   let profileEdit;
   let opener;
 
@@ -48,12 +55,12 @@ export function initTaleSettings({ request, addKey, onWorldChange, confirm }) {
   function renderRetrieval() {
     const model = embeddingModels.find(model => model.id === world?.model);
     const compatible = keys.filter(key => key.provider === model?.provider);
-    const disabled = !world || changingKey || ["creating", "pausing"].includes(world.status) || !compatible.length;
+    const disabled = !world || ["creating", "pausing"].includes(world.status) || !compatible.length;
     for (const picker of [hubKey, drawerKey]) {
-      fillSelect(picker, compatible.map(key => ({ id: key.id, name: key.nickname })),
-        world?.retrieval_key_id, compatible.length ? "Select key" : "No compatible keys");
-      picker.firstElementChild.disabled = true;
-      picker.disabled = disabled;
+      picker.update([{ items: compatible.map(key => ({ id: key.id, label: key.nickname })) }],
+        world?.retrieval_key_ids ?? [], {
+          disabled, saving: changingKey, placeholder: compatible.length ? "Select keys" : "No compatible keys",
+        });
     }
     element("tale-settings-world").hidden = !world;
     element("tale-embedding-model").textContent = world
@@ -61,13 +68,13 @@ export function initTaleSettings({ request, addKey, onWorldChange, confirm }) {
       : "";
   }
 
-  async function changeRetrieval(keyId) {
-    if (!world || changingKey || !keyId) return;
+  async function changeRetrieval(keyIds) {
+    if (!world || changingKey) return;
     const worldId = world.id;
     changingKey = true;
     renderRetrieval();
     try {
-      await request(`/api/worlds/${worldId}/retrieval-key`, { method: "POST", json: { key_id: keyId } });
+      await request(`/api/worlds/${worldId}/retrieval-key`, { method: "POST", json: { key_ids: keyIds } });
       await onWorldChange();
     } catch (failure) {
       errorText(drawer.open ? error : element("tales-error"), failure.message);
@@ -105,10 +112,13 @@ export function initTaleSettings({ request, addKey, onWorldChange, confirm }) {
       modelSelect.dataset.options = groups;
     }
     const compatible = keys.filter(key => key.provider === model.provider);
-    element("chat-key-label").hidden = !compatible.length;
+    const compatibleIds = new Set(compatible.map(key => key.id));
+    chatKeyField.hidden = !compatible.length;
     add.hidden = Boolean(compatible.length);
     add.textContent = `＋ Add ${model.provider_name} Key`;
-    fillSelect(chatKey, compatible.map(key => ({ id: key.id, name: key.nickname })), settings.chat_key_id, "Select key");
+    chatKey.update([{ items: compatible.map(key => ({ id: key.id, label: key.nickname })) }],
+      settings.chat_key_ids.filter(id => compatibleIds.has(id)),
+      { disabled: !compatible.length, saving: changingChatKey, placeholder: "Select keys" });
     element("thinking-level").hidden = !model.thinking_levels?.length;
     const levels = element("thinking-level-options");
     if (levels.dataset.model !== model.id) {
@@ -156,6 +166,17 @@ export function initTaleSettings({ request, addKey, onWorldChange, confirm }) {
     save("/api/tale-settings", changes);
   }
 
+  async function saveChatKeys(keyIds) {
+    changingChatKey = true;
+    render();
+    try {
+      await save("/api/tale-settings", { chat_key_ids: keyIds });
+    } finally {
+      changingChatKey = false;
+      render();
+    }
+  }
+
   function profileAction(action, fields) {
     return save(`/api/chat-profiles/${action}`, fields);
   }
@@ -186,8 +207,6 @@ export function initTaleSettings({ request, addKey, onWorldChange, confirm }) {
       if (document.activeElement !== input) input.value = state.settings[input.dataset.setting];
     }));
   }
-  hubKey.addEventListener("change", () => changeRetrieval(hubKey.value));
-  drawerKey.addEventListener("change", () => changeRetrieval(drawerKey.value));
   profile.addEventListener("change", () => profileAction("select", { id: profile.value || null }));
   element("profile-save").addEventListener("click", () => profileAction("save", { id: profile.value }));
   element("profile-create").addEventListener("click", () => editProfile("create"));
@@ -200,14 +219,16 @@ export function initTaleSettings({ request, addKey, onWorldChange, confirm }) {
   });
   element("reset-wrappers").addEventListener("click", () => update({ wrappers: state.wrapper_defaults }));
   add.addEventListener("click", () => addKey({
-    onAdded: key => save("/api/tale-settings", { chat_key_id: key.id }),
-    restoreFocus: () => (chatKey.closest("label").hidden ? add : chatKey).focus(),
+    onAdded: key => saveChatKeys([key.id]),
+    restoreFocus: () => (chatKeyField.hidden ? add : chatKey).focus(),
   }));
   element("close-tale-settings").addEventListener("click", () => drawer.close());
   drawer.addEventListener("click", event => {
     if (event.target === drawer && event.clientX < drawer.getBoundingClientRect().left) drawer.close();
   });
   drawer.addEventListener("close", () => {
+    chatKey.close();
+    drawerKey.close();
     profileEdit?.remove();
     profileEdit = null;
     profile.hidden = false;
@@ -227,6 +248,10 @@ export function initTaleSettings({ request, addKey, onWorldChange, confirm }) {
 
   return {
     world(current) {
+      if (world?.id !== current?.id) {
+        hubKey.close(false, false);
+        drawerKey.close(false, false);
+      }
       world = current;
       renderRetrieval();
     },
