@@ -40,6 +40,7 @@ body[data-view="tale"] .hero-art img { object-position: center; }
 body[data-view="tale"] .hero-frame::after { display: none; }
 #tale-chat {
   --reading-width: 64ch;
+  --message-line-height: 1.7;
   --tale-header-clearance: calc(var(--top-bar-offset) + var(--top-bar-line-height) + 12px);
   position: fixed;
   inset: 0;
@@ -64,7 +65,7 @@ body[data-view="tale"] .hero-frame::after { display: none; }
 .tale-chapter h1 { font-size: clamp(20px, 3vw, 27px); margin: 0; line-height: 1.2; overflow-wrap: anywhere; }
 .tale-chapter .tale-title-line { text-align: center; }
 .tale-prompt { text-align: center; color: #d3ded6; margin: clamp(38px, 17vh, 195px) 0 24px; }
-.tale-turn { margin: 22px 0; overflow-wrap: anywhere; line-height: 1.7; }
+.tale-turn { margin: 22px 0; overflow-wrap: anywhere; line-height: var(--message-line-height); }
 .tale-turn, #tale-input { user-select: text; }
 .tale-turn.user {
   white-space: pre-wrap;
@@ -131,10 +132,11 @@ body[data-view="tale"] .hero-frame::after { display: none; }
 #tale-input {
   display: block;
   width: 100%;
-  min-height: 31px;
-  max-height: min(28vh, 170px);
-  line-height: 1.45;
+  font: inherit;
+  line-height: var(--message-line-height);
   resize: none;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
   background: transparent;
   color: inherit;
   border: 0;
@@ -142,12 +144,18 @@ body[data-view="tale"] .hero-frame::after { display: none; }
 }
 #tale-input:focus { outline: none; }
 #tale-composer:focus-within { border-color: #cbebda99; }
-.tale-composer-actions { display: flex; align-items: center; justify-content: space-between; }
+.tale-composer-actions {
+  --action-size: 35px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: var(--action-size);
+}
 #chat-tale-settings svg { width: 17px; fill: none; stroke: currentColor; stroke-width: 1.8; }
 .tale-composer-actions :is([type="submit"], #stop-tale) {
   border-radius: 50%;
-  width: 35px;
-  height: 35px;
+  width: var(--action-size);
+  height: var(--action-size);
   background: #f2edd4;
   color: #082217;
 }

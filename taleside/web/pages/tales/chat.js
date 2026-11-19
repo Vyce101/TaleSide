@@ -68,11 +68,6 @@ export function initTaleChat({ request, settings, onActivity }) {
   let watcher;
   let updatingTitle = false;
 
-  function resetHeight() {
-    input.style.height = "";
-    if (input.value && input.getClientRects().length) input.style.height = `${input.scrollHeight}px`;
-  }
-
   function updateComposer() {
     const active = Boolean(generation);
     submit.hidden = active;
@@ -145,7 +140,6 @@ export function initTaleChat({ request, settings, onActivity }) {
     current = generation = null;
     updatingTitle = false;
     input.value = "";
-    resetHeight();
     updateComposer();
     composer.hidden = true;
     prompt.hidden = true;
@@ -188,7 +182,6 @@ export function initTaleChat({ request, settings, onActivity }) {
     const user = append({ role: "user", content: text });
     prompt.hidden = true;
     input.value = "";
-    resetHeight();
     updateComposer();
     input.focus({ preventScroll: true });
     bottom();
@@ -209,7 +202,6 @@ export function initTaleChat({ request, settings, onActivity }) {
           user.turn.remove();
           prompt.hidden = messages.childElementCount > 0;
           input.value = draft;
-          resetHeight();
         }
         if (result.missing_key) settings.open(settingsButton, result.missing_key);
         return;
@@ -268,10 +260,7 @@ export function initTaleChat({ request, settings, onActivity }) {
   composer.addEventListener("submit", send);
   stop.addEventListener("click", () => stopRequest(generation));
   settingsButton.addEventListener("click", () => settings.open(settingsButton));
-  input.addEventListener("input", () => {
-    resetHeight();
-    updateComposer();
-  });
+  input.addEventListener("input", updateComposer);
   input.addEventListener("keydown", event => {
     if (event.key !== "Enter" || event.shiftKey || event.isComposing || event.keyCode === 229) return;
     event.preventDefault();
