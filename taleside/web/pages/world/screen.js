@@ -164,7 +164,7 @@ coverImage.addEventListener("error", () => {
   if (!cover.classList.contains("fallback")) showCover(element("cover-title").textContent);
 });
 
-export function initWorldScreen({ request, onCreated, rename, discard, changeJob, changeKey, requestAddKey, refreshSettings }) {
+export function initWorldScreen({ request, onCreated, rename, discard, changeJob, changeKey, requestAddKey, refreshSettings, play }) {
   let currentWorld = null;
   let settingUp = false;
   let savingWorld = null;
@@ -215,7 +215,8 @@ export function initWorldScreen({ request, onCreated, rename, discard, changeJob
       options: embeddingOptions, selection: draft ?? currentWorld, world: currentWorld,
       busy, changingKey: Boolean(keyChange), jobPending,
     });
-    if (currentWorld) action.disabled = Boolean(keyChange || jobPending || currentWorld.status === "pausing");
+    if (currentWorld) action.disabled = Boolean(keyChange || jobPending || currentWorld.status === "pausing"
+      || (currentWorld.status === "ready" && currentWorld.id.startsWith("demo-")));
   }
 
   function applyDraftDefaults() {
@@ -317,7 +318,7 @@ export function initWorldScreen({ request, onCreated, rename, discard, changeJob
     element("setup-name").hidden = !isCreate;
     element("import-note").hidden = true;
     element("discard-world").hidden = isCreate;
-    element("chronicles-tab").hidden = true;
+    element("tales-tab").hidden = true;
     element("world-progress").hidden = true;
     element("play-world").toggleAttribute("hidden", true);
     setError("action-error", "");
@@ -462,7 +463,7 @@ export function initWorldScreen({ request, onCreated, rename, discard, changeJob
 
   action.addEventListener("click", () => {
     if (settingUp) submit();
-    else if (currentWorld?.status === "ready") selectTab("chronicles");
+    else if (currentWorld?.status === "ready" && !currentWorld.id.startsWith("demo-")) play(currentWorld);
     else if (["paused", "failed"].includes(currentWorld?.status)
         && !currentWorld.id.startsWith("demo-") && !currentWorld.key_id) {
       selectTab("settings");
@@ -506,6 +507,7 @@ export function initWorldScreen({ request, onCreated, rename, discard, changeJob
   });
 
   return {
+    ask,
     create() {
       reset(true);
       studio.dataset.status = "setup";
@@ -518,10 +520,13 @@ export function initWorldScreen({ request, onCreated, rename, discard, changeJob
       access.hidden = true;
     },
     show(world, pending) {
+      const demo = world.id.startsWith("demo-");
+      const becameReady = currentWorld?.id === world.id && currentWorld.status !== "ready" && world.status === "ready";
       if (currentWorld?.id !== world.id) {
         reset(false);
-        if (world.status === "ready") showTab("chronicles");
+        if (!demo && world.status === "ready") showTab("tales");
       }
+      if (!demo && becameReady && element("books-tab").getAttribute("aria-selected") === "true") showTab("tales");
       currentWorld = world;
       jobPending = pending;
       content.hidden = false;
@@ -534,14 +539,14 @@ export function initWorldScreen({ request, onCreated, rename, discard, changeJob
       const count = world.books.length;
       showMetadata(count, world.model, world.total_chunks);
       element("books-tab").textContent = `Books (${count})`;
-      element("chronicles-tab").hidden = false;
+      element("tales-tab").hidden = demo;
       showJobProgress(world, status, pending);
       updateEmbedding();
       maxSize.value = world.max_chunk_size;
       boundary.value = world.boundary_search_distance;
       element("discard-world").querySelector("small").textContent = world.id.startsWith("demo-")
         ? "Remove this World from this demo session."
-        : "Permanently delete this World, its saved books, and embedding progress.";
+        : "Permanently delete this World, its saved books, embedding progress, and Tales.";
       books.show(world);
     },
     unavailable(text) {

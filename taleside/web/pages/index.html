@@ -21,6 +21,7 @@
     <nav aria-label="Sections">
       <a href="/" id="worlds-link" aria-current="page">Worlds</a>
       <a href="/create" id="create-link">Create</a>
+      <a id="tale-world-link" href="/" hidden></a>
     </nav>
     <h1 class="top-bar-title" id="app-settings-title" tabindex="-1">Settings</h1>
     <div class="utilities">
@@ -118,15 +119,24 @@
         </section>
 
         <div class="world-tabs" role="tablist" aria-label="World sections">
-          <button type="button" class="studio-pill" role="tab" id="chronicles-tab" aria-controls="chronicles-panel" hidden>Chronicles <small>(Soon)</small></button>
+          <button type="button" class="studio-pill" role="tab" id="tales-tab" aria-controls="tales-panel" hidden>Tales</button>
           <button type="button" class="studio-pill" role="tab" id="books-tab" aria-controls="books-panel">Books</button>
           <button type="button" class="studio-pill" role="tab" id="settings-tab" aria-controls="settings-panel">World Settings</button>
         </div>
       </div>
       <div id="world-top-spacer" aria-hidden="true"></div>
 
-      <section class="studio-panel" id="chronicles-panel" role="tabpanel" aria-labelledby="chronicles-tab" hidden>
-        <p>Chronicles is coming soon.</p>
+      <section class="studio-panel" id="tales-panel" role="tabpanel" aria-labelledby="tales-tab" hidden>
+        <div class="tales-toolbar">
+          <button class="studio-pill" id="new-tale" type="button">＋ New Tale</button>
+          <div class="tales-toolbar-settings">
+            <label>Retrieval Key <select id="hub-retrieval-key"></select></label>
+            <button class="studio-pill" id="hub-tale-settings" type="button">Tale Settings</button>
+          </div>
+        </div>
+        <p class="studio-error" id="tales-error" role="alert" hidden></p>
+        <p class="tales-empty" id="tales-empty" hidden>Start a conversation grounded in this World’s books.</p>
+        <div id="tale-list"></div>
       </section>
       <section class="studio-panel" id="books-panel" role="tabpanel" aria-labelledby="books-tab">
         <div class="books-toolbar">

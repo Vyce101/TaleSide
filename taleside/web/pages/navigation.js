@@ -28,10 +28,12 @@ export function initNavigation({ display, confirmLeave, isDirty, beforeLink, bef
     const toHome = entry.path === "/";
     const fromCreate = previous === "/create";
     const toCreate = entry.path === "/create";
+    const fromTale = previous.includes("/tales/");
+    const toTale = entry.path.includes("/tales/");
     if (fromHome && toCreate) createCoverId = firstHomeWorld();
     current = entry;
     function fadeIn(duration) {
-      (toHome ? home : studio).animate([{ opacity: 0 }, { opacity: 1 }], {
+      (toHome ? home : toTale ? document.getElementById("tale-chat") : studio).animate([{ opacity: 0 }, { opacity: 1 }], {
         duration, easing: "cubic-bezier(.22, 1, .36, 1)",
       });
     }
@@ -40,6 +42,13 @@ export function initNavigation({ display, confirmLeave, isDirty, beforeLink, bef
       if (current !== entry) return;
       display(entry.path, previous);
       afterDisplay?.();
+    }
+
+    if (fromTale || toTale) {
+      transition?.skipTransition();
+      update();
+      if (!reducedMotion.matches) fadeIn(220);
+      return;
     }
 
     const worldPath = fromHome ? entry.path : previous;
@@ -143,6 +152,7 @@ export function initNavigation({ display, confirmLeave, isDirty, beforeLink, bef
   });
 
   return {
+    navigate,
     get path() { return current.path; },
     replace(path, options) { commit(path, { ...options, replace: true }); },
   };

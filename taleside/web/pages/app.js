@@ -4,12 +4,17 @@ import { initSettings } from "./settings/settings.js";
 import { initWorldScreen } from "./world/screen.js";
 import { createDemoWorlds, updateDemoProgress } from "./home/demo-worlds.js";
 import { renderHome, resetHomeSelection, revealHomeCard, selectWorld, showHomeMessage } from "./home/home.js";
+import { initTaleHub } from "./tales/hub.js";
+import { initTaleChat } from "./tales/chat.js";
+import { initTaleSettings } from "./tales/settings.js";
 
 const home = document.getElementById("home");
 const studio = document.getElementById("studio");
 const header = document.querySelector(".top-bar");
 const worldsLink = document.getElementById("worlds-link");
 const createLink = document.getElementById("create-link");
+const chat = document.getElementById("tale-chat");
+const taleWorldLink = document.getElementById("tale-world-link");
 const search = document.getElementById("search-button");
 const worldTop = document.getElementById("world-top");
 const worldTopSpacer = document.getElementById("world-top-spacer");
@@ -40,8 +45,16 @@ async function request(path, { json, ...options } = {}) {
 const settings = initSettings({ request, refresh: refreshSettings, onPreviewChange: changePreviewMode });
 const worldScreen = initWorldScreen({
   request, onCreated, rename, discard, changeJob, changeKey,
-  requestAddKey: settings.addKey, refreshSettings,
+  requestAddKey: settings.addKey, refreshSettings, play: world => taleHub.play(world),
 });
+const taleSettings = initTaleSettings({
+  request, addKey: settings.addKey, onWorldChange: () => refreshWorlds(true), confirm: worldScreen.ask,
+});
+const taleHub = initTaleHub({
+  request, navigate: path => navigation.navigate(path), confirm: worldScreen.ask,
+  settings: taleSettings, onActivity: () => refreshWorlds(true),
+});
+const taleChat = initTaleChat({ request, settings: taleSettings, onActivity: () => refreshWorlds(true) });
 const navigation = initNavigation({
   display,
   confirmLeave: worldScreen.confirmLeave,
@@ -62,6 +75,21 @@ function updateHome() {
 function updateWorld() {
   const id = navigation.path.split("/")[2];
   const world = (isDemo(id) ? demos : savedWorlds)?.find(item => item.id === id);
+  const talking = document.body.dataset.view === "tale";
+  const saved = world && !isDemo(id) ? world : null;
+  taleSettings.world(saved);
+  if (talking) {
+    taleWorldLink.textContent = world?.name ?? "World";
+    taleWorldLink.href = `/worlds/${id}`;
+    if (!world && savedWorlds !== null) {
+      taleChat.close();
+      navigation.replace(`/worlds/${id}`);
+      return;
+    }
+    taleChat.updateWorld(world);
+    showArtwork(world?.wide ?? null);
+    return;
+  }
   if (world) {
     document.title = `${world.name} · TaleSide`;
     worldScreen.show(world, pending.get(id));
@@ -73,12 +101,13 @@ function updateWorld() {
     }
     worldScreen.unavailable(message);
   }
+  taleHub.show(saved);
   showArtwork(world?.wide ?? null);
 }
 
 function updateViews() {
   updateHome();
-  if (document.body.dataset.view === "world" && navigation.path.startsWith("/worlds/")) {
+  if (["world", "tale"].includes(document.body.dataset.view) && navigation.path.startsWith("/worlds/")) {
     updateWorld();
     updateHeader();
   }
@@ -113,6 +142,7 @@ async function refreshSettings({ worlds = false } = {}) {
       settings.render(data.keys);
       settings.showError("");
       worldScreen.setEmbeddingOptions(data);
+      taleSettings.keys(data);
     }
   } catch (error) {
     if (number === settingsRequestNumber) settings.showError(error.message);
@@ -199,15 +229,22 @@ function onCreated(world) {
 
 function display(path, previous) {
   settings.close({ immediate: true });
+  taleSettings.close();
+  taleChat.close();
+  taleHub.show(null);
+  taleSettings.world(null);
   if (previous && previous !== "/") worldScreen.close();
-  const view = path === "/" ? "home" : path === "/create" ? "create" : "world";
+  const view = path === "/" ? "home" : path === "/create" ? "create" : path.includes("/tales/") ? "tale" : "world";
   expandedHeight = 0;
   worldTop.style.setProperty("--collapse", "0");
   worldTopSpacer.style.height = "0";
   document.body.dataset.view = view;
   home.hidden = view !== "home";
-  studio.hidden = view === "home";
+  studio.hidden = view !== "world" && view !== "create";
+  chat.hidden = view !== "tale";
   search.hidden = view !== "home";
+  worldsLink.hidden = createLink.hidden = view === "tale";
+  taleWorldLink.hidden = view !== "tale";
   studio.dataset.status = "";
   worldsLink.removeAttribute("aria-current");
   createLink.removeAttribute("aria-current");
@@ -222,6 +259,11 @@ function display(path, previous) {
     showArtwork(null);
   } else {
     updateWorld();
+    if (view === "tale" && navigation.path === path) {
+      const world = savedWorlds?.find(item => item.id === path.split("/")[2]);
+      taleChat.open(path, world);
+      taleWorldLink.focus({ preventScroll: true });
+    }
   }
   window.scrollTo(0, 0);
   updateHeader();
