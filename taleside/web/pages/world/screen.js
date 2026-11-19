@@ -164,7 +164,8 @@ coverImage.addEventListener("error", () => {
   if (!cover.classList.contains("fallback")) showCover(element("cover-title").textContent);
 });
 
-export function initWorldScreen({ request, onCreated, rename, discard, changeJob, changeKey, requestAddKey, refreshSettings, play }) {
+export function initWorldScreen({ request, onCreated, rename, discard, changeJob, changeKey,
+  requestAddKey, refreshSettings, refreshWorlds, play }) {
   let currentWorld = null;
   let settingUp = false;
   let savingWorld = null;
@@ -176,12 +177,53 @@ export function initWorldScreen({ request, onCreated, rename, discard, changeJob
   let embeddingOptions;
   let draft;
   let changedEmbedding = false;
+  let bookChange = null;
   const embedding = initEmbeddingControls({ chooseModel, chooseKey, addKey });
-  const books = initBooksPanel(onEdit);
+  const books = initBooksPanel(onEdit, editSavedBooks);
   const worldImport = createWorldImport({
     request,
     onReportChange: describeSetup,
   });
+
+  function canEditWorld(world) {
+    return !!world && !jobPending && !bookChange && !keyChange && !world.id.startsWith("demo-")
+      && ["paused", "failed", "ready"].includes(world.status);
+  }
+
+  async function editSavedBooks(world, actionName, value) {
+    if (!canEditWorld(world) || currentWorld?.id !== world.id) return false;
+    if (actionName === "remove-book") {
+      const confirmed = await ask("Remove Book?", `Permanently remove “${value.name}” and its chunks from this World?`,
+        "Cancel", "Remove Book", true);
+      if (!confirmed || currentWorld?.id !== world.id || !canEditWorld(currentWorld)) return false;
+    }
+    books.showError("");
+    const operation = bookChange = {};
+    const work = element("books-work");
+    work.textContent = "Saving book changes…";
+    work.hidden = false;
+    books.setLocked(true);
+    updateEmbedding();
+    try {
+      const book_revision = world.book_revision;
+      const fields = actionName === "book-order" ? { book_ids: value } : { book_id: value.id };
+      await request(`/api/worlds/${world.id}/${actionName}`, {
+        method: "POST", json: { ...fields, book_revision },
+      });
+      await refreshWorlds(true);
+      return bookChange === operation;
+    } catch (error) {
+      if (bookChange === operation) books.showError(error.message);
+      return false;
+    } finally {
+      if (bookChange === operation) {
+        bookChange = null;
+        work.hidden = true;
+        books.setLocked(false);
+        updateEmbedding();
+      }
+    }
+  }
 
   function isDirty() {
     return settingUp && (worldName.value.trim() !== "" || books.selected.length > 0
@@ -215,7 +257,7 @@ export function initWorldScreen({ request, onCreated, rename, discard, changeJob
     });
     if (currentWorld) action.disabled = currentWorld.status === "ready"
       ? !currentWorld.can_play
-      : Boolean(keyChange || jobPending || currentWorld.status === "pausing");
+      : Boolean(bookChange || keyChange || jobPending || currentWorld.status === "pausing");
   }
 
   function applyDraftDefaults() {
@@ -295,6 +337,7 @@ export function initWorldScreen({ request, onCreated, rename, discard, changeJob
 
   function reset(isCreate) {
     embedding.reset();
+    bookChange = null;
     currentWorld = null;
     draft = isCreate ? {} : null;
     busy = false;
@@ -309,6 +352,7 @@ export function initWorldScreen({ request, onCreated, rename, discard, changeJob
     worldName.readOnly = !isCreate;
     maxSize.disabled = boundary.disabled = !isCreate;
     books.reset();
+    element("books-work").hidden = true;
     element("saved-name").hidden = isCreate;
     renameForm.hidden = true;
     pendingRename = null;
@@ -518,12 +562,10 @@ export function initWorldScreen({ request, onCreated, rename, discard, changeJob
     },
     show(world, pending) {
       const demo = world.id.startsWith("demo-");
-      const becameReady = currentWorld?.id === world.id && currentWorld.status !== "ready" && world.status === "ready";
       if (currentWorld?.id !== world.id) {
         reset(false);
         if (!demo && world.status === "ready") showTab("tales");
       }
-      if (!demo && becameReady && element("books-tab").getAttribute("aria-selected") === "true") showTab("tales");
       currentWorld = world;
       jobPending = pending;
       content.hidden = false;
@@ -544,7 +586,7 @@ export function initWorldScreen({ request, onCreated, rename, discard, changeJob
       element("discard-world").querySelector("small").textContent = world.id.startsWith("demo-")
         ? "Remove this World from this demo session."
         : "Permanently delete this World, its saved books, embedding progress, and Tales.";
-      books.show(world);
+      books.show(world, Boolean(pending));
     },
     unavailable(text) {
       reset(false);

@@ -51,10 +51,11 @@ function bookButton(icon, label, onClick) {
   return button;
 }
 
-export function initBooksPanel(onEdit) {
+export function initBooksPanel(onEdit, editSaved) {
   let selected = [];
   let saved = null;
   let locked = false;
+  let jobChanging = false;
   let drag = null;
   let snapshot = "";
   const rowMotions = new WeakMap();
@@ -80,14 +81,29 @@ export function initBooksPanel(onEdit) {
     onEdit();
   }
 
-  function move(book, destination, focusHandle = false) {
-    const origin = selected.indexOf(book);
-    if (origin < 0 || destination < 0 || destination >= selected.length || locked) return;
+  function canEditSaved() {
+    return saved && !locked && !jobChanging && !saved.id.startsWith("demo-")
+      && ["paused", "failed", "ready"].includes(saved.status);
+  }
+
+  async function move(book, destination) {
+    const books = saved?.books ?? selected;
+    const origin = saved ? books.findIndex(item => item.id === book.id) : books.indexOf(book);
+    if (origin < 0 || destination < 0 || destination >= books.length || locked) return;
+    if (saved) {
+      const order = books.map(item => item.id);
+      order.splice(origin, 1);
+      order.splice(destination, 0, book.id);
+      await editSaved(saved, "book-order", order);
+      const row = [...list.children].find(item => item.dataset.bookId === book.id);
+      row?.querySelector(".book-handle")?.focus();
+      return;
+    }
     selected.splice(origin, 1);
     selected.splice(destination, 0, book);
     render();
     onEdit();
-    if (focusHandle) list.children[destination]?.querySelector(".book-handle")?.focus();
+    list.children[destination]?.querySelector(".book-handle")?.focus();
   }
 
   function slideRow(row, fromTop, lifted = false) {
@@ -146,6 +162,16 @@ export function initBooksPanel(onEdit) {
     }
     const lifted = drag.row;
     const rows = [...list.children];
+    if (saved) {
+      const world = saved;
+      const order = rows.map(row => row.dataset.bookId);
+      clearDrag();
+      render();
+      if (event.type === "pointerup" && order.some((id, index) => id !== world.books[index].id)) {
+        editSaved(world, "book-order", order);
+      }
+      return;
+    }
     const tops = rows.map(row => row.getBoundingClientRect().top);
     selected = rows.map(row => selected[Number(row.dataset.index)]);
     const dragIndex = rows.indexOf(lifted);
@@ -179,6 +205,23 @@ export function initBooksPanel(onEdit) {
   window.addEventListener("pointercancel", finishDrag);
   list.addEventListener("lostpointercapture", finishDrag);
 
+  function reorderHandle(dragArea, order, book, index, allowed) {
+    const handle = bookButton("grip", `Reorder Book ${index + 1}. Use Up or Down Arrow.`);
+    handle.classList.add("book-handle");
+    handle.addEventListener("keydown", event => {
+      if (!["ArrowUp", "ArrowDown"].includes(event.key)) return;
+      event.preventDefault();
+      move(book, index + (event.key === "ArrowUp" ? -1 : 1));
+    });
+    order.prepend(handle);
+    function allowReorder(allow) {
+      dragArea.toggleAttribute("data-reorder", allow);
+      handle.disabled = !allow;
+    }
+    allowReorder(allowed);
+    return allowReorder;
+  }
+
   function editRow(row, dragArea, order, title, book, index) {
     const defaultName = book.filename.slice(0, -4);
     const titleText = element("span", "book-name-text", book.name.trim() || defaultName);
@@ -201,20 +244,8 @@ export function initBooksPanel(onEdit) {
     title.append(titleText, editField);
 
     const controls = element("div", "book-controls");
-    const handle = bookButton("grip", `Reorder Book ${index + 1}. Use Up or Down Arrow.`);
-    handle.classList.add("book-handle");
     const canReorder = !locked && selected.length > 1;
-    function allowReorder(allow) {
-      dragArea.toggleAttribute("data-reorder", allow);
-      handle.disabled = !allow;
-    }
-    allowReorder(canReorder);
-    handle.addEventListener("keydown", event => {
-      if (!["ArrowUp", "ArrowDown"].includes(event.key)) return;
-      event.preventDefault();
-      move(book, index + (event.key === "ArrowUp" ? -1 : 1), true);
-    });
-    order.prepend(handle);
+    const allowReorder = reorderHandle(dragArea, order, book, index, canReorder);
 
     function endEdit(save) {
       if (editField.hidden) return;
@@ -313,6 +344,7 @@ export function initBooksPanel(onEdit) {
   function render() {
     clearDrag();
     const books = saved?.books ?? selected;
+    const editable = canEditSaved();
     const complete = books.filter(book => book.embedded_chunks === book.total_chunks).length;
     indexed.hidden = !saved;
     summary.textContent = saved?.status === "ready"
@@ -332,14 +364,27 @@ export function initBooksPanel(onEdit) {
       row.dataset.index = index;
       const order = element("div", "book-order");
       order.append(element("span", "book-number", String(index + 1)));
-      if (saved) {
+      if (saved && !editable) {
         row.append(order, title);
         savedRow(row, title, book, nextBook);
       } else {
         const dragArea = element("div", "book-drag-area");
         dragArea.append(order, title);
         row.append(dragArea);
-        editRow(row, dragArea, order, title, book, index);
+        if (saved) {
+          row.dataset.bookId = book.id;
+          reorderHandle(dragArea, order, book, index, books.length > 1);
+          savedRow(row, title, book, nextBook);
+          const controls = element("div", "book-controls");
+          const remove = bookButton("remove", `Remove Book ${index + 1}: ${book.name}`, async () => {
+            if (await editSaved(saved, "remove-book", book)) add.focus();
+          });
+          remove.disabled = books.length < 2;
+          controls.append(remove);
+          row.append(controls);
+        } else {
+          editRow(row, dragArea, order, title, book, index);
+        }
       }
       const filename = element("small", "", book.filename);
       filename.title = book.filename;
@@ -381,13 +426,15 @@ export function initBooksPanel(onEdit) {
       selected = [];
       saved = null;
       locked = false;
+      jobChanging = false;
       snapshot = "";
       showError("");
       render();
     },
-    show(world) {
-      const nextSnapshot = JSON.stringify([world.id, world.books, world.status, world.active_book]);
+    show(world, pending = false) {
+      const nextSnapshot = JSON.stringify([world.id, world.books, world.status, world.active_book, pending]);
       saved = world;
+      jobChanging = pending;
       if (snapshot === nextSnapshot) return;
       snapshot = nextSnapshot;
       render();
@@ -397,6 +444,7 @@ export function initBooksPanel(onEdit) {
       locked = value;
       render();
     },
+    showError,
     get selected() {
       return selected;
     },

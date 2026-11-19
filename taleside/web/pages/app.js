@@ -45,7 +45,7 @@ async function request(path, { json, ...options } = {}) {
 const settings = initSettings({ request, refresh: refreshSettings, onPreviewChange: changePreviewMode });
 const worldScreen = initWorldScreen({
   request, onCreated, rename, discard, changeJob, changeKey,
-  requestAddKey: settings.addKey, refreshSettings, play: world => taleHub.play(world),
+  requestAddKey: settings.addKey, refreshSettings, refreshWorlds, play: world => taleHub.play(world),
 });
 const taleSettings = initTaleSettings({
   request, addKey: settings.addKey, onWorldChange: () => refreshWorlds(true), confirm: worldScreen.ask,

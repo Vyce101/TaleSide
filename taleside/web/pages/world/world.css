@@ -329,6 +329,8 @@ body:is([data-view="create"], [data-view="world"]) .studio-scrim { display: bloc
   transition: background-color 150ms ease;
 }
 .book-row:hover, .book-row:focus-within { background: #ffffff12; }
+.book-row[data-book-id] { grid-template-columns: minmax(0, 1fr) auto auto; }
+.book-row[data-book-id] .book-drag-area { grid-column: 1; }
 .book-row[data-editing] { border-color: #ffffff47; background: #ffffff0f; }
 .book-row[data-dragging] {
   z-index: 4;
