@@ -223,10 +223,9 @@ export function initWorldScreen({ request, onCreated, rename, discard, changeJob
     if (!draft || !embeddingOptions) return;
     draft.model ??= embeddingOptions.defaults.model;
     const model = embeddingOptions.models.find(model => model.id === draft.model);
-    const compatible = embeddingOptions.keys.filter(key => key.provider === model?.provider);
-    if (!compatible.some(key => key.id === draft.key_id)) {
-      draft.key_id = compatible.find(key => key.id === embeddingOptions.defaults.key_id)?.id ?? compatible[0]?.id;
-    }
+    const compatible = new Set(embeddingOptions.keys.filter(key => key.provider === model?.provider).map(key => key.id));
+    draft.embedding_key_ids = (draft.embedding_key_ids ?? embeddingOptions.defaults.key_ids)
+      .filter(id => compatible.has(id));
     describeSetup();
   }
 
@@ -239,9 +238,9 @@ export function initWorldScreen({ request, onCreated, rename, discard, changeJob
     updateEmbedding();
   }
 
-  async function chooseKey(keyId) {
+  async function chooseKey(keyIds) {
     if (draft && !busy) {
-      draft.key_id = keyId;
+      draft.embedding_key_ids = keyIds;
       changedEmbedding = true;
       onEdit();
       updateEmbedding();
@@ -250,7 +249,7 @@ export function initWorldScreen({ request, onCreated, rename, discard, changeJob
     const world = currentWorld;
     if (!world || keyChange || !["paused", "failed", "ready"].includes(world.status)) return;
     setError("action-error", "");
-    const submission = changeKey(world, keyId);
+    const submission = changeKey(world, keyIds);
     keyChange = submission;
     updateEmbedding();
     try {
@@ -270,7 +269,7 @@ export function initWorldScreen({ request, onCreated, rename, discard, changeJob
     const worldId = currentWorld?.id;
     const stillHere = () => originDraft ? draft === originDraft : currentWorld?.id === worldId;
     requestAddKey({
-      onAdded: key => stillHere() && chooseKey(key.id),
+      onAdded: key => stillHere() && chooseKey([key.id]),
       restoreFocus: () => { if (stillHere()) embedding.focusKey(); },
     });
   }
@@ -297,6 +296,7 @@ export function initWorldScreen({ request, onCreated, rename, discard, changeJob
   }
 
   function reset(isCreate) {
+    embedding.reset();
     currentWorld = null;
     draft = isCreate ? {} : null;
     busy = false;
@@ -344,7 +344,7 @@ export function initWorldScreen({ request, onCreated, rename, discard, changeJob
       field.focus();
       return;
     }
-    if (!draft?.key_id) {
+    if (!draft?.embedding_key_ids?.length) {
       selectTab("settings");
       setError("action-error", embeddingOptions ? "Choose a Google Gemini key before creating this World."
         : "Could not load embedding settings. Open App Settings to try again.");
@@ -357,7 +357,7 @@ export function initWorldScreen({ request, onCreated, rename, discard, changeJob
       max_chunk_size: maxSize.valueAsNumber,
       boundary_search_distance: boundary.valueAsNumber,
       model: draft.model,
-      key_id: draft.key_id,
+      key_ids: draft.embedding_key_ids,
     };
     setBusy(true);
     const submission = worldImport.save(settings, books.selected);
@@ -465,7 +465,7 @@ export function initWorldScreen({ request, onCreated, rename, discard, changeJob
     if (settingUp) submit();
     else if (currentWorld?.status === "ready" && !currentWorld.id.startsWith("demo-")) play(currentWorld);
     else if (["paused", "failed"].includes(currentWorld?.status)
-        && !currentWorld.id.startsWith("demo-") && !currentWorld.key_id) {
+        && !currentWorld.id.startsWith("demo-") && !currentWorld.embedding_key_ids.length) {
       selectTab("settings");
       setError("action-error", "Choose a Google Gemini key before resuming this World.");
       embedding.focusKey();

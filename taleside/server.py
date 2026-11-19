@@ -161,7 +161,7 @@ class Handler(BaseHTTPRequestHandler):
             books.append(BookSource(details["filename"], part.get_payload(decode=True), details.get("name")))
         return self.server.worlds.prepare(settings.get("name"), books, settings.get("max_chunk_size"),
                                           settings.get("boundary_search_distance"), model=settings.get("model"),
-                                          key_ids=settings.get("key_ids", [settings.get("key_id")]), world_id=world_id)
+                                          key_ids=settings.get("key_ids"), world_id=world_id)
 
     def do_POST(self):
         if not self.local_request() or self.headers.get("Origin") != self.server.url:
@@ -252,8 +252,7 @@ class Handler(BaseHTTPRequestHandler):
         if action == "rename":
             updated = worlds.rename(world_id, self.read_json().get("name"))
         elif action == "embedding-key":
-            fields = self.read_json()
-            updated = worlds.set_embedding_keys(world_id, fields.get("key_ids", [fields.get("key_id")]))
+            updated = worlds.set_embedding_keys(world_id, self.read_json().get("key_ids"))
         elif action == "retrieval-key":
             fields = self.read_json()
             worlds.tales.set_retrieval_keys(world_id, fields.get("key_ids", [fields.get("key_id")]))

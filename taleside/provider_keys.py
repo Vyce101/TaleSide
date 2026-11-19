@@ -157,7 +157,7 @@ class ProviderKeys:
             last = db.execute("SELECT model FROM embedding_defaults WHERE id = 1").fetchone()
             key_ids = (selected_keys(db, "embedding_default_keys", 1) if last and last["model"] == MODEL
                        else [key["id"] for key in keys if key["provider"] == PROVIDER][:1])
-            defaults = {"model": MODEL, "key_ids": key_ids, "key_id": next(iter(key_ids), None)}
+            defaults = {"model": MODEL, "key_ids": key_ids}
             return {"keys": keys, "defaults": defaults}
 
     @staticmethod

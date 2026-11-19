@@ -24,10 +24,14 @@ export function initEmbeddingControls({ chooseModel, chooseKey, addKey }) {
   const add = document.getElementById("add-provider-key");
   const rows = document.querySelector(".settings-rows");
   const modelControl = initPicker("embedding-model", "embedding-model-label", chooseModel);
-  const keyControl = initPicker("embedding-key", "embedding-key-label", chooseKey);
+  const keyControl = initPicker("embedding-key", "embedding-key-label", chooseKey, { multiple: true });
   add.addEventListener("click", addKey);
 
   return {
+    reset() {
+      modelControl.close(false, false);
+      keyControl.close(false, false);
+    },
     focusKey() {
       if (add.hidden) keyControl.focus();
       else add.focus();
@@ -55,8 +59,9 @@ export function initEmbeddingControls({ chooseModel, chooseKey, addKey }) {
         disabled: Boolean(world || busy || !models.length),
         placeholder: selection?.model ?? "Loading models…",
       });
-      keyControl.update([{ name: providerName, items: keyItems }], demo ? null : selection?.key_id, {
-        disabled: Boolean(keyLocked || demo || !keyItems.length),
+      keyControl.update([{ name: providerName, items: keyItems }], selection?.embedding_key_ids ?? [], {
+        disabled: Boolean(active || demo || !keyItems.length),
+        saving: changingKey,
         placeholder: demo ? "Demo key" : !options ? "Loading keys…" : "Select an API key",
       });
       keyPicker.hidden = missingKeys;

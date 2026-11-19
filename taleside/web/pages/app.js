@@ -150,9 +150,9 @@ async function refreshSettings({ worlds = false } = {}) {
   await worldRefresh;
 }
 
-async function changeKey(world, keyId) {
+async function changeKey(world, keyIds) {
   try {
-    await request(`/api/worlds/${world.id}/embedding-key`, { method: "POST", json: { key_id: keyId } });
+    await request(`/api/worlds/${world.id}/embedding-key`, { method: "POST", json: { key_ids: keyIds } });
   } finally {
     await refreshSettings({ worlds: true });
   }
