@@ -10,6 +10,7 @@ const studio = document.getElementById("studio");
 const header = document.querySelector(".top-bar");
 const worldsLink = document.getElementById("worlds-link");
 const createLink = document.getElementById("create-link");
+const search = document.getElementById("search-button");
 const worldTop = document.getElementById("world-top");
 const worldTopSpacer = document.getElementById("world-top-spacer");
 const canopy = document.getElementById("studio-canopy");
@@ -206,6 +207,7 @@ function display(path, previous) {
   document.body.dataset.view = view;
   home.hidden = view !== "home";
   studio.hidden = view === "home";
+  search.hidden = view !== "home";
   studio.dataset.status = "";
   worldsLink.removeAttribute("aria-current");
   createLink.removeAttribute("aria-current");
