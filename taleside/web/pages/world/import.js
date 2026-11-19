@@ -1,4 +1,4 @@
-export function createWorldImport({ request, ask, onReportChange, onSaving }) {
+export function createWorldImport({ request, onReportChange }) {
   let attempt = null;
 
   function cancel() {
@@ -16,7 +16,6 @@ export function createWorldImport({ request, ask, onReportChange, onSaving }) {
         route: `/api/world-imports/${id}`,
         controller: new AbortController(),
         report: null,
-        approved: false,
       };
     }
 
@@ -24,26 +23,13 @@ export function createWorldImport({ request, ask, onReportChange, onSaving }) {
     const { route, controller: { signal } } = submission;
     try {
       if (!submission.report) {
-        const body = bookUpload(settings, books);
-        submission.report = await request(`${route}/prepare`, { method: "POST", body, signal });
+        submission.report = await request(`${route}/prepare`, {
+          method: "POST", body: bookUpload(settings, books), signal,
+        });
       }
       if (attempt !== submission) return null;
-      onReportChange();
-
-      if (submission.report.oversized_chunks.length && !submission.approved) {
-        submission.approved = await confirmOversized(ask, submission.report);
-        if (attempt !== submission) return null;
-        if (!submission.approved) {
-          cancel();
-          onReportChange();
-          return null;
-        }
-      }
-
-      onSaving();
-      const { world } = await request(`${route}/accept`, {
-        method: "POST", json: { allow_oversized: submission.approved }, signal,
-      });
+      onReportChange?.();
+      const { world } = await request(`${route}/accept`, { method: "POST", json: {}, signal });
       if (attempt !== submission) return null;
       if (!world) throw new Error("This World could not be found after saving.");
       attempt = null;
@@ -70,12 +56,4 @@ function bookUpload(settings, books) {
   }));
   for (const book of books) body.append("book", book.file);
   return body;
-}
-
-function confirmOversized(ask, { oversized_chunks: oversized, token_limit: limit }) {
-  const first = oversized[0];
-  const count = `${oversized.length} ${oversized.length === 1 ? "chunk exceeds" : "chunks exceed"}`;
-  return ask("Chunk Size Too Large",
-    `${count} Gemini’s ${limit.toLocaleString()}-token limit. Book ${first.book_number}, chunk ${first.chunk_number} is ${first.tokens.toLocaleString()} tokens. If you continue, TaleSide will embed only the beginning of each oversized chunk that fits and keep the full text saved.`,
-    "Back to setup", "Continue anyway");
 }

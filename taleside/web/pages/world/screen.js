@@ -180,9 +180,7 @@ export function initWorldScreen({ request, onCreated, rename, discard, changeJob
   const books = initBooksPanel(onEdit);
   const worldImport = createWorldImport({
     request,
-    ask,
     onReportChange: describeSetup,
-    onSaving: () => setBusy(true, "Saving World…"),
   });
 
   function isDirty() {
@@ -283,13 +281,12 @@ export function initWorldScreen({ request, onCreated, rename, discard, changeJob
     syncUnloadWarning();
   }
 
-  function setBusy(value, label = "Checking books…") {
+  function setBusy(value) {
     busy = value;
     action.disabled = value;
-    actionLabel.textContent = value ? label : "Create";
+    actionLabel.textContent = value ? "Saving World…" : "Create";
     worldName.readOnly = value;
     maxSize.disabled = boundary.disabled = value;
-    element("import-note").hidden = !value;
     books.setLocked(value);
     if (!value) applyDraftDefaults();
     updateEmbedding();
@@ -316,7 +313,6 @@ export function initWorldScreen({ request, onCreated, rename, discard, changeJob
     pendingRename = null;
     lockRename(false);
     element("setup-name").hidden = !isCreate;
-    element("import-note").hidden = true;
     element("discard-world").hidden = isCreate;
     element("tales-tab").hidden = true;
     element("world-progress").hidden = true;

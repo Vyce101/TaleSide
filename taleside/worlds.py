@@ -19,6 +19,7 @@ from .embeddings import (
     EmbeddingError,
     Gemini,
     embedding_input,
+    fit_embedding,
     valid_vector,
 )
 from .provider_keys import (
@@ -26,7 +27,7 @@ from .provider_keys import (
     save_key_selection, selected_keys,
 )
 from .tales import TALE_SCHEMA, Tales
-from .world_imports import CheckedBooks, check_books
+from .world_imports import PreparedBooks, prepare_books
 
 IMPORT_TIMEOUT_SECONDS = 30 * 60
 DEFAULT_WORLD_NAME = "TaleSide"
@@ -76,7 +77,7 @@ CREATE TABLE IF NOT EXISTS chunks (
 class PendingImport:
     key_ids: list[str]
     cancelled: Event = field(default_factory=Event)
-    checked: CheckedBooks | None = None
+    books: PreparedBooks | None = None
     world_row: tuple = ()
     timer: Timer | None = None
 
@@ -135,94 +136,77 @@ class Worlds:
 
     def prepare(self, name, books, max_size=MAX_CHUNK_SIZE, search_distance=BOUNDARY_SEARCH_DISTANCE,
                 *, model, key_ids, world_id=None):
-        if not isinstance(name, str):
-            raise ValueError("World names must be text.")
-        if model != MODEL:
-            raise ValueError("Choose a supported embedding model.")
         books = tuple(books)
-        if not books:
-            raise ValueError("Select at least one TXT book.")
-        if type(max_size) is not int or max_size < 1:
-            raise ValueError("Maximum Chunk Size must be a positive whole number.")
-        if type(search_distance) is not int or search_distance < 0:
-            raise ValueError("Boundary Search Distance must be a nonnegative whole number.")
-        if max_size > 2**63 - 1 or search_distance > 2**63 - 1:
-            raise ValueError("Chunk settings are too large to save.")
-
         world_id = world_id or uuid4().hex
         with self.lock, self.connect() as db:
             if self.stopping.is_set():
                 raise ValueError("TaleSide is closing.")
             if db.execute("SELECT 1 FROM worlds WHERE id = ?", (world_id,)).fetchone():
                 raise ValueError("This import ID is already in use.")
+            if not isinstance(name, str):
+                raise ValueError("World names must be text.")
+            if model != MODEL:
+                raise ValueError("Choose a supported embedding model.")
+            if not books:
+                raise ValueError("Select at least one TXT book.")
+            if type(max_size) is not int or max_size < 1:
+                raise ValueError("Maximum Chunk Size must be a positive whole number.")
+            if type(search_distance) is not int or search_distance < 0:
+                raise ValueError("Boundary Search Distance must be a nonnegative whole number.")
+            if max_size > 2**63 - 1 or search_distance > 2**63 - 1:
+                raise ValueError("Chunk settings are too large to save.")
             self.keys.validate_selection(db, key_ids, EMBEDDING_KEY_REQUIRED, required=True)
-            pending = self.imports.get(world_id)
-            if pending is not None:
-                if pending.checked is not None and pending.key_ids == key_ids:
-                    return pending.checked.report
-                raise ValueError("These books are already being checked.")
+            existing = self.imports.get(world_id)
+            if existing is not None:
+                if existing.books is not None and existing.key_ids == key_ids:
+                    return {"id": world_id, "chunk_count": len(existing.books.chunk_rows)}
+                raise ValueError("This import is already in progress.")
             pending = PendingImport(list(key_ids))
             self.imports[world_id] = pending
-            self.keys.checking.update(pending.key_ids)
 
         try:
-            def count(text):
-                with self.lock, self.connect() as db:
-                    if pending.cancelled.is_set():
-                        raise ValueError("The import was cancelled.")
-                    secret = self.keys.next_secret(db, "embedding", pending.key_ids)
-                return self.provider(secret, model=model, dimensions=DIMENSIONS).count(text)
-
-            checked = check_books(world_id, books, max_size, search_distance, TOKEN_LIMIT,
-                                  count, pending.cancelled)
+            ready = prepare_books(world_id, books, max_size, search_distance, pending.cancelled)
             with self.lock:
                 if pending.cancelled.is_set():
                     raise ValueError("The import was cancelled.")
-                pending.world_row = (world_id, name.strip() or DEFAULT_WORLD_NAME, model, DIMENSIONS,
-                                     TOKEN_LIMIT, max_size, search_distance)
-                pending.checked = checked
+                pending.world_row = (model, DIMENSIONS, TOKEN_LIMIT, max_size, search_distance,
+                                     name.strip() or DEFAULT_WORLD_NAME)
+                pending.books = ready
                 pending.timer = Timer(IMPORT_TIMEOUT_SECONDS, self.decline, args=(world_id,))
                 pending.timer.daemon = True
                 pending.timer.start()
-                return checked.report
+                return {"id": world_id, "chunk_count": len(ready.chunk_rows)}
         finally:
             with self.lock:
-                for key_id in pending.key_ids:
-                    self.keys.checking[key_id] -= 1
-                    if not self.keys.checking[key_id]:
-                        del self.keys.checking[key_id]
                 if pending.timer is None and self.imports.get(world_id) is pending:
                     self._cancel_import_locked(world_id)
 
-    def accept(self, world_id, allow_oversized=False):
+    def accept(self, world_id):
         with self.lock:
             with self.connect() as db:
                 if db.execute("SELECT 1 FROM worlds WHERE id = ? AND status != 'draft'", (world_id,)).fetchone():
                     return True
                 pending = self.imports.get(world_id)
-                if pending is None or pending.checked is None:
-                    return False
-                checked = pending.checked
-                if checked.report["oversized_chunks"] and not allow_oversized:
+                if pending is None or pending.books is None:
                     return False
                 self.keys.validate_selection(db, pending.key_ids, EMBEDDING_KEY_REQUIRED, required=True)
                 db.execute("""
-                    INSERT INTO worlds (id, name, model, dimensions, max_token_limit, max_chunk_size,
-                                        boundary_search_distance, status)
+                    INSERT INTO worlds (model, dimensions, max_token_limit, max_chunk_size,
+                                        boundary_search_distance, name, id, status)
                     VALUES (?, ?, ?, ?, ?, ?, ?, 'creating')
-                """, pending.world_row)
+                """, (*pending.world_row, world_id))
                 save_key_selection(db, "world_embedding_keys", world_id, pending.key_ids)
                 save_key_selection(db, "world_retrieval_keys", world_id, pending.key_ids)
+                self.keys.remember(db, MODEL, pending.key_ids)
                 db.executemany("""
                     INSERT INTO books (world_id, number, name, filename, original, working, encoding, bom_size)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """, checked.book_rows)
+                """, pending.books.book_rows)
                 db.executemany("""
                     INSERT INTO chunks (world_id, book_number, number, start, end, original_start, original_end,
                                         tokens, embed_end)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, checked.chunk_rows)
-                self.keys.remember(db, MODEL, pending.key_ids)
+                """, pending.books.chunk_rows)
             self._cancel_import_locked(world_id)
         self.wake.set()
         return True
@@ -349,21 +333,30 @@ class Worlds:
             dimensions = world["dimensions"]
             vector_format = Struct(f"<{dimensions}f")
             chunk = db.execute("""
-                SELECT c.book_number, c.number, b.name, substr(b.working, c.start + 1, c.embed_end - c.start) AS text
+                SELECT c.book_number, c.number, c.start, c.tokens, b.name,
+                       substr(b.working, c.start + 1, c.embed_end - c.start) AS text
                 FROM chunks c JOIN books b ON b.world_id = c.world_id AND b.number = c.book_number
                 WHERE c.world_id = ? AND c.vector IS NULL
                 ORDER BY c.book_number, c.number LIMIT 1
-            """, (world["id"],)).fetchone()
+            """, (world_id,)).fetchone()
             if chunk is None:
                 self.verify(db, world, vector_format)
-                db.execute("UPDATE worlds SET status = 'ready' WHERE id = ?", (world["id"],))
+                db.execute("UPDATE worlds SET status = 'ready' WHERE id = ?", (world_id,))
                 return
             self.active_chunk = (world["id"], chunk["book_number"])
             key_ids = selected_keys(db, "world_embedding_keys", world_id)
-            secret = self.keys.next_secret(db, "embedding", key_ids)
 
-        provider = self.provider(secret, model=world["model"], dimensions=dimensions)
-        values = provider.embed(embedding_input(chunk["name"], chunk["text"]))
+        def next_provider():
+            with self.lock, self.connect() as db:
+                secret = self.keys.next_secret(db, "embedding", key_ids)
+            return self.provider(secret, model=world["model"], dimensions=dimensions)
+
+        text = chunk["text"]
+        tokens, length = chunk["tokens"], len(text)
+        if not tokens:
+            tokens, length = fit_embedding(chunk["name"], text, world["max_token_limit"],
+                                           lambda value: next_provider().count(value))
+        values = next_provider().embed(embedding_input(chunk["name"], text[:length]))
         if not valid_vector(values, dimensions):
             raise EmbeddingError("Gemini returned an invalid embedding vector.")
         vector = vector_format.pack(*values)
@@ -371,8 +364,9 @@ class Worlds:
             raise EmbeddingError("Gemini returned an invalid embedding vector.")
         with self.lock, self.connect() as db:
             db.execute("""
-                UPDATE chunks SET vector = ? WHERE world_id = ? AND book_number = ? AND number = ?
-            """, (vector, world["id"], chunk["book_number"], chunk["number"]))
+                UPDATE chunks SET vector = ?, tokens = ?, embed_end = ?
+                WHERE world_id = ? AND book_number = ? AND number = ?
+            """, (vector, tokens, chunk["start"] + length, world_id, chunk["book_number"], chunk["number"]))
             db.execute("UPDATE worlds SET status = 'paused' WHERE id = ? AND status = 'pausing'", (world["id"],))
             self.active_chunk = None
 

@@ -25,6 +25,22 @@ def embedding_input(book_name, text):
     return f"title: {book_name} | text: {text}"
 
 
+def fit_embedding(book_name, text, token_limit, count):
+    tokens = count(embedding_input(book_name, text))
+    if tokens <= token_limit:
+        return tokens, len(text)
+    minimum, maximum = 0, len(text) - 1
+    while minimum < maximum:
+        middle = (minimum + maximum + 1) // 2
+        if count(embedding_input(book_name, text[:middle])) <= token_limit:
+            minimum = middle
+        else:
+            maximum = middle - 1
+    if minimum == 0:
+        raise EmbeddingError("The book title leaves no room for text in the embedding.")
+    return tokens, minimum
+
+
 def valid_vector(values, dimensions):
     return (
         isinstance(values, list)

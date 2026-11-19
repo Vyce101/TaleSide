@@ -232,13 +232,11 @@ class Handler(BaseHTTPRequestHandler):
             worlds.decline(world_id)
             self.send_json({"ok": True})
         elif action == "accept":
-            allow = self.read_json().get("allow_oversized", False)
-            if type(allow) is not bool:
-                raise ValueError("Oversized chunk approval must be true or false.")
-            if worlds.accept(world_id, allow):
+            self.read_json()
+            if worlds.accept(world_id):
                 self.send_json({"world": worlds.detail(world_id)}, HTTPStatus.CREATED)
             else:
-                self.api_error("This import expired or requires approval. Check the books again.",
+                self.api_error("This import expired. Try again.",
                                HTTPStatus.CONFLICT)
         else:
             self.send_error(HTTPStatus.NOT_FOUND)

@@ -1,6 +1,5 @@
 """Manage local keys and their World assignments in the same database."""
 
-from collections import Counter
 from uuid import uuid4
 
 from . import key_protection
@@ -76,7 +75,6 @@ class ProviderKeys:
     def __init__(self, connect, lock):
         self.connect = connect
         self.lock = lock
-        self.checking = Counter()
         self.next_position = {}
 
     @staticmethod
@@ -140,10 +138,9 @@ class ProviderKeys:
             WHERE selection.key_id = ? AND world.status != 'draft' ORDER BY world.rowid
         """, (key_id,)).fetchall()
 
-    def _busy(self, key_id, assignments):
-        return bool(self.checking[key_id] or any(
-            world["status"] in ("creating", "pausing") for world in assignments
-        ))
+    @staticmethod
+    def _busy(assignments):
+        return any(world["status"] in ("creating", "pausing") for world in assignments)
 
     def settings(self):
         with self.lock, self.connect() as db:
@@ -196,8 +193,8 @@ class ProviderKeys:
     def replace(self, key_id, secret):
         with self.lock, self.connect() as db:
             self.require(db, key_id)
-            if self._busy(key_id, self._assignments(db, key_id)):
-                raise KeyConflict("Wait for book checks to finish and pause any Worlds using this key.")
+            if self._busy(self._assignments(db, key_id)):
+                raise KeyConflict("Pause any Worlds using this key and wait for indexing to stop.")
             db.execute("UPDATE provider_keys SET protected_secret = ? WHERE id = ?",
                        (self._protected(secret), key_id))
 
@@ -207,7 +204,7 @@ class ProviderKeys:
         return {
             "key": self._summary(key),
             "worlds": [{"id": world["id"], "name": world["name"]} for world in worlds],
-            "busy": self._busy(key_id, worlds),
+            "busy": self._busy(worlds),
             "tales_use_key": any(db.execute(f"SELECT 1 FROM {table} WHERE key_id = ? LIMIT 1", (key_id,)).fetchone()
                                  for table in ("world_retrieval_keys", "tale_chat_keys", "chat_profile_keys")),
         }
@@ -220,7 +217,7 @@ class ProviderKeys:
         with self.lock, self.connect() as db:
             impact = self._delete_impact(db, key_id)
             if impact["busy"]:
-                raise KeyConflict("Wait for book checks to finish and pause any Worlds using this key.")
+                raise KeyConflict("Pause any Worlds using this key and wait for indexing to stop.")
             if impact != confirmed_impact:
                 raise KeyConflict("Key usage changed. Review the updated delete confirmation.")
             db.execute("DELETE FROM provider_keys WHERE id = ?", (key_id,))
