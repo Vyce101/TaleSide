@@ -12,6 +12,7 @@ export function editorMarkup(world: World | undefined, indexingOpen: boolean | u
       ${iconButton("world-list", "back", "Back to Worlds", 'id="world-list-button"')}
       <div class="world-index-actions" aria-label="Indexing actions" role="group">
         <button type="submit" class="icon-button" id="world-index-action"></button>
+        ${iconButton("discard-world", "deleteWorld", "Delete World", 'id="discard-world"')}
       </div>
     </div>
     <div class="world-identity">
@@ -56,6 +57,9 @@ export function renderIndex(world: World | undefined, books: EditableBook[], bus
     : world ? ["play", "Start indexing"] as const : ["check", "Create World"] as const;
   const action = element<HTMLButtonElement>("world-index-action");
   const clear = element<HTMLButtonElement>("clear-world-index");
+  const discard = element<HTMLButtonElement>("discard-world");
+  discard.hidden = !world;
+  discard.disabled = busy;
   action.type = status && status !== "unindexed" ? "button" : "submit";
   action.hidden = status === "ready";
   action.disabled = busy || status === "pausing" || (status === "unindexed" && !books.length);

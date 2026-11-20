@@ -210,6 +210,18 @@ async function act(form: Editor, action: string, input: object = {}): Promise<Wo
   }
 }
 
+function discardWorld(world: World) {
+  previewDialog({ title: "Delete World?", detail: `Permanently remove “${world.name}”, its books, and all its Tales?`, danger: true },
+    async () => {
+      try {
+        await request(`${worldRoute(world.id)}/discard`, {});
+        removeWorld(world.id);
+        if (editor?.id === world.id) closeWorldEditor();
+        navigate();
+      } catch (error) { showError("app-error", error); }
+    });
+}
+
 export function handleWorldAction(action: string | undefined, id: string | undefined, button: HTMLButtonElement) {
   if (action === "create-world") { openWorldEditor(); return; }
   if (action === "world-list") {
@@ -222,6 +234,7 @@ export function handleWorldAction(action: string | undefined, id: string | undef
   }
   const form = editor;
   if (!form || form.busy) return;
+  if (action === "discard-world" && form.world) { discardWorld(form.world); return; }
   if (action === "clear-index") {
     if (!form.world || processing(form.world)) return;
     previewDialog({ title: "Delete indexing?", detail: "Your books and Tales will be kept. To chat again, start indexing and wait for the first passage.", danger: true },
