@@ -71,6 +71,11 @@ export function openWorldEditor(world?: World) {
       if (editor === form) element("panel-title").textContent = world.name;
     } catch (error) { if (editor === form) showError("world-error", error); }
   });
+  element("world-index-action").addEventListener("click", () => {
+    const status = form.world?.status;
+    if (status === "creating") void act(form, "pause");
+    if (status === "paused" || status === "failed") void act(form, "resume");
+  });
   element("world-editor").addEventListener("submit", event => {
     event.preventDefault();
     void saveWorld(form);
@@ -123,6 +128,10 @@ async function saveWorld(form: Editor) {
     return;
   }
   if (editor !== form) return;
+  if (form.world) {
+    await act(form, "start-index", { ...settings, book_revision: form.world.book_revision });
+    return;
+  }
   const result = await act(form, "create", upload(settings, form.books, form.artwork));
   if (!result) return;
   closeWorldEditor();
@@ -169,4 +178,13 @@ export function handleWorldAction(action: string | undefined, id: string | undef
   }
   const form = editor;
   if (!form || form.busy) return;
+  if (action === "clear-index") {
+    if (!form.world || processing(form.world)) return;
+    previewDialog({ title: "Delete indexing?", detail: "Your books and Tales will be kept. To chat again, start indexing and wait for the first passage.", danger: true },
+      async () => {
+        await act(form, "clear-index");
+        if (editor === form) element("world-index-action").focus({ preventScroll: true });
+      });
+    return;
+  }
 }

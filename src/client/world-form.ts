@@ -29,6 +29,26 @@ export function editorMarkup(world: World | undefined, indexingOpen: boolean | u
   </form>`;
 }
 
+export function renderIndex(world: World | undefined, books: EditableBook[], busy: boolean) {
+  const status = world?.status;
+  const [glyph, label] = status === "creating" || status === "pausing" ? ["pause", "Pause indexing"] as const
+    : status === "paused" || status === "failed" ? ["play", "Resume indexing"] as const
+    : world ? ["play", "Start indexing"] as const : ["check", "Create World"] as const;
+  const action = element<HTMLButtonElement>("world-index-action");
+  const clear = element<HTMLButtonElement>("clear-world-index");
+  action.type = status && status !== "unindexed" ? "button" : "submit";
+  action.hidden = status === "ready";
+  action.disabled = busy || status === "pausing" || (status === "unindexed" && !books.length);
+  clear.hidden = !world || status === "unindexed";
+  clear.disabled = busy || processing(world);
+  if (action.hidden && document.activeElement === action) clear.focus({ preventScroll: true });
+  if (action.dataset.tooltip !== label) {
+    action.dataset.tooltip = label;
+    action.setAttribute("aria-label", label);
+    action.innerHTML = icon(glyph);
+  }
+}
+
 export function upload(settings: object, books: EditableBook[], picture?: File) {
   const body = new FormData();
   body.append("settings", JSON.stringify({ ...settings, books: books.map(({ filename, name }) => ({ filename, name })) }));
