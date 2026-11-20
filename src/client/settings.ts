@@ -213,6 +213,25 @@ export async function refreshKeys() {
   refreshComposer();
 }
 
+async function deleteKey(key: KeySummary) {
+  try {
+    const route = `/api/provider-keys/${key.id}`;
+    const impact = await request<KeyImpact>(`${route}/delete-impact`);
+    if (state.panel !== "keys") return;
+    if (impact.busy) { showError("keys-error", "Pause Worlds using this key before deleting it."); return; }
+    const names = impact.worlds.map(world => world.name).join(", ");
+    previewDialog({ title: "Delete API key?", detail: names
+      ? `Remove “${key.nickname}” from ${names}?` : `Remove “${key.nickname}”?`, danger: true }, async () => {
+      try {
+        await request(`${route}/delete`, { impact });
+        await Promise.all([refreshKeys(), loadWorlds()]);
+        syncWorlds();
+        element("add-key").focus();
+      } catch (error) { showError("keys-error", error); }
+    });
+  } catch (error) { showError("keys-error", error); }
+}
+
 export async function initializeSettings() {
   element("profile-actions").innerHTML = `
     <button type="button" class="icon-button" aria-label="Save profile" data-tooltip="Save profile" data-profile-action="save">${icon("save")}</button>
@@ -240,6 +259,7 @@ export async function initializeSettings() {
     if (!key) return;
     const action = button.dataset.keyAction;
     if (action === "rename" || action === "replace") editKey(action, key);
+    if (action === "delete") void deleteKey(key);
   });
   const keyName = element<HTMLInputElement>("key-name");
   const keyValue = element<HTMLInputElement>("key-value");
