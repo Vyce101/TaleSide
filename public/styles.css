@@ -398,6 +398,37 @@ h1, h2, h3 { font-weight: 650; }
 :is(.turn .prose, .thought-prose) li > p + p { margin-block-start: 5px; }
 .dialogue { color: var(--dialogue); }
 .messages > .empty-copy { padding: 19px 12px; }
+.thinking-block { margin: 8px 0; }
+.thinking-block summary {
+  display: inline-flex;
+  max-width: 100%;
+  list-style: none;
+  gap: 6px;
+  align-items: center;
+  min-height: 34px;
+  padding: 5px 12px;
+  border-radius: 5px;
+  background: #3e453f;
+  color: #d8ded6;
+  font-size: .9em;
+  cursor: pointer;
+}
+.thinking-block summary::-webkit-details-marker { display: none; }
+.thinking-block summary svg { width: 12px; height: 12px; }
+.thinking-block[open] summary svg { rotate: 180deg; }
+.thinking-block summary:hover { color: var(--cream); }
+.thinking-dots { display: inline-block; }
+@media (prefers-reduced-motion: no-preference) {
+  .thinking-dots { animation: thinking-dots 1.6s step-end infinite; }
+}
+@keyframes thinking-dots {
+  0% { clip-path: inset(0 66.666% 0 0); }
+  25% { clip-path: inset(0 33.333% 0 0); }
+  50% { clip-path: inset(0); }
+  75%, 100% { clip-path: inset(0 100% 0 0); }
+}
+.thought-prose { margin-top: 8px; padding: 4px 12px; border-inline-start: 2px solid #78847a; color: var(--muted); }
+
 input:not([type="range"]), select, textarea {
   min-width: 0;
   border: 1px solid var(--line);
