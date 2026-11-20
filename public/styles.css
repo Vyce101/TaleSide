@@ -308,6 +308,18 @@ button.world-row:hover { background: #ffffff12; }
 .numeric-setting { display: grid; grid-template-columns: minmax(0, 1fr) 82px; gap: 8px; margin-bottom: 3px; }
 .numeric-setting input { min-width: 0; accent-color: #a5afa3; }
 .numeric-setting input[type="number"] { padding-inline: 5px; }
+.key-list { margin: 13px 0; border-top: 1px solid var(--soft-line); }
+.key-list li {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 3px 8px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--soft-line);
+  overflow-wrap: anywhere;
+}
+.key-list code { color: var(--muted); padding-right: 3px; }
+.key-form { padding: 10px; background: #1e2820; border: 1px solid #5b7160; border-radius: 5px; }
 .form-actions { margin-top: 14px; display: flex; justify-content: end; flex-wrap: wrap; gap: 7px; }
 
 dialog {
@@ -385,6 +397,11 @@ dialog label input { display: block; margin-top: 5px; }
 .wrapper-heading h4 { margin: 0; font-size: 12px; }
 .wrapper-pair { margin-block: 5px 9px; }
 .wrapper-pair textarea { width: 100%; min-width: 0; margin-top: 4px; resize: vertical; font: 12px monospace; }
+.key-tabs { display: flex; gap: 4px; margin-top: 10px; }
+.key-tabs button[aria-pressed="true"] { background: var(--green); }
+.key-identity { display: grid; min-width: 0; gap: 3px; }
+.key-list .tale-row-actions { flex: none; }
+.key-form > div + div { margin-top: 7px; }
 .world-editor-actions { margin-bottom: 8px; }
 .world-editor-actions .icon-button { width: 33px; min-height: 31px; }
 .world-index-actions { display: flex; gap: 4px; }
@@ -522,6 +539,8 @@ dialog label input { display: block; margin-top: 5px; }
   overflow-wrap: anywhere;
 }
 .key-picker-menu input { flex: none; width: 15px; height: 15px; margin: 0; accent-color: var(--mint); }
+#key-value[data-masked] { -webkit-text-security: disc; }
 .book-heading-actions { display: flex; align-items: center; gap: 4px; }
 #index-boundary-warning { display: block; margin-top: 5px; color: #e6c88e; }
+#reveal-key { margin-top: 5px; }
 .app-error { position: fixed; inset: auto 12px 9px; z-index: 3; text-align: center; pointer-events: none; }
