@@ -331,4 +331,45 @@ dialog label input { display: block; margin-top: 5px; }
 /* Live controls used by the approved layouts. */
 .toolbar button:disabled { opacity: .45; cursor: default; }
 .toolbar button:disabled:hover { background: transparent; }
+.key-picker { position: relative; }
+.key-picker-toggle {
+  display: block;
+  width: 100%;
+  padding: 7px 24px 7px 9px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--input);
+  color: var(--cream);
+  text-align: left;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.key-picker-toggle::after {
+  content: "";
+  position: absolute;
+  inset: 13px 10px auto auto;
+  width: 7px;
+  height: 7px;
+  border: solid var(--muted);
+  border-width: 0 1.5px 1.5px 0;
+  rotate: 45deg;
+}
+.key-picker-menu {
+  margin-top: 4px;
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--input);
+}
+.panel-content .key-picker-menu label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 27px;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.key-picker-menu input { flex: none; width: 15px; height: 15px; margin: 0; accent-color: var(--mint); }
 .app-error { position: fixed; inset: auto 12px 9px; z-index: 3; text-align: center; pointer-events: none; }
