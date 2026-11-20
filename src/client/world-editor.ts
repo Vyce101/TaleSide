@@ -88,6 +88,7 @@ export function openWorldEditor(world?: World) {
     if (status === "creating") void act(form, "pause");
     if (status === "paused" || status === "failed") void act(form, "resume");
   });
+  element("world-progress").addEventListener("toggle", () => { if (editor === form) renderWorldProgress(form.world); });
   element("world-editor").addEventListener("submit", event => {
     event.preventDefault();
     void saveWorld(form);
@@ -226,6 +227,42 @@ async function act(form: Editor, action: string, input: object = {}): Promise<Wo
     if (editor === form) {
       refreshEditor(form);
       updateWorldEditorKeys();
+    }
+  }
+}
+
+export function syncWorldPanel() {
+  if (editor?.world) {
+    const world = worlds.find(item => item.id === editor?.id);
+    if (!world) return;
+    const previous = editor.world;
+    editor.world = world;
+    editor.books = world.books;
+    if (previous === world) return;
+    if (world.status === "unindexed" && previous.status !== "unindexed") {
+      element<HTMLSelectElement>("world-model").replaceChildren(...keySettings.models.map(model => new Option(model.id, model.id)));
+    }
+    if (JSON.stringify(previous.embedding_key_ids) !== JSON.stringify(world.embedding_key_ids)
+      || processing(previous) !== processing(world)) {
+      editor.keyIds = world.embedding_key_ids;
+      if (!editor.busy) updateWorldEditorKeys();
+    }
+    if (previous.status !== world.status || previous.progress !== world.progress || previous.active_book !== world.active_book
+      || previous.book_revision !== world.book_revision) refreshEditor(editor);
+  } else if (!editor && state.panel === "worlds") {
+    const list = element("world-panel");
+    if (list.querySelectorAll(".world-row").length !== worlds.length) { showWorldList(); return; }
+    for (const world of worlds) {
+      const row = list.querySelector<HTMLButtonElement>(`[data-action="open-world"][data-id="${world.id}"]`);
+      if (!row) { showWorldList(); return; }
+      const progress = row.querySelector("progress")!;
+      progress.value = world.progress;
+      progress.hidden = !["creating", "pausing", "paused", "failed"].includes(world.status);
+      const status = row.querySelector<HTMLElement>(".progress-text")!;
+      status.textContent = worldIndexStatus(world);
+      status.hidden = world.status === "ready";
+      row.querySelector<HTMLElement>(".world-name")!.textContent = world.name;
+      row.dataset.tooltip = world.name;
     }
   }
 }

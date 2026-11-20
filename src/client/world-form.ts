@@ -24,6 +24,10 @@ export function editorMarkup(world: World | undefined, indexingOpen: boolean | u
         <label class="world-name-label" for="world-name-input">World name
           <input id="world-name-input" name="worldTitle" type="text" autocomplete="off" placeholder="Name this World" value="${escapeHtml(world?.name ?? "")}" maxlength="100" required >
         </label>
+        <div class="world-index-progress" ${world ? "" : "hidden"}>
+          <progress id="world-index-progress" max="100" aria-label="World indexing progress" hidden></progress>
+          <span id="world-index-status"></span>
+        </div>
       </div>
     </div>
     <details class="index-settings" ${indexingOpen ? "open" : ""}>
@@ -39,6 +43,13 @@ export function editorMarkup(world: World | undefined, indexingOpen: boolean | u
         <input type="number" id="world-boundary" name="boundarySearch" value="${options.boundarySearch}" min="0" aria-describedby="index-boundary-warning" required>
         <small id="index-boundary-warning" hidden>Boundary search covers the entire chunk. This can create many short chunks and slow indexing.</small>
       </fieldset>
+    </details>
+    <details id="world-progress" class="index-settings" ${world ? "" : "hidden"}>
+      <summary>World progress</summary>
+      <div class="world-progress-body">
+        <p id="world-progress-total"></p>
+        <ul id="world-progress-books"></ul>
+      </div>
     </details>
     <div class="books-heading">
       <h3>Books</h3>
@@ -92,6 +103,18 @@ export function renderBooks(books: EditableBook[], world: World | undefined) {
   for (const row of rows.values()) row.remove();
 }
 
+export function renderWorldProgress(world?: World) {
+  if (!world || !element<HTMLDetailsElement>("world-progress").open) return;
+  const count = (done: number, total: number) => `${done.toLocaleString()} of ${total.toLocaleString()} chunks indexed`;
+  element("world-progress-total").textContent = count(world.embedded_chunks, world.total_chunks);
+  const books = element("world-progress-books");
+  books.innerHTML = world.books.length ? world.books.map(book => `<li>
+    <strong>${escapeHtml(book.name)}</strong>
+    <progress max="${book.total_chunks || 1}" value="${book.embedded_chunks}" aria-label="${escapeHtml(book.name)} indexing progress"></progress>
+    <small>${count(book.embedded_chunks, book.total_chunks)}</small>
+  </li>`).join("") : '<li>No books in this World.</li>';
+}
+
 export function renderIndex(world: World | undefined, books: EditableBook[], busy: boolean) {
   const status = world?.status;
   const [glyph, label] = status === "creating" || status === "pausing" ? ["pause", "Pause indexing"] as const
@@ -120,6 +143,13 @@ export function renderIndex(world: World | undefined, books: EditableBook[], bus
   element("book-upload").hidden = processing(world);
   element<HTMLButtonElement>("add-world-books").disabled = busy;
   element<HTMLInputElement>("world-books-input").disabled = processing(world) || busy;
+  if (world) {
+    element("world-index-status").textContent = worldIndexStatus(world);
+    const progress = element<HTMLProgressElement>("world-index-progress");
+    progress.hidden = !["creating", "pausing", "paused", "failed"].includes(world.status);
+    progress.value = world.progress;
+    renderWorldProgress(world);
+  }
   renderBooks(books, world);
   showBoundaryWarning();
 }

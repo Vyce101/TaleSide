@@ -286,6 +286,21 @@ input:not([type="range"]), select, textarea {
 button.world-row:hover { background: #ffffff12; }
 .world-row .avatar { width: 50px; height: 50px; }
 .world-name { display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 650; }
+.world-row .progress-text { color: var(--muted); font-size: 11px; }
+.world-row progress, .world-index-progress progress, .world-progress-body progress {
+  height: 3px;
+  appearance: none;
+  border: 0;
+  border-radius: 2px;
+  background: #151e18;
+  color: #a0b6a4;
+}
+.world-row progress { width: min(100%, 3.5rem); }
+.world-index-progress progress { width: min(100%, 8rem); }
+.world-row progress::-webkit-progress-bar, .world-index-progress progress::-webkit-progress-bar, .world-progress-body progress::-webkit-progress-bar { background: #151e18; border-radius: 2px; }
+.world-row progress::-webkit-progress-value, .world-index-progress progress::-webkit-progress-value, .world-progress-body progress::-webkit-progress-value { background: currentColor; border-radius: 2px; }
+.world-row progress::-moz-progress-bar, .world-index-progress progress::-moz-progress-bar, .world-progress-body progress::-moz-progress-bar { background: currentColor; border-radius: 2px; }
+
 .panel-content label, dialog label { display: block; margin: 10px 0 5px; font-size: 12px; color: #d6dfd5; }
 .panel-content label:first-child { margin-top: 0; }
 .panel-content select, .panel-content input:not([type="range"], [type="checkbox"]), dialog input { width: 100%; }
@@ -317,6 +332,7 @@ dialog label input { display: block; margin-top: 5px; }
 .world-editor-actions { margin-bottom: 8px; }
 .world-editor-actions .icon-button { width: 33px; min-height: 31px; }
 .world-index-actions { display: flex; gap: 4px; }
+.world-index-progress { display: grid; gap: 4px; margin-top: 6px; color: var(--muted); font-size: 12px; }
 .world-identity { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 9px; }
 .world-identity .world-art-picker { margin: 0; }
 .world-art-picker[for] { cursor: pointer; }
@@ -334,6 +350,11 @@ dialog label input { display: block; margin-top: 5px; }
 .index-lock { display: inline-flex; align-items: center; gap: 4px; float: inline-end; color: #afbaaa; font-size: 12px; }
 .index-lock svg { width: 13px; height: 13px; }
 .index-settings fieldset { margin: 0; padding: 8px; min-width: 0; border: 0; }
+.world-progress-body { padding: 8px; }
+#world-progress-total { color: var(--muted); font-size: 12px; }
+#world-progress-books { list-style: none; margin: 6px 0 0; padding: 0; }
+#world-progress-books li { display: grid; gap: 3px; padding-top: 6px; overflow-wrap: anywhere; }
+.world-progress-body progress { width: 100%; }
 .index-settings :is(select, input):disabled, .world-context select:disabled {
   color: #a6ada3;
   background: #2d322e;
