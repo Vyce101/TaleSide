@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>TaleSide</title>
+  <link rel="icon" href="assets/logo.png">
+  <link rel="stylesheet" href="styles.css">
+  <script type="module" src="/client/app.js"></script>
+</head>
+<body>
+  <header class="toolbar">
+    <nav class="toolbar-inner" aria-label="TaleSide">
+      <button id="settings-button" type="button" data-panel="settings" aria-expanded="false" aria-controls="settings-drawer">Tale Settings</button>
+      <button id="keys-button" type="button" data-panel="keys" aria-expanded="false" aria-controls="keys-drawer">API Keys</button>
+      <button id="home-button" class="home-button" type="button" aria-label="Home" data-tooltip="Home">
+        <img src="assets/logo.png" width="40" height="40" alt="">
+      </button>
+      <button id="app-settings-button" type="button" data-panel="app-settings" disabled>Settings</button>
+      <button id="worlds-button" type="button" data-panel="worlds" aria-expanded="false" aria-controls="worlds-drawer">Worlds</button>
+    </nav>
+  </header>
+  <div class="workbench" id="workbench">
+    <main id="workspace" class="workspace" aria-label="Workspace"></main>
+    <aside id="worlds-drawer" class="side-panel" data-kind="worlds" aria-labelledby="panel-title" hidden>
+      <header class="panel-header">
+        <button class="icon-button panel-back" type="button"></button>
+        <h2 id="panel-title">Worlds</h2>
+      </header>
+      <div class="panel-content" id="panel-content">
+        <div id="world-panel"></div>
+      </div>
+    </aside>
+    <aside id="settings-drawer" class="side-panel" data-kind="settings" aria-labelledby="settings-title" hidden>
+      <header class="panel-header">
+        <button class="icon-button panel-back" type="button"></button>
+        <h2 id="settings-title">Tale Settings</h2>
+      </header>
+      <div class="panel-content">
+        <div id="settings-panel">
+          <section id="world-context" class="world-context" aria-labelledby="world-context-title" hidden>
+            <h3 id="world-context-title">This World</h3>
+            <p id="world-context-name"></p>
+            <label for="world-embedding-model">Embedding model</label>
+            <select id="world-embedding-model" aria-describedby="world-index-details" disabled><option></option></select>
+            <small id="world-index-details">8,192 tokens max · 3,072 dimensions</small>
+            <label for="world-retrieval-key-toggle">World retrieval key</label>
+            <div id="world-retrieval-key"></div>
+          </section>
+          <details class="profile-section" open>
+            <summary>Chat profile</summary>
+            <div class="profile-select">
+              <select id="chat-profile" aria-label="Chat profile"></select>
+              <div class="tale-row-actions" id="profile-actions"></div>
+            </div>
+          </details>
+          <details class="settings-section" open>
+            <summary>Model and reasoning</summary>
+            <div>
+              <label for="chat-key-toggle">Chat key</label><div id="chat-key"></div>
+              <label for="chat-model">Model</label><select id="chat-model"></select>
+            </div>
+            <div id="model-limits"></div>
+            <div class="reasoning-settings">
+              <label for="thinking-level">Thinking level</label>
+              <select id="thinking-level">
+                <option value="LOW">Low</option>
+                <option value="MEDIUM">Medium</option>
+                <option value="HIGH" selected>High</option>
+                <option value="XHIGH">Extra high</option>
+              </select>
+              <label class="thinking-toggle"><input id="send-thinking" type="checkbox" checked> Send thinking back</label>
+              <small>Send the model’s thinking signature back with follow-up requests.</small>
+            </div>
+          </details>
+          <details class="settings-section" open>
+            <summary>Retrieval</summary>
+            <div id="retrieval-controls"></div>
+          </details>
+          <details class="settings-section" open>
+            <summary>XML wrappers</summary>
+            <div id="wrapper-controls"></div>
+          </details>
+          <p id="settings-error" class="inline-error" role="alert" hidden></p>
+        </div>
+      </div>
+    </aside>
+    <aside id="keys-drawer" class="side-panel" data-kind="keys" aria-labelledby="keys-title" hidden>
+      <header class="panel-header">
+        <button class="icon-button panel-back" type="button"></button>
+        <h2 id="keys-title">API Keys</h2>
+      </header>
+      <div class="panel-content">
+        <div id="keys-panel">
+          <label for="key-provider">Provider</label>
+          <select id="key-provider"><option>Google AI Studio</option></select>
+          <div class="key-tabs" role="group" aria-label="API key view">
+            <button type="button" class="quiet-button" id="view-keys" aria-pressed="true">Keys</button>
+            <button type="button" class="quiet-button" id="view-key-worlds" aria-pressed="false">Used by</button>
+          </div>
+          <ul id="key-use" class="key-list" aria-label="Worlds using Google AI Studio" hidden></ul>
+          <ul id="key-list" class="key-list" aria-label="Saved API keys"></ul>
+          <button type="button" class="quiet-button" id="add-key" aria-expanded="false" aria-controls="key-form">Add Key</button>
+          <form id="key-form" class="key-form" autocomplete="off" hidden>
+            <div id="key-name-row">
+              <label for="key-name">Key name</label>
+              <input id="key-name" type="text" autocomplete="off" maxlength="60" placeholder="Travel notes" required>
+            </div>
+            <div id="key-value-row">
+              <label for="key-value">API key</label>
+              <input id="key-value" type="text" maxlength="512" autocomplete="off" autocapitalize="off" spellcheck="false" data-masked required>
+              <button type="button" class="quiet-button" id="reveal-key" aria-pressed="false">Show API key</button>
+            </div>
+            <div class="form-actions">
+              <button type="button" class="quiet-button" id="cancel-key">Cancel</button>
+              <button type="submit" class="primary-button" id="save-key">Add Key</button>
+            </div>
+          </form>
+          <p id="keys-error" class="inline-error" role="alert" hidden></p>
+        </div>
+      </div>
+    </aside>
+  </div>
+  <dialog id="tale-dialog" aria-labelledby="dialog-title" aria-describedby="dialog-detail">
+    <form method="dialog" id="tale-dialog-form" autocomplete="off">
+      <h2 id="dialog-title"></h2>
+      <p id="dialog-detail"></p>
+      <label id="tale-name-field" for="tale-name" hidden>
+        <span id="dialog-name-label">Name</span>
+        <input id="tale-name" maxlength="100" autocomplete="off">
+      </label>
+      <div class="form-actions">
+        <button type="submit" value="cancel" formnovalidate class="quiet-button">Cancel</button>
+        <button type="submit" value="confirm" id="dialog-confirm" class="primary-button">Save</button>
+      </div>
+    </form>
+  </dialog>
+  <p id="app-error" class="inline-error app-error" role="alert" hidden></p>
+  <div id="tooltip" class="tooltip" role="tooltip" hidden></div>
+</body>
+</html>
