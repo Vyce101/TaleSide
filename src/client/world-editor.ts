@@ -96,6 +96,26 @@ export function openWorldEditor(world?: World) {
     const file = (event.target as HTMLInputElement).files?.[0];
     if (file) void changeArtwork(form, file);
   });
+  element<HTMLInputElement>("world-books-input").addEventListener("change", async event => {
+    const input = event.target as HTMLInputElement;
+    const incoming = [...(input.files ?? [])];
+    input.value = "";
+    const books = incoming.filter(file => /\.txt$/i.test(file.name) && file.size).map(file => ({
+      id: newId(), number: 0, name: file.name.slice(0, -4).slice(0, 100), filename: file.name, file,
+      total_chunks: 0, embedded_chunks: 0,
+    }));
+    if (books.length) {
+      if (form.world) await act(form, "add-books", upload({ book_revision: form.world.book_revision }, books));
+      else {
+        form.books.push(...books);
+        markDirty(form);
+        refreshEditor(form);
+      }
+    }
+    if (editor === form && incoming.length !== books.length) {
+      showError("world-error", "Some files were skipped. Choose nonempty TXT files.");
+    }
+  });
   refreshEditor(form);
   updateWorldEditorKeys();
   element("panel-content").scrollTop = 0;
@@ -210,6 +230,20 @@ async function act(form: Editor, action: string, input: object = {}): Promise<Wo
   }
 }
 
+async function moveBook(form: Editor, from: number, to: number) {
+  if (from === to || !form.books[from] || !form.books[to] || form.busy || processing(form.world)) return;
+  const reordered = [...form.books];
+  const [book] = reordered.splice(from, 1);
+  reordered.splice(to, 0, book);
+  if (form.world) {
+    await act(form, "book-order", { book_revision: form.world.book_revision, book_ids: reordered.map(item => item.id) });
+  } else {
+    form.books = reordered;
+    markDirty(form);
+    refreshEditor(form);
+  }
+}
+
 function discardWorld(world: World) {
   previewDialog({ title: "Delete World?", detail: `Permanently remove “${world.name}”, its books, and all its Tales?`, danger: true },
     async () => {
@@ -235,6 +269,7 @@ export function handleWorldAction(action: string | undefined, id: string | undef
   const form = editor;
   if (!form || form.busy) return;
   if (action === "discard-world" && form.world) { discardWorld(form.world); return; }
+  if (action === "add-world-books") { element("world-books-input").click(); return; }
   if (action === "clear-index") {
     if (!form.world || processing(form.world)) return;
     previewDialog({ title: "Delete indexing?", detail: "Your books and Tales will be kept. To chat again, start indexing and wait for the first passage.", danger: true },
@@ -243,5 +278,34 @@ export function handleWorldAction(action: string | undefined, id: string | undef
         if (editor === form) element("world-index-action").focus({ preventScroll: true });
       });
     return;
+  }
+  const index = form.books.findIndex(book => book.id === id);
+  const book = form.books[index];
+  if (!book || processing(form.world)) return;
+  if (action === "book-up" || action === "book-down") {
+    const target = index + (action === "book-up" ? -1 : 1);
+    void moveBook(form, index, target).then(() => {
+      if (editor === form) element("world-books").querySelector<HTMLButtonElement>(`[data-book-id="${book.id}"] [data-action="${action}"]:enabled`)?.focus();
+    });
+  }
+  if (action === "rename-book") {
+    previewDialog({ title: "Rename book", initialName: book.name }, async name => {
+      if (form.world) await act(form, "rename-book", { book_revision: form.world.book_revision, book_id: book.id, name });
+      else {
+        book.name = name;
+        markDirty(form);
+        renderBooks(form.books, form.world);
+      }
+    });
+  }
+  if (action === "remove-book") {
+    previewDialog({ title: "Remove book?", detail: `Remove “${book.name}” from this World?`, danger: true }, async () => {
+      if (form.world) await act(form, "remove-book", { book_revision: form.world.book_revision, book_id: book.id });
+      else {
+        form.books.splice(index, 1);
+        markDirty(form);
+        refreshEditor(form);
+      }
+    }, () => { if (button.isConnected) button.focus(); });
   }
 }

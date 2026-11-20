@@ -40,6 +40,14 @@ export function editorMarkup(world: World | undefined, indexingOpen: boolean | u
         <small id="index-boundary-warning" hidden>Boundary search covers the entire chunk. This can create many short chunks and slow indexing.</small>
       </fieldset>
     </details>
+    <div class="books-heading">
+      <h3>Books</h3>
+      <div class="book-heading-actions">
+        <div id="book-upload"><input type="file" id="world-books-input" class="offscreen-input" accept=".txt,text/plain" multiple aria-label="Add books">${iconButton("add-world-books", "plus", "Add books", 'id="add-world-books"')}</div>
+        ${iconButton("clear-index", "delete", "Delete indexing", 'id="clear-world-index"')}
+      </div>
+    </div>
+    <ul id="world-books" class="book-list"></ul>
     <p id="world-error" class="inline-error" role="alert" hidden></p>
   </form>`;
 }
@@ -48,6 +56,40 @@ export function showBoundaryWarning() {
   const size = element<HTMLInputElement>("world-chunk-size").valueAsNumber;
   const boundary = element<HTMLInputElement>("world-boundary").valueAsNumber;
   element("index-boundary-warning").hidden = !(size > 0 && boundary >= size);
+}
+
+export function renderBooks(books: EditableBook[], world: World | undefined) {
+  const list = element<HTMLUListElement>("world-books");
+  if (!books.length) {
+    if (!list.querySelector(".empty-copy")) list.innerHTML = '<li class="empty-copy">Add a TXT book to get started.</li>';
+    return;
+  }
+  list.querySelector(".empty-copy")?.remove();
+  const rows = new Map([...list.querySelectorAll<HTMLLIElement>("[data-book-id]")].map(row => [row.dataset.bookId, row]));
+  books.forEach((book, index) => {
+    let row = rows.get(book.id);
+    if (!row) {
+      row = document.createElement("li");
+      row.dataset.bookId = book.id;
+      const id = `data-id="${book.id}"`;
+      row.innerHTML = `<div class="book-info"><strong></strong><small></small></div>
+        <div class="tale-row-actions">
+          ${iconButton("book-up", "down", "Move book up", id)}
+          ${iconButton("book-down", "down", "Move book down", id)}
+          ${iconButton("rename-book", "rename", "Rename book", id)}
+          ${iconButton("remove-book", "delete", "Remove book", id)}
+        </div>`;
+    }
+    rows.delete(book.id);
+    const [name, filename] = row.querySelector(".book-info")!.children as HTMLCollectionOf<HTMLElement>;
+    if (name.textContent !== book.name) name.textContent = book.name;
+    if (filename.textContent !== book.filename) filename.textContent = filename.dataset.tooltip = book.filename;
+    row.querySelector<HTMLElement>(".tale-row-actions")!.hidden = processing(world);
+    row.querySelector<HTMLButtonElement>('[data-action="book-up"]')!.disabled = index === 0;
+    row.querySelector<HTMLButtonElement>('[data-action="book-down"]')!.disabled = index === books.length - 1;
+    if (list.children[index] !== row) list.insertBefore(row, list.children[index] ?? null);
+  });
+  for (const row of rows.values()) row.remove();
 }
 
 export function renderIndex(world: World | undefined, books: EditableBook[], busy: boolean) {
@@ -75,6 +117,10 @@ export function renderIndex(world: World | undefined, books: EditableBook[], bus
   element("index-lock").hidden = !locked;
   element<HTMLSelectElement>("world-model").disabled = Boolean(locked || busy);
   for (const id of ["world-chunk-size", "world-boundary"]) element<HTMLInputElement>(id).readOnly = Boolean(locked || busy);
+  element("book-upload").hidden = processing(world);
+  element<HTMLButtonElement>("add-world-books").disabled = busy;
+  element<HTMLInputElement>("world-books-input").disabled = processing(world) || busy;
+  renderBooks(books, world);
   showBoundaryWarning();
 }
 

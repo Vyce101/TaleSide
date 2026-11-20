@@ -352,6 +352,13 @@ dialog label input { display: block; margin-top: 5px; }
   .index-settings option { padding: 6px 9px; }
   .index-settings option:is(:hover, :focus-visible) { background: var(--green); }
 }
+.books-heading { border-bottom: 1px solid var(--soft-line); }
+.books-heading h3 { font-size: 15px; }
+.book-list { list-style: none; padding: 0; margin: 5px 0 11px; }
+.book-list li { display: flex; justify-content: space-between; align-items: flex-start; gap: 5px; padding: 6px 3px; border-bottom: 1px solid var(--soft-line); }
+.book-info { display: grid; min-width: 0; gap: 2px; overflow-wrap: anywhere; }
+.book-info strong { display: flex; align-items: center; min-height: 25px; }
+.book-list [data-action="book-up"] svg { rotate: 180deg; }
 .inline-error { color: #ffc2a9; margin: 7px 0; }
 .icon-button:disabled, .quiet-button:disabled, .primary-button:disabled { opacity: .4; cursor: default; }
 
@@ -438,5 +445,6 @@ dialog label input { display: block; margin-top: 5px; }
   overflow-wrap: anywhere;
 }
 .key-picker-menu input { flex: none; width: 15px; height: 15px; margin: 0; accent-color: var(--mint); }
+.book-heading-actions { display: flex; align-items: center; gap: 4px; }
 #index-boundary-warning { display: block; margin-top: 5px; color: #e6c88e; }
 .app-error { position: fixed; inset: auto 12px 9px; z-index: 3; text-align: center; pointer-events: none; }
