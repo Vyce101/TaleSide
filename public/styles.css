@@ -262,6 +262,24 @@ input:not([type="range"]), select, textarea {
 .panel-content label:first-child { margin-top: 0; }
 .panel-content select, .panel-content input:not([type="range"], [type="checkbox"]), dialog input { width: 100%; }
 .panel-content small { color: var(--muted); }
+.form-actions { margin-top: 14px; display: flex; justify-content: end; flex-wrap: wrap; gap: 7px; }
+
+dialog {
+  width: min(390px, calc(100% - 28px));
+  padding: 17px;
+  border: 1px solid #768a7a;
+  border-radius: 7px;
+  background: #252e27;
+  color: var(--cream);
+  box-shadow: 0 15px 50px #0008;
+}
+dialog::backdrop { background: #101712b8; }
+dialog h2 { font-size: 18px; margin-bottom: 9px; }
+dialog p { color: var(--muted); }
+dialog label input { display: block; margin-top: 5px; }
+.danger-button { background: #683d35; border-color: #a06a5c; }
+.danger-button:hover { background: #7a483e; }
+
 .profile-select, .wrapper-heading, .books-heading, .world-editor-actions {
   display: flex;
   align-items: center;
@@ -298,6 +316,13 @@ input:not([type="range"]), select, textarea {
 }
 .side-panel[data-kind="keys"] .panel-header h2 { order: -1; }
 .side-panel:not([inert]) { z-index: 4; }
+
+@media (prefers-reduced-motion: no-preference) {
+  :root { --drawer-motion: 150ms ease-out; }
+
+  dialog::backdrop { transition: opacity var(--drawer-motion); }
+  dialog[data-closing]::backdrop { opacity: 0; }
+}
 
 @media (prefers-reduced-motion: reduce) {
   .toolbar button, .icon-button { transition: none; }
