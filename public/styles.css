@@ -305,6 +305,9 @@ button.world-row:hover { background: #ffffff12; }
 .panel-content label:first-child { margin-top: 0; }
 .panel-content select, .panel-content input:not([type="range"], [type="checkbox"]), dialog input { width: 100%; }
 .panel-content small { color: var(--muted); }
+.numeric-setting { display: grid; grid-template-columns: minmax(0, 1fr) 82px; gap: 8px; margin-bottom: 3px; }
+.numeric-setting input { min-width: 0; accent-color: #a5afa3; }
+.numeric-setting input[type="number"] { padding-inline: 5px; }
 .form-actions { margin-top: 14px; display: flex; justify-content: end; flex-wrap: wrap; gap: 7px; }
 
 dialog {
@@ -323,6 +326,10 @@ dialog label input { display: block; margin-top: 5px; }
 .danger-button { background: #683d35; border-color: #a06a5c; }
 .danger-button:hover { background: #7a483e; }
 
+.slider-setting { min-width: 0; padding-block: 7px 4px; }
+.setting-label { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 3px 8px; margin-bottom: 4px; }
+.panel-content .setting-label label { margin: 0; font-size: 14px; }
+.setting-label small { font-size: 11px; }
 .settings-section {
   border-top: 1px solid var(--line);
   margin-top: 12px;
@@ -360,6 +367,15 @@ dialog label input { display: block; margin-top: 5px; }
 .profile-select { justify-content: flex-start; margin-top: 4px; }
 .profile-select select { flex: 1 1 auto; }
 #profile-actions { flex: none; }
+.reasoning-settings { margin-top: 14px; padding-top: 13px; border-top: 1px solid var(--soft-line); }
+.panel-content .thinking-toggle { display: flex; align-items: center; gap: 8px; min-height: 29px; font-size: 14px; }
+.thinking-toggle input[type="checkbox"] {
+  width: 19px;
+  height: 19px;
+  margin: 0;
+  accent-color: var(--mint);
+  cursor: pointer;
+}
 .world-editor-actions { margin-bottom: 8px; }
 .world-editor-actions .icon-button { width: 33px; min-height: 31px; }
 .world-index-actions { display: flex; gap: 4px; }

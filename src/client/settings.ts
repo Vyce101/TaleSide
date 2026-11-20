@@ -7,6 +7,9 @@ import { renderKeyPicker } from "./key-picker.js";
 import { escapeHtml, icon, type Icon } from "./view.js";
 import { updateWorldEditorKeys } from "./world-editor.js";
 
+type NumericSetting = "input_limit" | "output_limit" | "retrieved_chunks" | "minimum_similarity" | "chunk_overlap" | "messages_to_embed";
+type Slider = { id: string; setting: NumericSetting; label: string; value: number; min: number; range: number; limit?: number; step?: number; unit?: string };
+
 let profiles: ProfileSettings;
 let working: ChatSettings;
 let profilePending = false;
@@ -15,6 +18,37 @@ export function currentChatSettings() {
   if (!working) return;
   return { ...working, chat_key_ids: working.chat_key_ids.filter(id => keySettings.keys.some(key => key.id === id)) };
 }
+
+function renderSliders(container: string, settings: Slider[]) {
+  element(container).innerHTML = settings.map(({ id, label, min, range, limit, step = 1, value, setting, unit }) => `<div class="slider-setting">
+    <div class="setting-label">
+      <label for="${id}">${label}${unit ? ` (${unit})` : ""}</label>
+      <small id="${id}-default">Default ${value.toLocaleString("en-GB")}</small>
+    </div>
+    <div class="numeric-setting">
+      <input id="${id}" type="range" min="${min}" max="${range}" step="${step}" value="${working[setting]}" aria-describedby="${id}-default">
+      <input id="${id}-number" type="number" autocomplete="off" min="${min}" ${limit === undefined ? "" : `max="${limit}"`}
+        step="${step}" value="${working[setting]}" aria-label="${label}${unit ? ` in ${unit}` : ""} as a number" aria-describedby="${id}-default" data-profile-field>
+    </div>
+  </div>`).join("");
+  for (const { id, setting } of settings) {
+    const slider = element<HTMLInputElement>(id);
+    const number = element<HTMLInputElement>(`${id}-number`);
+    slider.addEventListener("input", () => { number.value = slider.value; working[setting] = slider.valueAsNumber; });
+    number.addEventListener("input", () => { if (number.value) slider.value = number.value; });
+    number.addEventListener("change", () => {
+      const min = Number(number.min);
+      const max = number.max ? Number(number.max) : Infinity;
+      const value = number.value ? Number(number.value) : slider.valueAsNumber;
+      const bounded = Math.min(max, Math.max(min, value));
+      number.value = number.step === "1" ? String(Math.round(bounded)) : bounded.toFixed(2);
+      slider.value = number.value;
+      working[setting] = number.valueAsNumber;
+    });
+  }
+}
+
+
 
 function renderProfilePicker() {
   const select = element<HTMLSelectElement>("chat-profile");
@@ -25,8 +59,27 @@ function renderProfilePicker() {
   }
 }
 
+function renderChatKey() {
+  if (!working) return;
+  renderKeyPicker("chat-key", working.chat_key_ids, ids => { working.chat_key_ids = ids; refreshComposer(); });
+}
+
 function loadWorkingProfile() {
   working = structuredClone(profiles.profiles.find(profile => profile.id === profiles.selected)?.settings ?? profiles.defaults);
+  const model = profiles.models.find(model => model.id === working.model) ?? profiles.models[0];
+  const modelSelect = element<HTMLSelectElement>("chat-model");
+  modelSelect.replaceChildren(...profiles.models.map(item => new Option(item.id, item.id)));
+  modelSelect.value = model.id;
+  const sliders: Slider[] = [
+    { id: "input-limit", setting: "input_limit", label: "Input limit", unit: "tokens", value: profiles.defaults.input_limit, min: 256,
+      range: model.context_limit, limit: model.context_limit },
+    { id: "output-limit", setting: "output_limit", label: "Output limit", unit: "tokens", value: profiles.defaults.output_limit, min: 256,
+      range: model.max_output, limit: model.max_output },
+  ];
+  renderSliders("model-limits", sliders);
+  element<HTMLSelectElement>("thinking-level").value = working.thinking_level;
+  element<HTMLInputElement>("send-thinking").checked = working.thought_signatures;
+  renderChatKey();
   renderProfilePicker();
   refreshComposer();
 }
@@ -69,6 +122,10 @@ export async function initializeSettings() {
   for (const button of element("profile-actions").querySelectorAll<HTMLButtonElement>("button")) {
     button.addEventListener("click", () => handleProfileAction(button.dataset.profileAction!));
   }
+  const thinking = element<HTMLSelectElement>("thinking-level");
+  thinking.addEventListener("change", () => { working.thinking_level = thinking.value; });
+  const signature = element<HTMLInputElement>("send-thinking");
+  signature.addEventListener("change", () => { working.thought_signatures = signature.checked; });
   profiles = await request<ProfileSettings>("/api/tale-settings");
   loadWorkingProfile();
 }
