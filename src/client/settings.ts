@@ -10,6 +10,12 @@ import { updateWorldEditorKeys } from "./world-editor.js";
 type NumericSetting = "input_limit" | "output_limit" | "retrieved_chunks" | "minimum_similarity" | "chunk_overlap" | "messages_to_embed";
 type Slider = { id: string; setting: NumericSetting; label: string; value: number; min: number; range: number; limit?: number; step?: number; unit?: string };
 
+const retrievalControls: Omit<Slider, "value">[] = [
+  { id: "retrieved-chunks", setting: "retrieved_chunks", label: "Retrieved chunks", min: 1, range: 30 },
+  { id: "minimum-similarity", setting: "minimum_similarity", label: "Minimum similarity", min: 0, range: 1, limit: 1, step: 0.01 },
+  { id: "chunk-overlap", setting: "chunk_overlap", label: "Chunk overlap", unit: "characters", min: 0, range: 1000 },
+  { id: "messages-to-embed", setting: "messages_to_embed", label: "Messages to embed", min: 1, range: 10 },
+];
 let profiles: ProfileSettings;
 let working: ChatSettings;
 let profilePending = false;
@@ -77,6 +83,7 @@ function loadWorkingProfile() {
       range: model.max_output, limit: model.max_output },
   ];
   renderSliders("model-limits", sliders);
+  renderSliders("retrieval-controls", retrievalControls.map(control => ({ ...control, value: profiles.defaults[control.setting] })));
   element<HTMLSelectElement>("thinking-level").value = working.thinking_level;
   element<HTMLInputElement>("send-thinking").checked = working.thought_signatures;
   renderChatKey();
