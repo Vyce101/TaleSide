@@ -4,32 +4,22 @@ from heapq import nlargest
 from math import sqrt
 from struct import Struct
 
-from .embeddings import MODELS, EmbeddingError, valid_vector
-
-
-def retrieval_index(db, world):
-    index_number = world["previous_index"] or world["index_number"]
-    if not db.execute("""
-        SELECT 1 FROM books b JOIN chunks c ON c.book_id = b.id
-        WHERE b.world_id = ? AND c.index_number = ? AND c.vector IS NOT NULL LIMIT 1
-    """, (world["id"], index_number)).fetchone():
-        return None
-    index = dict(world)
-    if world["previous_index"] is not None:
-        index.update(index_number=index_number, model=world["previous_model"],
-                     dimensions=world["previous_dimensions"], max_token_limit=world["previous_token_limit"],
-                     max_chunk_size=world["previous_chunk_size"])
-    return index if index["model"] in MODELS else None
-
-
-def query_text(messages):
-    return "task: search result | query: " + "\n\n".join(message["content"] for message in messages)
+def valid_vector(values, dimensions):
+    return (
+        isinstance(values, list)
+        and len(values) == dimensions
+        and all(
+            type(value) in (int, float) and -3.4028234663852886e38 <= value <= 3.4028234663852886e38
+            for value in values
+        )
+        and any(values)
+    )
 
 
 def passages(db, world, query, settings, cancelled):
     dimensions = world["dimensions"]
     if not valid_vector(query, dimensions):
-        raise EmbeddingError("Gemini returned an invalid retrieval vector.")
+        raise ValueError("Gemini returned an invalid retrieval vector.")
     vector_format = Struct(f"<{dimensions}f")
     query_length = sqrt(sum(value * value for value in query))
     chunks = db.execute("""
