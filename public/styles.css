@@ -325,6 +325,33 @@ dialog label input { display: block; margin-top: 5px; }
 .world-name-label input { display: block; margin-top: 5px; }
 .offscreen-input { position: absolute; width: 1px !important; height: 1px; clip-path: inset(50%); }
 .world-identity:has(#world-art-input:focus-visible) .world-art-picker { outline: 2px solid var(--mint); border-radius: 50%; }
+.index-settings {
+  margin: 10px 0;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+}
+.index-settings summary { padding: 7px 8px; font-weight: 630; cursor: pointer; background: #181a18; border-radius: inherit; }
+.index-lock { display: inline-flex; align-items: center; gap: 4px; float: inline-end; color: #afbaaa; font-size: 12px; }
+.index-lock svg { width: 13px; height: 13px; }
+.index-settings fieldset { margin: 0; padding: 8px; min-width: 0; border: 0; }
+.index-settings :is(select, input):disabled, .world-context select:disabled {
+  color: #a6ada3;
+  background: #2d322e;
+  border-color: #444b43;
+  cursor: not-allowed;
+}
+@supports (appearance: base-select) {
+  .index-settings select, .index-settings select::picker(select) { appearance: base-select; }
+  .index-settings select::picker(select) {
+    background: var(--input);
+    border: 1px solid #444b43;
+    border-radius: 5px;
+    color: var(--cream);
+    transition: none;
+  }
+  .index-settings option { padding: 6px 9px; }
+  .index-settings option:is(:hover, :focus-visible) { background: var(--green); }
+}
 .inline-error { color: #ffc2a9; margin: 7px 0; }
 .icon-button:disabled, .quiet-button:disabled, .primary-button:disabled { opacity: .4; cursor: default; }
 
@@ -411,4 +438,5 @@ dialog label input { display: block; margin-top: 5px; }
   overflow-wrap: anywhere;
 }
 .key-picker-menu input { flex: none; width: 15px; height: 15px; margin: 0; accent-color: var(--mint); }
+#index-boundary-warning { display: block; margin-top: 5px; color: #e6c88e; }
 .app-error { position: fixed; inset: auto 12px 9px; z-index: 3; text-align: center; pointer-events: none; }

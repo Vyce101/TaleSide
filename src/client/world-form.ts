@@ -25,8 +25,28 @@ export function editorMarkup(world: World | undefined, indexingOpen: boolean | u
         </label>
       </div>
     </div>
+    <details class="index-settings" ${indexingOpen ? "open" : ""}>
+      <summary>Indexing<span id="index-lock" class="index-lock" hidden>${icon("lock")}Locked</span></summary>
+      <fieldset >
+        <label for="world-model">Embedding model</label>
+        <select id="world-model" name="model"></select>
+        <label for="world-key-toggle">Embedding key</label>
+        <div id="world-key"></div>
+        <label for="world-chunk-size">Chunk size (characters)</label>
+        <input type="number" id="world-chunk-size" name="chunkSize" value="${options.chunkSize}" min="1" required>
+        <label for="world-boundary">Boundary search (characters)</label>
+        <input type="number" id="world-boundary" name="boundarySearch" value="${options.boundarySearch}" min="0" aria-describedby="index-boundary-warning" required>
+        <small id="index-boundary-warning" hidden>Boundary search covers the entire chunk. This can create many short chunks and slow indexing.</small>
+      </fieldset>
+    </details>
     <p id="world-error" class="inline-error" role="alert" hidden></p>
   </form>`;
+}
+
+export function showBoundaryWarning() {
+  const size = element<HTMLInputElement>("world-chunk-size").valueAsNumber;
+  const boundary = element<HTMLInputElement>("world-boundary").valueAsNumber;
+  element("index-boundary-warning").hidden = !(size > 0 && boundary >= size);
 }
 
 export function renderIndex(world: World | undefined, books: EditableBook[], busy: boolean) {
@@ -47,6 +67,11 @@ export function renderIndex(world: World | undefined, books: EditableBook[], bus
     action.setAttribute("aria-label", label);
     action.innerHTML = icon(glyph);
   }
+  const locked = world && status !== "unindexed";
+  element("index-lock").hidden = !locked;
+  element<HTMLSelectElement>("world-model").disabled = Boolean(locked || busy);
+  for (const id of ["world-chunk-size", "world-boundary"]) element<HTMLInputElement>(id).readOnly = Boolean(locked || busy);
+  showBoundaryWarning();
 }
 
 export function upload(settings: object, books: EditableBook[], picture?: File) {

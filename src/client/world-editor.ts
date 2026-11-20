@@ -60,6 +60,12 @@ export function openWorldEditor(world?: World) {
   editor = form;
   element("panel-title").textContent = world?.name ?? "New World";
   element("world-panel").innerHTML = editorMarkup(world, indexingOpen);
+  const model = element<HTMLSelectElement>("world-model");
+  const selected = world && world.status !== "unindexed" ? world.model : keySettings.defaults.model;
+  model.replaceChildren(...keySettings.models.map(item => new Option(item.id, item.id)));
+  if (![...model.options].some(option => option.value === selected)) model.add(new Option(selected, selected));
+  model.value = selected;
+
   const name = element<HTMLInputElement>("world-name-input");
   name.addEventListener("input", () => markDirty(form));
   name.addEventListener("change", async () => {
@@ -71,6 +77,12 @@ export function openWorldEditor(world?: World) {
       if (editor === form) element("panel-title").textContent = world.name;
     } catch (error) { if (editor === form) showError("world-error", error); }
   });
+  for (const id of ["world-model", "world-chunk-size", "world-boundary"]) {
+    element(id).addEventListener("input", () => { markDirty(form); showBoundaryWarning(); });
+    element(id).addEventListener("change", () => {
+      if (form.world?.status === "unindexed") saveIndexSettings(form);
+    });
+  }
   element("world-index-action").addEventListener("click", () => {
     const status = form.world?.status;
     if (status === "creating") void act(form, "pause");
@@ -85,6 +97,7 @@ export function openWorldEditor(world?: World) {
     if (file) void changeArtwork(form, file);
   });
   refreshEditor(form);
+  updateWorldEditorKeys();
   element("panel-content").scrollTop = 0;
   (world ? element("world-list-button") : name).focus({ preventScroll: true });
 }
@@ -109,6 +122,23 @@ async function changeArtwork(form: Editor, file: File) {
 
 function refreshEditor(form: Editor) { renderIndex(form.world, form.books, form.busy); }
 
+export function updateWorldEditorKeys() {
+  const form = editor;
+  if (!form) return;
+  const available = new Set(keySettings.keys.map(key => key.id));
+  form.keyIds = form.keyIds.filter(id => available.has(id));
+  renderKeyPicker("world-key", form.keyIds, ids => {
+    form.keyIds = ids;
+    markDirty(form);
+    if (form.world?.status === "unindexed") saveIndexSettings(form);
+    else if (form.world) {
+      const picker = element("world-key");
+      picker.inert = true;
+      void act(form, "embedding-key", { key_ids: ids }).finally(() => { picker.inert = false; });
+    }
+  }, processing(form.world) || form.busy);
+}
+
 function readSettings(form: Editor): WorldSettings {
   return {
     name: element<HTMLInputElement>("world-name-input").value.trim(),
@@ -119,6 +149,18 @@ function readSettings(form: Editor): WorldSettings {
   };
 }
 
+function saveIndexSettings(form: Editor) {
+  const settings = readSettings(form);
+  if (!Number.isSafeInteger(settings.max_chunk_size) || settings.max_chunk_size < 1
+    || !Number.isSafeInteger(settings.boundary_search_distance) || settings.boundary_search_distance < 0) return;
+  form.settingsSave = (form.settingsSave ?? Promise.resolve()).then(async () => {
+    if (form.world?.status !== "unindexed") return;
+    try {
+      updateWorld(await request<World>(`${worldRoute(form.id)}/index-settings`, { ...settings, book_revision: form.world.book_revision }));
+    } catch (error) { if (editor === form) showError("world-error", error); }
+  });
+}
+
 async function saveWorld(form: Editor) {
   if (form.busy || (form.world && form.world.status !== "unindexed")) return;
   const settings = readSettings(form);
@@ -127,6 +169,7 @@ async function saveWorld(form: Editor) {
     element("world-model").closest("details")!.open = true;
     return;
   }
+  await form.settingsSave;
   if (editor !== form) return;
   if (form.world) {
     await act(form, "start-index", { ...settings, book_revision: form.world.book_revision });
@@ -162,6 +205,7 @@ async function act(form: Editor, action: string, input: object = {}): Promise<Wo
     form.busy = false;
     if (editor === form) {
       refreshEditor(form);
+      updateWorldEditorKeys();
     }
   }
 }
