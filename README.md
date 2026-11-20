@@ -4,7 +4,9 @@
 
 **TaleSide** is an app in development for turning source material into persistent, interactive worlds.
 
-> **Status:** Early development (World creation and Tales preview).
+> **Status:** Early development.
+>
+> Create Worlds from TXT books and start or resume Tales with replies grounded in those books.
 
 ## Vision
 
@@ -18,13 +20,19 @@ Most AI roleplay breaks the moment you look outside the room you're standing in�
 
 And none of this is staged. Harry, Umbridge, your missing friend, Ruijerd, Paul: none of them are lines of prose written by a single model. Each one is an independent agent with their own memories, goals, and beliefs, living in the world whether or not you ever meet them. What they do ripples outward. Their choices can shift prices and politics, a rumor about you can strain a relationship, and a bounty can be placed on your head on the far side of the world without you ever hearing of it. All of it is possible because these agents are always on: not static entities scripted in code, but living inhabitants who keep acting, and keep interacting with one another, whether you’re nearby or not or whether you have ever met them or not.
 
-## Screenshot
+## Screenshots
 
-![TaleSide’s Demo Worlds shelf previewing Ghost of Tsushima](./docs/screenshots/homepage.png)
+| Recent Tales | A Tale with its World open |
+| --- | --- |
+| ![Recent Tales on the TaleSide home screen](./docs/screenshots/recent-tales.png) | ![A new Tale beside the World’s indexing and books controls](./docs/screenshots/tale-and-world.png) |
+
+![The former Demo Worlds shelf](./docs/screenshots/homepage.png)
+
+*Deprecated UI. The former Demo Worlds shelf.*
 
 ## Quickstart
 
-[Run TaleSide on Windows](./docs/quickstart.md).
+[Run TaleSide on Windows](./docs/quickstart.md)
 
 ## License
 
