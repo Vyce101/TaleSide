@@ -1,0 +1,33 @@
+export type WorldStatus = "unindexed" | "creating" | "pausing" | "paused" | "failed" | "ready";
+export type Book = { id: string; number: number; name: string; filename: string; total_chunks: number; embedded_chunks: number };
+export type World = {
+  id: string; name: string; status: WorldStatus; model: string; dimensions: number; max_token_limit: number;
+  max_chunk_size: number; boundary_search_distance: number; book_revision: number; artwork: string | null;
+  progress: number; total_chunks: number; embedded_chunks: number; active_book: number | null; can_play: boolean;
+  embedding_key_ids: string[]; retrieval_key_ids: string[]; books: Book[];
+};
+export type EmbeddingModel = { id: string; dimensions: number; max_token_limit: number };
+export type KeySummary = { id: string; nickname: string; suffix: string | null; worlds: { id: string; name: string }[] };
+export type KeyImpact = { worlds: KeySummary["worlds"]; busy: boolean };
+export type KeySettings = { keys: KeySummary[]; models: EmbeddingModel[]; defaults: { model: string; key_ids: string[] } };
+export type Wrappers = Record<"world_info" | "retrieved_passages" | "chat_history", [string, string]>;
+export type ChatSettings = {
+  model: string; chat_key_ids: string[]; thinking_level: string; thought_signatures: boolean;
+  input_limit: number; output_limit: number; retrieved_chunks: number; minimum_similarity: number;
+  chunk_overlap: number; messages_to_embed: number; wrappers: Wrappers;
+};
+export type Profile = { id: string; name: string; settings: ChatSettings };
+export type ProfileSettings = { selected: string; profiles: Profile[]; models: ChatModel[]; defaults: ChatSettings };
+export type ChatModel = { id: string; context_limit: number; max_output: number; thinking_levels: string[] };
+export type TurnStatus = "complete" | "generating" | "stopped" | "error";
+export type Message = { id: number; role: "user" | "assistant"; content: string; thinking: string;
+  model: string | null; status: TurnStatus; elapsed_ms: number | null; thinking_ms: number | null };
+export type TaleSummary = { id: string; world_id: string; title: string; pinned: boolean; created_at: number;
+  last_activity_at: number | null; message_count: number; content: string };
+export type Tale = TaleSummary & { messages: Message[] };
+export type GenerationEvent = { type: "accepted"; tale: Tale; user: Message; assistant: Message }
+  | { type: "reply"; text: string }
+  | { type: "thinking"; text: string; thinking_ms: number }
+  | { type: "done"; message: Message; error?: string };
+export type WorldSettings = { name: string; model: string; key_ids: string[];
+  max_chunk_size: number; boundary_search_distance: number };

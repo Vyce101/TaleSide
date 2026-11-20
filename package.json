@@ -1,0 +1,14 @@
+{
+  "name": "taleside",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=24.11.1 <25" },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/server/main.js",
+    "prestart": "npm run build",
+    "test": "npm run build && node --test dist/tests/*.test.js",
+    "licenses": "node scripts/check-licenses.mjs"
+  },
+  "devDependencies": { "@types/node": "24.10.1", "typescript": "5.9.3" }
+}
