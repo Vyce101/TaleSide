@@ -326,6 +326,7 @@ dialog label input { display: block; margin-top: 5px; }
 .danger-button { background: #683d35; border-color: #a06a5c; }
 .danger-button:hover { background: #7a483e; }
 
+.settings-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .slider-setting { min-width: 0; padding-block: 7px 4px; }
 .setting-label { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 3px 8px; margin-bottom: 4px; }
 .panel-content .setting-label label { margin: 0; font-size: 14px; }
@@ -367,6 +368,11 @@ dialog label input { display: block; margin-top: 5px; }
 .profile-select { justify-content: flex-start; margin-top: 4px; }
 .profile-select select { flex: 1 1 auto; }
 #profile-actions { flex: none; }
+.wrapper-heading .quiet-button {
+  min-height: 24px;
+  padding: 2px 6px;
+  font-size: 12px;
+}
 .reasoning-settings { margin-top: 14px; padding-top: 13px; border-top: 1px solid var(--soft-line); }
 .panel-content .thinking-toggle { display: flex; align-items: center; gap: 8px; min-height: 29px; font-size: 14px; }
 .thinking-toggle input[type="checkbox"] {
@@ -376,6 +382,9 @@ dialog label input { display: block; margin-top: 5px; }
   accent-color: var(--mint);
   cursor: pointer;
 }
+.wrapper-heading h4 { margin: 0; font-size: 12px; }
+.wrapper-pair { margin-block: 5px 9px; }
+.wrapper-pair textarea { width: 100%; min-width: 0; margin-top: 4px; resize: vertical; font: 12px monospace; }
 .world-editor-actions { margin-bottom: 8px; }
 .world-editor-actions .icon-button { width: 33px; min-height: 31px; }
 .world-index-actions { display: flex; gap: 4px; }

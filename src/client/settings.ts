@@ -16,6 +16,7 @@ const retrievalControls: Omit<Slider, "value">[] = [
   { id: "chunk-overlap", setting: "chunk_overlap", label: "Chunk overlap", unit: "characters", min: 0, range: 1000 },
   { id: "messages-to-embed", setting: "messages_to_embed", label: "Messages to embed", min: 1, range: 10 },
 ];
+const wrappers = [["World info", "world_info"], ["Retrieved passages", "retrieved_passages"], ["Chat history", "chat_history"]] as const;
 let profiles: ProfileSettings;
 let working: ChatSettings;
 let profilePending = false;
@@ -56,6 +57,28 @@ function renderSliders(container: string, settings: Slider[]) {
 
 
 
+function renderWrappers() {
+  element("wrapper-controls").innerHTML = wrappers.map(([label, tag]) => `<section class="wrapper-pair">
+    <div class="wrapper-heading"><h4>${label}</h4><button type="button" class="quiet-button" data-reset-wrapper="${tag}">Reset</button></div>
+    <div class="settings-grid">
+      <textarea id="${tag}-open" aria-label="${label} opening wrapper" rows="2" autocomplete="off"></textarea>
+      <textarea id="${tag}-close" aria-label="${label} closing wrapper" rows="2" autocomplete="off"></textarea>
+    </div>
+  </section>`).join("");
+  for (const [, tag] of wrappers) {
+    const open = element<HTMLTextAreaElement>(`${tag}-open`);
+    const close = element<HTMLTextAreaElement>(`${tag}-close`);
+    [open.value, close.value] = working.wrappers[tag];
+    const change = () => { working.wrappers[tag] = [open.value, close.value]; };
+    open.addEventListener("input", change);
+    close.addEventListener("input", change);
+    element("wrapper-controls").querySelector(`[data-reset-wrapper="${tag}"]`)!.addEventListener("click", () => {
+      [open.value, close.value] = profiles.defaults.wrappers[tag];
+      change();
+    });
+  }
+}
+
 function renderProfilePicker() {
   const select = element<HTMLSelectElement>("chat-profile");
   select.replaceChildren(...profiles.profiles.map(profile => new Option(profile.name, profile.id, false, profile.id === profiles.selected)));
@@ -86,6 +109,7 @@ function loadWorkingProfile() {
   renderSliders("retrieval-controls", retrievalControls.map(control => ({ ...control, value: profiles.defaults[control.setting] })));
   element<HTMLSelectElement>("thinking-level").value = working.thinking_level;
   element<HTMLInputElement>("send-thinking").checked = working.thought_signatures;
+  renderWrappers();
   renderChatKey();
   renderProfilePicker();
   refreshComposer();
