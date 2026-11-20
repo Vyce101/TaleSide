@@ -429,6 +429,17 @@ h1, h2, h3 { font-weight: 650; }
 }
 .thought-prose { margin-top: 8px; padding: 4px 12px; border-inline-start: 2px solid #78847a; color: var(--muted); }
 
+.composer {
+  --composer-min-height: 46px;
+  --composer-padding-top: 12px;
+  position: relative;
+  flex: none;
+  display: grid;
+  align-items: end;
+  background: #181a19;
+  border: 1px solid #0e100e;
+  border-radius: 0 0 6px 6px;
+}
 input:not([type="range"]), select, textarea {
   min-width: 0;
   border: 1px solid var(--line);
@@ -437,6 +448,45 @@ input:not([type="range"]), select, textarea {
   color: var(--cream);
   padding: 7px 9px;
 }
+.composer textarea {
+  width: 100%;
+  min-height: var(--composer-min-height);
+  max-height: min(144px, 23dvh);
+  padding: var(--composer-padding-top) 44px 11px 11px;
+  border: 0;
+  border-radius: 2px;
+  background: transparent;
+  line-height: 1.5;
+  resize: none;
+  text-align: start;
+  field-sizing: content;
+}
+.composer textarea:focus-visible { outline: none; }
+.composer:focus-within { border-color: #3d5f50; }
+.composer textarea::placeholder { color: transparent; }
+.composer-placeholder {
+  display: none;
+  position: absolute;
+  inset: var(--composer-padding-top) 44px auto;
+  color: #a0a39b;
+  line-height: 1.5;
+  text-align: center;
+  pointer-events: none;
+}
+.composer textarea:placeholder-shown + .composer-placeholder { display: block; }
+.send-button {
+  position: absolute;
+  inset: auto 0 0 auto;
+  width: 42px;
+  min-height: var(--composer-min-height);
+  padding: 1px;
+  background: transparent;
+  border-color: transparent;
+  color: var(--icon-muted);
+}
+.send-button:is(:hover, :active, :focus-visible) { background: transparent; color: var(--cream); }
+.send-button svg { width: 34px; height: 34px; }
+
 .side-panel {
   display: flex;
   flex-direction: column;
@@ -795,6 +845,19 @@ dialog label input { display: block; margin-top: 5px; }
 .book-heading-actions { display: flex; align-items: center; gap: 4px; }
 #index-boundary-warning { display: block; margin-top: 5px; color: #e6c88e; }
 #reveal-key { margin-top: 5px; }
+.composer[data-waiting] textarea { opacity: .6; }
+.composer-spinner {
+  display: block;
+  width: 19px;
+  height: 19px;
+  margin: auto;
+  border: 2px solid var(--line);
+  border-top-color: var(--mint);
+  border-radius: 50%;
+  animation: composer-spin .8s linear infinite;
+}
+@keyframes composer-spin { to { rotate: 360deg; } }
+@media (prefers-reduced-motion: reduce) { .composer-spinner { animation: none; } }
 .app-error { position: fixed; inset: auto 12px 9px; z-index: 3; text-align: center; pointer-events: none; }
 .turn .prose pre { overflow-x: auto; }
 .turn .prose code, .thinking-block code { overflow-wrap: anywhere; }
