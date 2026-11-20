@@ -23,6 +23,7 @@ let keyEditor: { action: "add" | "rename" | "replace"; key?: KeySummary } | unde
 let showKeyUse = false;
 let profilePending = false;
 let keysPending = false;
+let retrievalPending = false;
 
 export function currentChatSettings() {
   if (!working) return;
@@ -145,6 +146,24 @@ function handleProfileAction(action: string) {
   }
 }
 
+export function renderWorldContext() {
+  const world = state.world;
+  element("world-context").hidden = !world;
+  if (!world) return;
+  element("world-context-name").textContent = world.name;
+  element<HTMLSelectElement>("world-embedding-model").options[0].text = world.model;
+  element("world-index-details").textContent = `${world.max_token_limit.toLocaleString("en-GB")} tokens max · ${world.dimensions.toLocaleString("en-GB")} dimensions`;
+  renderKeyPicker("world-retrieval-key", world.retrieval_key_ids, async ids => {
+    retrievalPending = true;
+    const picker = element("world-retrieval-key");
+    picker.inert = true;
+    showError("settings-error");
+    try { updateWorld(await request<World>(`${worldRoute(world.id)}/retrieval-key`, { key_ids: ids })); }
+    catch (error) { showError("settings-error", error); }
+    finally { retrievalPending = false; picker.inert = false; renderWorldContext(); }
+  }, retrievalPending);
+}
+
 export function renderKeysView() {
   element("view-keys").setAttribute("aria-pressed", String(!showKeyUse));
   element("view-key-worlds").setAttribute("aria-pressed", String(showKeyUse));
@@ -209,6 +228,7 @@ export async function refreshKeys() {
   await loadKeys();
   renderKeysView();
   renderChatKey();
+  if (state.panel === "settings") renderWorldContext();
   updateWorldEditorKeys();
   refreshComposer();
 }

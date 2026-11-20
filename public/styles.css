@@ -305,6 +305,12 @@ button.world-row:hover { background: #ffffff12; }
 .panel-content label:first-child { margin-top: 0; }
 .panel-content select, .panel-content input:not([type="range"], [type="checkbox"]), dialog input { width: 100%; }
 .panel-content small { color: var(--muted); }
+.side-panel[data-kind="settings"]:has(.world-context:not([hidden])) .panel-header, .world-context { background: #171917; }
+.panel-content:has(#settings-panel:not([hidden]) .world-context:not([hidden])) { padding-top: 0; }
+.world-context { margin: 0 calc(-1 * var(--panel-gutter)) 12px; padding: 10px var(--panel-gutter) 12px; }
+.world-context h3 { font-size: 15px; }
+.world-context p { margin-block: 2px 4px; font-weight: 600; }
+.world-context small { display: block; margin-top: 5px; }
 .numeric-setting { display: grid; grid-template-columns: minmax(0, 1fr) 82px; gap: 8px; margin-bottom: 3px; }
 .numeric-setting input { min-width: 0; accent-color: #a5afa3; }
 .numeric-setting input[type="number"] { padding-inline: 5px; }
