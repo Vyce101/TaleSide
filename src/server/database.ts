@@ -172,7 +172,7 @@ function migrateLegacy(db: DatabaseSync, version: number) {
 
 }
 
-const DATABASE_VERSION = 3;
+const DATABASE_VERSION = 5;
 
 export async function openDatabase(path: string, onBackup?: () => void) {
   const existing = path !== ":memory:" && existsSync(path);
@@ -194,6 +194,31 @@ export async function openDatabase(path: string, onBackup?: () => void) {
         installTaleSearch(db);
         db.exec("PRAGMA user_version = 3");
       }
+      if (version < 4) db.exec(`
+        ALTER TABLE worlds ADD COLUMN description TEXT;
+        ALTER TABLE worlds ADD COLUMN openings TEXT;
+        ALTER TABLE tales ADD COLUMN persona_id TEXT;
+        ALTER TABLE tale_messages ADD COLUMN swipe INTEGER NOT NULL DEFAULT 0;
+        ALTER TABLE tale_messages ADD COLUMN opening INTEGER NOT NULL DEFAULT 0;
+        ALTER TABLE tale_messages ADD COLUMN player_name TEXT;
+        ALTER TABLE tale_messages ADD COLUMN player_artwork TEXT;
+        CREATE TABLE tale_swipes (
+          message_id INTEGER NOT NULL REFERENCES tale_messages ON DELETE CASCADE,
+          position INTEGER NOT NULL, reply TEXT NOT NULL, PRIMARY KEY (message_id, position)
+        );
+        CREATE TABLE personas (
+          id TEXT PRIMARY KEY, name TEXT NOT NULL, nickname TEXT NOT NULL DEFAULT '',
+          description TEXT NOT NULL DEFAULT '', portrait TEXT REFERENCES persona_artwork(id)
+        );
+        CREATE TABLE persona_artwork (id TEXT PRIMARY KEY, content_type TEXT NOT NULL, image BLOB NOT NULL);
+        CREATE TABLE persona_defaults (scope TEXT PRIMARY KEY, persona_id TEXT NOT NULL REFERENCES personas ON DELETE CASCADE);
+        CREATE TABLE app_settings (id INTEGER PRIMARY KEY CHECK (id = 1), warn_signatures INTEGER NOT NULL);
+        PRAGMA user_version = 4;
+      `);
+      if (version < 5) db.exec(`
+        ALTER TABLE tales ADD COLUMN prompt_counts TEXT;
+        PRAGMA user_version = 5;
+      `);
       db.exec(`
         UPDATE worlds SET status = 'paused' WHERE status IN ('creating', 'pausing');
         UPDATE tale_messages SET status = 'error' WHERE status = 'generating';
