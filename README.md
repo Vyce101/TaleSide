@@ -6,7 +6,7 @@
 
 > **Status:** Early development.
 >
-> Create Worlds from TXT books and start or resume Tales with replies grounded in those books.
+> Create Worlds from TXT, Markdown, HTML, or EPUB books. Start or resume Tales with replies grounded in those books, and search saved Tales by title or message.
 
 ## Vision
 
@@ -22,9 +22,9 @@ And none of this is staged. Harry, Umbridge, your missing friend, Ruijerd, Paul:
 
 ## Screenshots
 
-| Recent Tales | A Tale with its World open |
+| Home and Recent Tales | A Tale in progress |
 | --- | --- |
-| ![Recent Tales on the TaleSide home screen](./docs/screenshots/recent-tales.png) | ![A new Tale beside the World’s indexing and books controls](./docs/screenshots/tale-and-world.png) |
+| ![Recent Tales on the TaleSide home screen](./docs/screenshots/recent-tales.png) | ![A Tale showing a reply and its thinking summary](./docs/screenshots/tale-chat.png) |
 
 ![The former Demo Worlds shelf](./docs/screenshots/homepage.png)
 
