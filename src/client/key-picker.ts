@@ -33,8 +33,35 @@ export function renderKeyPicker(containerId: string, selected: string[], change:
     input.type = "checkbox";
     input.dataset.keyId = key.id;
     input.checked = ids.includes(key.id);
-    input.addEventListener("change", () => {
-      ids = input.checked ? [...ids, key.id] : ids.filter(id => id !== key.id);
+    row.addEventListener("click", event => {
+      if (!event.shiftKey || event.target === input) return;
+      event.preventDefault();
+      input.dispatchEvent(new MouseEvent("click", { bubbles: true, shiftKey: true }));
+    });
+    input.addEventListener("click", event => {
+      const choices = [...menu.querySelectorAll("input")];
+      if (event.shiftKey) {
+        const to = choices.indexOf(input);
+        const wasSelected = (index: number) => ids.includes(choices[index]?.dataset.keyId ?? "");
+        if (!input.checked) {
+          let start = to;
+          let end = to;
+          while (wasSelected(start - 1)) start--;
+          while (wasSelected(end + 1)) end++;
+          for (const choice of choices.slice(start, end + 1)) choice.checked = false;
+        } else {
+          let nearest = -1;
+          for (let index = 0; index < choices.length; index++) {
+            if (!wasSelected(index)) continue;
+            if (nearest === -1 || Math.abs(index - to) < Math.abs(nearest - to)) nearest = index;
+          }
+          if (nearest !== -1) {
+            for (const choice of choices.slice(Math.min(nearest, to), Math.max(nearest, to) + 1)) choice.checked = true;
+          }
+        }
+      }
+      const checked = new Set(choices.filter(choice => choice.checked).map(choice => choice.dataset.keyId!));
+      ids = [...ids.filter(id => checked.has(id)), ...[...checked].filter(id => !ids.includes(id))];
       label();
       change([...ids]);
     });
