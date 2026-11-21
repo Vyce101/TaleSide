@@ -1,6 +1,5 @@
 import { keySettings } from "./data.js";
 import { element } from "./dom.js";
-import { setSurfaceVisible, slideFrames } from "./motion.js";
 
 export function renderKeyPicker(containerId: string, selected: string[], change: (ids: string[]) => void, disabled = false) {
   const container = element(containerId);
@@ -9,7 +8,6 @@ export function renderKeyPicker(containerId: string, selected: string[], change:
   const priorFocus = active?.dataset.keyId;
   const picker = document.createElement("div");
   picker.className = "key-picker";
-  picker.toggleAttribute("data-instant", Boolean(container.closest("#settings-panel")));
   const toggle = document.createElement("button");
   toggle.type = "button";
   toggle.id = `${containerId}-toggle`;
@@ -65,12 +63,7 @@ export function renderKeyPicker(containerId: string, selected: string[], change:
 }
 
 function showMenu(picker: Element, visible: boolean) {
-  const menu = picker.querySelector<HTMLElement>(".key-picker-menu")!;
-  if (picker.hasAttribute("data-instant")) {
-    menu.hidden = !visible;
-  } else {
-    setSurfaceVisible(menu, visible, slideFrames);
-  }
+  picker.querySelector<HTMLElement>(".key-picker-menu")!.hidden = !visible;
 }
 
 function close(picker: Element) {
