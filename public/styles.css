@@ -339,6 +339,7 @@ h1, h2, h3 { font-weight: 650; }
   min-height: 0;
   overflow: auto;
   overflow-anchor: none;
+  scrollbar-gutter: stable;
   overscroll-behavior: contain;
   scrollbar-color: #7d8076 transparent;
   scrollbar-width: thin;

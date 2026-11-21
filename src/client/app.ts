@@ -38,15 +38,14 @@ export const state = {
 };
 const panelButtons = document.querySelectorAll<HTMLButtonElement>(".toolbar [data-panel]");
 
-function keepReadingPosition(update: () => void) {
+function keepReadingPosition(update: () => void, follow = true) {
   const transcript = document.getElementById("transcript");
   if (!transcript || !transcript.clientHeight) {
     update();
     return;
   }
 
-  const atEnd = transcript.scrollHeight > transcript.clientHeight
-    && transcript.scrollHeight - transcript.clientHeight - transcript.scrollTop < 3;
+  const atEnd = follow && transcript.scrollHeight - transcript.clientHeight - transcript.scrollTop < 3;
   if (atEnd) {
     update();
     transcript.scrollTop = transcript.scrollHeight;
@@ -540,8 +539,7 @@ async function sendOrStop() {
   tale.messages.push({ id: -1, role: "user", content: text, thinking: "", model: null,
     status: "complete", elapsed_ms: null, thinking_ms: null, player_name: draftPlayer?.name,
     player_artwork: draftPlayer?.artwork }, assistant);
-  renderMessages();
-  scrollToLatest();
+  keepReadingPosition(renderMessages);
   try {
     const response = await post(`${taleRoute(tale)}/generate`,
       { generation_id: reply.id, content: text, title: tale.title, settings, opening: opening ?? (tale.draft ? 0 : undefined), persona_id: tale.persona_id }, { signal: reply.controller.signal });
