@@ -5,7 +5,7 @@ import { all, get, run, selectedKeys, transaction } from "./database.js";
 import { CHAT_MODEL, InputTooLarge, tokenBody, type GeminiClient, type Part } from "./gemini.js";
 import { Profiles } from "./profiles.js";
 import { openRetrieval, retrievalVector, type HistoryEntry } from "./retrieval.js";
-import { identifier, RequestError, requiredText, whole } from "./validation.js";
+import { identifier, makeId, RequestError, requiredText, whole } from "./validation.js";
 import { searchTales } from "./tale-search.js";
 import { Worlds } from "./worlds.js";
 
@@ -116,6 +116,26 @@ export class Tales {
     const swipes = this.swipes(row);
     if (input.swipe !== row.swipe) throw new RequestError("The selected swipe changed. Reopen the Tale and try again.", 409);
     return transaction(this.db, () => {
+      if (action === "branch") {
+        const branch = makeId();
+        const now = Date.now() / 1000;
+        run(this.db, `
+          INSERT INTO tales (id, world_id, title, automatic_title, created_at, last_activity_at, persona_id)
+          VALUES (?, ?, ?, 0, ?, ?, ?)
+        `, branch, worldId, tale.title.slice(0, 91) + " (Branch)", now, now, tale.persona_id ?? null);
+        for (const original of rows.slice(0, index + 1)) {
+          const copy = run(this.db, `
+            INSERT INTO tale_messages (tale_id, role, content, opening, player_name, player_artwork)
+            VALUES (?, ?, ?, ?, ?, ?)
+          `, branch, original.role, original.content, original.opening, original.player_name ?? null, original.player_artwork ?? null);
+          if (original.role === "assistant") {
+            const all = original.id === row.id;
+            this.writeSwipes(Number(copy.lastInsertRowid), all ? swipes : [swipeFrom(original)], all ? original.swipe : 0);
+          }
+        }
+        this.touch(worldId, branch);
+        return this.detail(worldId, branch);
+      }
       if (action === "edit-message") {
         const content = requiredText(input.content, "Enter a message.");
         if (row.content.trim() !== content) {

@@ -196,7 +196,7 @@ export async function createApplication(databasePath: string, options: Options =
           });
           return response.end();
         }
-        if (!getRequest && ["edit-message", "delete-message", "select-swipe", "persona"].includes(action)) {
+        if (!getRequest && ["edit-message", "delete-message", "select-swipe", "branch", "persona"].includes(action)) {
           return json(response, tales.changeMessage(worldId, id, action, await readJson(request)));
         }
         if (!getRequest && ["rename", "pin", "delete", "stop"].includes(action)) {
