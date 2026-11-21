@@ -202,11 +202,11 @@ export function messageTurn(message: Message, world: World) {
   const thinking = message.status === "generating" && !message.content;
   const role = player ? "player" : "narrator";
   const model = escapeHtml(message.model ?? "");
-  const time = message.elapsed_ms === null ? "" : (message.elapsed_ms / 1000).toFixed(1) + "s";
+  const time = message.elapsed_ms === null ? (message.status === "generating" ? "0s" : "") : formatDuration(message.elapsed_ms);
   return `<article class="turn ${role}" data-message="${message.id}">
     <div class="turn-rail">
       ${avatar(player ? message.player_name ? { artwork: message.player_artwork ?? null } : undefined : world)}
-      ${time ? `<span class="reply-time" data-tooltip="Time to get the answer">${time}</span>` : ""}
+      ${time ? `<span class="reply-time" data-tooltip="Time to finished response">${time}</span>` : ""}
     </div>
     <div class="turn-content">
       <header>
@@ -225,21 +225,16 @@ export function messageRows(messages: Message[], world: World) {
     : '<p class="empty-copy">Write the first message to begin this Tale.</p>';
 }
 
-function formatThoughtDuration(ms: number) {
-  const seconds = Math.max(1, Math.round(ms / 1000));
-  const hours = Math.floor(seconds / 3600);
-  const minutes = Math.floor(seconds / 60) % 60;
-  const remainingSeconds = seconds % 60;
-  const parts = [];
-  if (hours) parts.push(hours + (minutes || remainingSeconds ? "h" : hours === 1 ? " hour" : " hours"));
-  if (minutes) parts.push(minutes + (remainingSeconds ? "m" : minutes === 1 ? " minute" : " minutes"));
-  if (remainingSeconds) parts.push(remainingSeconds + (remainingSeconds === 1 ? " second" : " seconds"));
-  return parts.join(" ");
+export function formatDuration(ms: number) {
+  const seconds = Math.max(0, Math.floor(ms / 1000));
+  const minutes = Math.floor(seconds / 60);
+  const remaining = seconds % 60;
+  return minutes ? `${minutes}m${remaining ? remaining + "s" : ""}` : `${seconds}s`;
 }
 
 function thinkingView(message: Message, thinking: boolean) {
   const label = thinking ? '<span>Thinking<span class="thinking-dots">...</span></span>' : message.thinking_ms
-    ? "Thought for " + formatThoughtDuration(message.thinking_ms) : "Thoughts";
+    ? "Thought for " + formatDuration(message.thinking_ms) : "Thoughts";
   return `<details class="thinking-block" data-thought-for="${message.id}">
     <summary>${label}${icon("down")}</summary><div class="thought-prose"></div>
   </details>`;

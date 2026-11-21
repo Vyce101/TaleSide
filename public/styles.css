@@ -1019,3 +1019,4 @@ dialog label input { display: block; margin-top: 5px; }
 .persona-defaults button { display: inline-flex; align-items: center; gap: 5px; background: #252925; color: var(--muted); }
 .persona-defaults button[aria-pressed="true"] { background: #294938; border-color: #578e6f; color: var(--mint); }
 .persona-defaults svg { width: 15px; height: 15px; }
+.reply-time { font-variant-numeric: tabular-nums; }

@@ -5,14 +5,14 @@ import { apiError, keySettings, loadTales, loadWorlds, newId, orderedTales, post
   request, storeTale, storeWorld, taleRoute, tales, worlds } from "./data.js";
 import { element } from "./dom.js";
 import { closeKeyEditor, currentChatSettings, initializeSettings, refreshKeys, renderKeysView, renderWorldContext } from "./settings.js";
-import { fillMessageText, formatDate, homeView, icon, idleView, messageRows, messageTurn, recentCollapsed, recentTaleRows, taleRows, taleView, type Icon } from "./view.js";
+import { fillMessageText, formatDate, formatDuration, homeView, icon, idleView, messageRows, messageTurn, recentCollapsed, recentTaleRows, taleRows, taleView, type Icon } from "./view.js";
 import { animateSurface, historyFrames, setSurfaceVisible, slideFrames } from "./motion.js";
 import { clearToast, showToast } from "./toasts.js";
 import { initializeTooltips } from "./tooltips.js";
 import { handleWorldAction, hideWorldPanel, isWorldEditorOpen, leaveWorldSetup, openWorldEditor, restoreWorldPanel, syncWorldPanel } from "./world-editor.js";
 
 type OpenTale = Tale & { draft?: boolean };
-type Reply = { tale: OpenTale; id: string; controller: AbortController; assistant: Message; accepted: boolean; stopping: boolean; frame?: number };
+type Reply = { tale: OpenTale; id: string; controller: AbortController; assistant: Message; accepted: boolean; stopping: boolean; started: number; timer?: number; frame?: number };
 let activeReply: Reply | undefined;
 let navigation = 0;
 const drafts = new Map<string, string>();
@@ -451,6 +451,7 @@ function editTale(action: "rename" | "delete", tale: TaleSummary, button: HTMLBu
 
 function stopReply(reply: Reply, leaving = false) {
   reply.stopping = true;
+  if (leaving) window.clearInterval(reply.timer);
   if (reply.accepted) {
     void post(`${taleRoute(reply.tale)}/stop`, { generation_id: reply.id, user_stopped: !leaving }, { keepalive: leaving })
       .catch(() => reply.controller.abort());
@@ -492,8 +493,13 @@ function updateReplyTurn(reply: Reply) {
   const error = template.content.querySelector(".reply-error");
   if (error) previous.querySelector(".turn-content")!.append(error);
 
-  const time = template.content.querySelector(".reply-time");
-  if (time && !previous.querySelector(".reply-time")) previous.querySelector(".turn-rail")!.append(time);
+  updateReplyTime(reply);
+}
+
+function updateReplyTime(reply: Reply) {
+  const article = document.querySelector(`#messages [data-message="${reply.assistant.id}"]`);
+  const time = article?.querySelector(".reply-time");
+  if (time) time.textContent = formatDuration(reply.assistant.elapsed_ms ?? performance.now() - reply.started);
 }
 
 function renderReply(reply: Reply) {
@@ -532,7 +538,7 @@ async function sendOrStop() {
   const draftPlayer = currentPersona();
   const assistant: Message = { id: -2, role: "assistant", content: "", thinking: "", model: settings.model,
     status: "generating", elapsed_ms: null, thinking_ms: null };
-  const reply: Reply = { tale, id: newId(), controller: new AbortController(), assistant, accepted: false, stopping: false };
+  const reply: Reply = { tale, id: newId(), controller: new AbortController(), assistant, accepted: false, stopping: false, started: performance.now() };
   activeReply = reply;
   input.value = "";
   drafts.delete(tale.id);
@@ -540,6 +546,7 @@ async function sendOrStop() {
     status: "complete", elapsed_ms: null, thinking_ms: null, player_name: draftPlayer?.name,
     player_artwork: draftPlayer?.artwork }, assistant);
   keepReadingPosition(renderMessages);
+  reply.timer = window.setInterval(() => { if (activeReply === reply) updateReplyTime(reply); }, 250);
   try {
     const response = await post(`${taleRoute(tale)}/generate`,
       { generation_id: reply.id, content: text, title: tale.title, settings, opening: opening ?? (tale.draft ? 0 : undefined), persona_id: tale.persona_id }, { signal: reply.controller.signal });
@@ -580,6 +587,7 @@ async function sendOrStop() {
       if (state.tale === tale && !input.value) input.value = originalDraft;
     }
   } finally {
+    window.clearInterval(reply.timer);
     if (reply.assistant.status === "generating") reply.assistant.status = reply.stopping ? "stopped" : "error";
     if (reply.frame !== undefined) cancelAnimationFrame(reply.frame);
     if (activeReply === reply) {
