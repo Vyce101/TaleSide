@@ -266,7 +266,19 @@ async function deleteKey(key: KeySummary) {
   } catch (error) { showToast(error); }
 }
 
+function restoreSettingsSections() {
+  for (const section of element("settings-panel").querySelectorAll<HTMLDetailsElement>(":scope > details[id]")) {
+    const key = `taleside:${section.id}:open`;
+    try {
+      const saved = localStorage.getItem(key);
+      if (saved !== null) section.open = saved === "true";
+      section.addEventListener("toggle", () => localStorage.setItem(key, String(section.open)));
+    } catch { /* A blocked browser storage setting should not prevent opening Tale Settings. */ }
+  }
+}
+
 export async function initializeSettings() {
+  restoreSettingsSections();
   element("profile-actions").innerHTML = `
     <button type="button" class="icon-button" aria-label="Save preset" data-tooltip="Save preset" data-profile-action="save">${icon("save")}</button>
     <button type="button" class="icon-button" aria-label="Save preset as" data-tooltip="Save preset as" data-profile-action="save-as">${icon("duplicate")}</button>

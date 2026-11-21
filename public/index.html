@@ -55,14 +55,14 @@
             <label for="world-retrieval-key-toggle">World retrieval key</label>
             <div id="world-retrieval-key"></div>
           </section>
-          <details class="profile-section" open>
+          <details id="tale-section-preset" class="profile-section" open>
             <summary>Chat profile</summary>
             <div class="profile-select">
               <select id="chat-profile" aria-label="Chat profile"></select>
               <div class="tale-row-actions" id="profile-actions"></div>
             </div>
           </details>
-          <details class="settings-section" open>
+          <details id="tale-section-generation" class="settings-section" open>
             <summary>Model and reasoning</summary>
             <div>
               <label for="chat-key-toggle">Chat key</label><div id="chat-key"></div>
@@ -81,7 +81,7 @@
               <small>Send the model’s thinking signature back with follow-up requests.</small>
             </div>
           </details>
-          <details class="settings-section" open>
+          <details id="tale-section-retrieval" class="settings-section" open>
             <summary>Retrieval</summary>
             <div id="retrieval-controls"></div>
           </details>
@@ -93,7 +93,7 @@
             </div>
             <ol id="prompt-list" aria-label="Prompt order"></ol>
           </details>
-          <details class="settings-section" open>
+          <details id="tale-section-wrappers" class="settings-section" open>
             <summary>XML wrappers</summary>
             <div id="wrapper-controls"></div>
           </details>
