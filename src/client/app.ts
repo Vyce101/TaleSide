@@ -964,6 +964,21 @@ workspace.addEventListener("input", event => {
   }
 });
 
+document.addEventListener("wheel", event => {
+  if (event.ctrlKey || !event.deltaY || state.panel === "worlds" || state.panel === "settings"
+    || document.querySelector("dialog[open]")) return;
+  const origin = event.target;
+  if (!(origin instanceof Element) || origin.closest("textarea, select, #toasts")) return;
+  const scroller = state.panel ? drawers[state.panel].querySelector<HTMLElement>(".panel-content")
+    : state.history ? document.getElementById("history-list")
+    : document.getElementById("transcript") ?? workspace.querySelector<HTMLElement>(".home-view");
+  if (!scroller || scroller.contains(origin) || scroller.scrollHeight <= scroller.clientHeight) return;
+  const unit = event.deltaMode === WheelEvent.DOM_DELTA_LINE ? 16
+    : event.deltaMode === WheelEvent.DOM_DELTA_PAGE ? scroller.clientHeight : 1;
+  event.preventDefault();
+  scroller.scrollTop += event.deltaY * unit;
+}, { passive: false });
+
 document.addEventListener("keydown", event => {
   if (event.key === "Escape" && !document.querySelector("dialog[open]")) {
     if (state.panel) showPanel(null);
