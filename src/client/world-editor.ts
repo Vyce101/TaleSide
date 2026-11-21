@@ -230,6 +230,8 @@ async function act(form: Editor, action: string, input: object = {}): Promise<Wo
   }
 }
 
+export function isWorldEditorOpen(id: string) { return state.panel === "worlds" && editor?.world?.id === id; }
+
 export function syncWorldPanel() {
   if (editor?.world) {
     const world = worlds.find(item => item.id === editor?.id);
@@ -246,7 +248,7 @@ export function syncWorldPanel() {
       editor.keyIds = world.embedding_key_ids;
       if (!editor.busy) updateWorldEditorKeys();
     }
-    if (previous.status !== world.status || previous.progress !== world.progress || previous.active_book !== world.active_book
+    if (previous.status !== world.status || previous.error !== world.error || previous.progress !== world.progress || previous.active_book !== world.active_book
       || previous.book_revision !== world.book_revision) refreshEditor(editor);
   } else if (!editor && state.panel === "worlds") {
     const list = element("world-panel");

@@ -7,7 +7,7 @@ import { fillMessageText, formatDate, homeView, icon, idleView, messageRows, mes
 import { animateSurface, historyFrames, setSurfaceVisible, slideFrames } from "./motion.js";
 import { clearToast, showToast } from "./toasts.js";
 import { initializeTooltips } from "./tooltips.js";
-import { handleWorldAction, hideWorldPanel, leaveWorldSetup, openWorldEditor, restoreWorldPanel, syncWorldPanel } from "./world-editor.js";
+import { handleWorldAction, hideWorldPanel, isWorldEditorOpen, leaveWorldSetup, openWorldEditor, restoreWorldPanel, syncWorldPanel } from "./world-editor.js";
 
 type OpenTale = Tale & { draft?: boolean };
 type Reply = { tale: OpenTale; id: string; controller: AbortController; assistant: Message; accepted: boolean; stopping: boolean; frame?: number };
@@ -531,7 +531,18 @@ export function updateWorld(world: World) {
   syncWorlds();
 }
 
+let lastWorlds = new Map<string, World>();
+
 export function syncWorlds() {
+  for (const world of worlds) {
+    const previous = lastWorlds.get(world.id);
+    if (!previous || previous.status === world.status || isWorldEditorOpen(world.id)) continue;
+    if (world.status === "failed") showToast(`${world.name}: ${world.error ?? "Indexing failed."}`);
+    if (world.status === "ready" && ["creating", "pausing"].includes(previous.status)) {
+      showToast(`${world.name} finished indexing.`, { success: true });
+    }
+  }
+  lastWorlds = new Map(worlds.map(world => [world.id, world]));
   if (state.world) {
     const previous = state.world;
     const world = worlds.find(item => item.id === previous.id);

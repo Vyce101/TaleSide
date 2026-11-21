@@ -167,7 +167,7 @@ export function worldIndexStatus(world: World) {
   switch (world.status) {
     case "ready": return "Indexed";
     case "unindexed": return "Unindexed";
-    case "failed": return "Failed";
+    case "failed": return world.error ? `Failed · ${world.error}` : "Failed";
     case "paused": return `Paused · ${progress}`;
     case "pausing": return `Pausing · ${progress}`;
     default: return `Indexing · ${progress}`;

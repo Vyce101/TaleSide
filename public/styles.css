@@ -889,6 +889,8 @@ dialog label input { display: block; margin-top: 5px; }
 .toast-card:focus-visible { outline-offset: -3px; }
 .toast-leaving { opacity: 0; }
 .reply-error { overflow-wrap: anywhere; }
+.world-row .progress-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.world-index-progress span { overflow-wrap: anywhere; }
 .turn .prose pre { overflow-x: auto; }
 .turn .prose code, .thinking-block code { overflow-wrap: anywhere; }
 .turn .prose a, .thinking-block a { color: var(--mint); }

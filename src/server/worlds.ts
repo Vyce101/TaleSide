@@ -8,12 +8,12 @@ import { ProviderKeys } from "./keys.js";
 import { identifier, makeId, RequestError, requiredText, whole } from "./validation.js";
 
 export type WorldRow = Pick<World, "id" | "name" | "status" | "model" | "dimensions" | "max_token_limit"
-  | "max_chunk_size" | "book_revision"> & { index_number: number };
+  | "max_chunk_size" | "book_revision" | "error"> & { index_number: number };
 type StoredBook = BookInput & { id: string; number: number; working: string; encoding: string; bom_size: number };
 export type Artwork = { content_type: string; image: Uint8Array };
 type IndexJob = { worldId: string; bookNumber: number; controller: AbortController };
 
-const worldColumns = "id, name, status, model, dimensions, max_token_limit, max_chunk_size, book_revision, index_number";
+const worldColumns = "id, name, status, model, dimensions, max_token_limit, max_chunk_size, book_revision, index_number, error";
 const activeStatuses = new Set(["creating", "pausing"]);
 const TITLE_LIMIT = 100;
 
