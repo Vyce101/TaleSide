@@ -1,3 +1,4 @@
+import { renderPrompts } from "./prompts.js";
 import type { ChatSettings, KeyImpact, KeySummary, ProfileSettings, World, Wrappers } from "../shared/types.js";
 import { updateWorld, syncWorlds, previewDialog, refreshComposer, state } from "./app.js";
 import { keySettings, loadKeys, loadWorlds, request, worldRoute } from "./data.js";
@@ -17,7 +18,7 @@ const retrievalControls: Omit<Slider, "value">[] = [
   { id: "chunk-overlap", setting: "chunk_overlap", label: "Chunk overlap", unit: "characters", min: 0, range: 1000 },
   { id: "messages-to-embed", setting: "messages_to_embed", label: "Messages to embed", min: 1, range: 10 },
 ];
-const wrappers = [["World info", "world_info"], ["Retrieved passages", "retrieved_passages"], ["Chat history", "chat_history"]] as const;
+const wrappers = [["World Description", "world_description"], ["World Info", "world_info"], ["Persona", "persona"], ["Retrieved Passages", "retrieved_passages"], ["Chat History", "chat_history"]] as const;
 let profiles: ProfileSettings;
 let working: ChatSettings;
 let keyEditor: { action: "add" | "rename" | "replace"; key?: KeySummary } | undefined;
@@ -26,9 +27,11 @@ let profilePending = false;
 let keysPending = false;
 let retrievalPending = false;
 
-export function currentChatSettings() {
+export function currentChatSettings(includeDraft = false) {
   if (!working) return;
-  return { ...working, chat_key_ids: working.chat_key_ids.filter(id => keySettings.keys.some(key => key.id === id)) };
+  const saved = profiles.profiles.find(profile => profile.id === profiles.selected)?.settings ?? profiles.defaults;
+  return { ...working, prompts: includeDraft ? working.prompts : saved.prompts,
+    wrappers: includeDraft ? working.wrappers : saved.wrappers, chat_key_ids: working.chat_key_ids.filter(id => keySettings.keys.some(key => key.id === id)) };
 }
 
 function renderSliders(container: string, settings: Slider[]) {
@@ -122,6 +125,7 @@ function loadWorkingProfile() {
       control.disabled = locked;
     }
   }
+  renderPrompts(working.prompts, locked);
   renderChatKey();
   renderProfilePicker();
   refreshComposer();
@@ -135,6 +139,7 @@ async function changeProfile(action: string, input: object, reload: boolean) {
   try {
     profiles = await request<ProfileSettings>(`/api/chat-profiles/${action}`, input);
     if (reload) loadWorkingProfile();
+    else refreshComposer();
     if (action === "save") showToast("Chat profile saved.", { temporary: true, success: true });
   } catch (error) { showDrawerError("settings-error", error); }
   finally { profilePending = false; renderProfilePicker(); }
@@ -143,11 +148,11 @@ async function changeProfile(action: string, input: object, reload: boolean) {
 function handleProfileAction(action: string) {
   const profile = profiles.profiles.find(item => item.id === profiles.selected);
   if (!profile) return;
-  if (action === "save") void changeProfile("save", { id: profile.id, settings: currentChatSettings() }, false);
+  if (action === "save") void changeProfile("save", { id: profile.id, settings: currentChatSettings(true) }, false);
   if (action === "save-as" || action === "rename") {
     const rename = action === "rename";
     previewDialog({ title: rename ? "Rename chat profile" : "Save chat profile as", initialName: rename ? profile.name : "" },
-      name => changeProfile(rename ? "rename" : "create", { id: profile.id, name, settings: currentChatSettings() }, !rename));
+      name => changeProfile(rename ? "rename" : "create", { id: profile.id, name, settings: currentChatSettings(true) }, !rename));
   }
   if (action === "delete") {
     previewDialog({ title: "Delete chat profile?", detail: `Remove “${profile.name}”?`, danger: true },
@@ -263,8 +268,8 @@ async function deleteKey(key: KeySummary) {
 
 export async function initializeSettings() {
   element("profile-actions").innerHTML = `
-    <button type="button" class="icon-button" aria-label="Save profile" data-tooltip="Save profile" data-profile-action="save">${icon("save")}</button>
-    <button type="button" class="icon-button" aria-label="Save profile as" data-tooltip="Save profile as" data-profile-action="save-as">${icon("duplicate")}</button>
+    <button type="button" class="icon-button" aria-label="Save preset" data-tooltip="Save preset" data-profile-action="save">${icon("save")}</button>
+    <button type="button" class="icon-button" aria-label="Save preset as" data-tooltip="Save preset as" data-profile-action="save-as">${icon("duplicate")}</button>
     <button type="button" class="icon-button" aria-label="Rename chat profile" data-tooltip="Rename chat profile" data-profile-action="rename">${icon("rename")}</button>
     <button type="button" class="icon-button" id="delete-profile" aria-label="Delete chat profile" data-tooltip="Delete chat profile" data-profile-action="delete">${icon("delete")}</button>`;
   element<HTMLSelectElement>("chat-profile").addEventListener("change", event =>

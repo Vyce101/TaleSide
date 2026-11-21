@@ -946,7 +946,22 @@ dialog label input { display: block; margin-top: 5px; }
 }
 .opening-heading { display: flex; justify-content: space-between; align-items: center; }
 #opening-controls { display: flex; align-items: center; color: var(--muted); font-size: 13px; }
-#persona-list { list-style: none; padding: 0; margin: 0; display: grid; gap: 5px; }
+#prompt-list, #persona-list { list-style: none; padding: 0; margin: 0; display: grid; gap: 5px; }
+.prompt-row {
+  display: grid; grid-template-columns: minmax(0, 1fr) 30px;
+  align-items: center; gap: 6px; padding: 4px 7px; min-height: 41px; font-size: 13px;
+  border: 1px solid var(--line); border-radius: 5px; background: #242823;
+}
+.prompt-row:has(.prompt-switch input:not(:checked)) { opacity: .55; }
+.prompt-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.panel-content .prompt-switch { position: relative; display: block; width: 30px; height: 17px; margin: 0; }
+.prompt-switch input { position: absolute; inset: 0; opacity: 0; cursor: pointer; margin: 0; }
+.prompt-switch span { display: block; pointer-events: none; width: 100%; height: 100%; background: #3c413c; border-radius: 999px; padding: 2px; }
+.prompt-switch span::before { content: ""; display: block; width: 13px; height: 13px; border-radius: 50%; background: var(--cream); }
+.prompt-switch input:checked + span { background: #34664e; }
+.prompt-switch input:checked + span::before { transform: translateX(13px); }
+.prompt-switch input:focus-visible + span { outline: 2px solid currentColor; outline-offset: 2px; }
+.prompt-switch input:disabled + span { opacity: .65; }
 #personas-drawer { box-shadow: 0 14px 32px #000a, 0 5px 12px #0007; }
 #persona-tools { display: flex; justify-content: end; margin-bottom: 5px; }
 #persona-tools .icon-button { width: 30px; min-height: 27px; height: 27px; padding: 4px; }
