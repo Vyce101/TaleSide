@@ -210,6 +210,7 @@ export function messageTurn(message: Message, world: World, last = false, canReg
   const actions = `<div class="turn-actions" ${pendingActions ? "inert" : ""}>
     ${canRegenerate ? iconButton("regenerate-turn", "replace", "Regenerate", disabled) : ""}
     ${iconButton("edit-turn", "rename", "Edit", disabled)}
+    ${iconButton("delete-turn", "delete", "Delete", disabled)}
   </div>`;
   const swipable = last && !player && (message.opening ? count > 1 : canRegenerate);
   const previous = swipable ? iconButton("previous-swipe", "left", "Previous swipe",

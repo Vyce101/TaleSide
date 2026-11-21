@@ -577,6 +577,21 @@ async function handleTurn(button: HTMLButtonElement) {
     return;
   }
   if (action === "regenerate-turn") { await sendOrStop({ message, mode: message.role === "user" ? "answer" : "regenerate" }); return; }
+  if (action === "delete-turn") {
+    const below = tale.messages.length - tale.messages.indexOf(message) - 1;
+    const multi = below === 0 && (message.swipes?.length ?? 0) > 1;
+    const remove = async (mode: string) => {
+      if (!await changeTurn(tale, message, "delete-message", { mode })) return;
+      if (state.tale === tale) { keepReadingPosition(renderMessages); focusTurn(message.id, action); }
+    };
+    previewDialog({ title: multi ? "Delete swipe?" : "Delete message?", danger: true,
+      detail: multi ? "Permanently remove this swipe from the Tale." : "Permanently remove this message from the Tale.",
+      checkbox: below ? `Delete the ${below} ${below === 1 ? "response" : "responses"} below this response`
+        : multi ? "Delete the entire message" : undefined,
+    }, (_, checked) => remove(below && checked ? "rewind" : multi && !checked ? "swipe" : "message"),
+    () => focusTurn(message.id, action));
+    return;
+  }
   if (action !== "previous-swipe" && action !== "next-swipe") return;
 
   const count = message.swipes?.length ?? 1;
