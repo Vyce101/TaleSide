@@ -15,6 +15,8 @@ type Emit = (event: GenerationEvent) => void;
 const messageFields = "id, role, content, thinking, model, status, elapsed_ms, thinking_ms, error, signed_parts, opening, swipe, player_name, player_artwork";
 type StoredSwipe = Swipe & { signed_parts: string | null };
 type MessageRow = StoredSwipe & Pick<Message, "id" | "role" | "player_name" | "player_artwork"> & { swipe: number; opening: number };
+type Rewrite = { row: MessageRow; mode: "regenerate" | "swipe" };
+
 function swipeFrom(row: StoredSwipe): StoredSwipe {
   const { content, thinking, model, status, elapsed_ms, thinking_ms, error, signed_parts } = row;
   return { content, thinking, model, status, elapsed_ms, thinking_ms, error, signed_parts };
@@ -205,18 +207,31 @@ export class Tales {
     const usePassages = settings.prompts.some(block => block.kind === "retrieved_passages" && block.enabled);
     const retrievalKeys = usePassages ? this.worlds.keys.validate(selectedKeys(this.db, "world_retrieval_keys", worldId)) : [];
     const missingKeys = (usePassages && !retrievalKeys.length) || !settings.chat_key_ids.length;
-    if (missingKeys) throw new RequestError("A chat or retrieval key is missing.", 409);
     const existing = get<{ world_id: string }>(this.db, "SELECT world_id FROM tales WHERE id = ?", id);
     if (existing && existing.world_id !== worldId) throw new RequestError("This Tale could not be found.", 404);
     const title = existing ? undefined : requiredText(input.title, "Enter a Tale title up to 100 characters.", 100);
-    const content = requiredText(input.content, "Enter a message.");
+    const history = this.rows(id);
+    let rewrite: Rewrite | undefined;
+    if (input.mode === "regenerate" || input.mode === "swipe") {
+      const row = history.at(-1);
+      if (!row || row.id !== input.message_id || row.swipe !== input.swipe || row.role !== "assistant" || row.opening) {
+        throw new RequestError("Only the final AI reply can be regenerated.", 409);
+      }
+      rewrite = { row, mode: input.mode };
+      history.pop();
+      while (history.length && history.at(-1)!.role !== "user") history.pop();
+      if (!history.length) throw new RequestError("Send a message before generating another reply.", 409);
+    }
+    const content = rewrite ? undefined : requiredText(input.content, "Enter a message.");
     const personaSelection = !existing && input.persona_id != null ? this.personas.require(input.persona_id).id : undefined;
     const openings: string[] = title === undefined ? []
       : (world.openings === null ? [FIRST_MESSAGE] : JSON.parse(world.openings)).filter((text: string) => text.trim());
     const opening = openings.length ? whole(input.opening ?? 0, 0, "Choose a saved First Message.", openings.length - 1) : 0;
+    if (missingKeys) throw new RequestError("A chat or retrieval key is missing.", 409);
     const active: Active = { id: generationId, worldId, controller: new AbortController(), stopped: false, done: Promise.resolve() };
     this.active.set(id, active);
-    active.done = this.generate(id, active, { content, title, personaSelection, openings, opening, description: world.description ?? WORLD_DESCRIPTION }, settings, retrievalKeys, emit)
+    active.done = this.generate(id, active, { content, title, personaSelection, history, rewrite, openings, opening,
+      description: world.description ?? WORLD_DESCRIPTION }, settings, retrievalKeys, emit)
       .finally(() => this.active.delete(id));
     return active.done;
   }
@@ -275,10 +290,10 @@ export class Tales {
   }
 
   private async generate(id: string, active: Active, input: {
-    content: string; title?: string; personaSelection?: string;
+    content?: string; title?: string; personaSelection?: string; history: MessageRow[]; rewrite?: Rewrite;
     description: string; openings: string[]; opening: number;
   }, settings: ChatSettings, retrievalKeys: string[], emit: Emit) {
-    const { content, title, openings, opening, description } = input;
+    const { content, title, rewrite, openings, opening, description } = input;
     const signal = active.controller.signal;
     const worldId = active.worldId;
     const started = performance.now();
@@ -295,11 +310,27 @@ export class Tales {
       this.worlds.keys.validate(settings.chat_key_ids);
       if (retrievalKeys.length) this.worlds.keys.validate(retrievalKeys);
       const persona = this.personas.resolve(worldId, title === undefined ? this.personaSelection(id) : input.personaSelection);
-      const { user, assistant } = this.saveMessage(id, worldId, title, content, settings.model, persona, openings, opening);
+      let user: Message | undefined;
+      let assistant: Message;
+      if (rewrite) {
+        this.touch(worldId, id);
+        const previous = this.publicMessage(rewrite.row);
+        assistant = { ...previous, content: "", thinking: "", model: settings.model, status: "generating",
+          elapsed_ms: null, thinking_ms: null, error: null, has_signature: false };
+        if (rewrite.mode === "swipe") {
+          assistant.swipe = previous.swipes!.length;
+          assistant.swipes = [...previous.swipes!, publicSwipe({ ...assistant, signed_parts: null })];
+        }
+      } else {
+        const saved = this.saveMessage(id, worldId, title, content!, settings.model, persona, openings, opening);
+        user = saved.user;
+        assistant = saved.assistant;
+      }
       active.message = assistant;
       emit({ type: "accepted", tale: this.detail(worldId, id), user, assistant });
-      const history: HistoryEntry[] = this.rows(id).filter(row => row.content);
-      const retrievalHistory = this.rows(id).filter(row => row.content && !row.opening);
+      const history: HistoryEntry[] = rewrite ? input.history.filter(row => row.content)
+        : this.rows(id).filter(row => row.content);
+      const retrievalHistory = (rewrite ? input.history : this.rows(id)).filter(row => row.content && !row.opening);
       const keys = this.worlds.keys;
       const query = retrievalKeys.length ? await retrievalVector(world, retrievalHistory.slice(-settings.messages_to_embed),
         text => keys.retry("retrieval", retrievalKeys, signal, key => this.provider.count(world.model, key, tokenBody(text), signal)),
@@ -353,7 +384,13 @@ export class Tales {
         try {
           const reply = swipeFrom({ ...assistant, signed_parts: signedParts.some(part => part.thoughtSignature)
             ? JSON.stringify(signedParts) : null });
-          transaction(this.db, () => this.writeSwipes(assistant.id, [reply], 0));
+          transaction(this.db, () => {
+            if (rewrite && reply.status === "stopped" && !reply.content) return;
+            const swipes = rewrite ? this.swipes(rewrite.row) : [reply];
+            const position = rewrite?.mode === "swipe" ? swipes.length : rewrite?.row.swipe ?? 0;
+            swipes[position] = reply;
+            this.writeSwipes(assistant.id, swipes, position);
+          });
           const row = get<MessageRow>(this.db, `SELECT ${messageFields} FROM tale_messages WHERE id = ?`, assistant.id);
           if (row) Object.assign(assistant, this.publicMessage(row));
         } catch {
