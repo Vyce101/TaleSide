@@ -286,11 +286,21 @@ function latestTale(world: World) {
   return tales.filter(tale => tale.world_id === world.id).sort((a, b) => recentTime(b) - recentTime(a))[0];
 }
 
+function draftOpening(world: World, previous?: Message): Message[] {
+  const openings = world.openings.filter(text => text.trim()).map(content => ({
+    content, thinking: "", model: null, status: "complete" as const, elapsed_ms: null, thinking_ms: null,
+  }));
+  if (!openings.length) return [];
+  const previousText = openings.findIndex(opening => opening.content === previous?.content);
+  const swipe = previousText >= 0 ? previousText : Math.min(previous?.swipe ?? 0, openings.length - 1);
+  return [{ ...openings[swipe], id: -3, role: "assistant", opening: true, swipe, swipes: openings }];
+}
+
 function draftTale(world: World): OpenTale {
   const now = Date.now();
   const stamp = formatDate(now);
   return { id: newId(), world_id: world.id, title: `${world.name.slice(0, 97 - stamp.length)} - ${stamp}`,
-    pinned: false, created_at: now / 1000, last_activity_at: null, message_count: 0, content: "", messages: [], draft: true };
+    pinned: false, created_at: now / 1000, last_activity_at: null, message_count: 0, content: "", messages: draftOpening(world), draft: true };
 }
 
 async function openTale(world: World, tale: TaleSummary | undefined, inSidebar: boolean) {
@@ -519,6 +529,7 @@ async function sendOrStop() {
   const settings = currentChatSettings();
   if (!text || !settings || element<HTMLButtonElement>("send-message").disabled) return;
   const originalDraft = input.value;
+  const opening = tale.draft ? tale.messages.find(message => message.opening)?.swipe : undefined;
   const draftPlayer = currentPersona();
   const assistant: Message = { id: -2, role: "assistant", content: "", thinking: "", model: settings.model,
     status: "generating", elapsed_ms: null, thinking_ms: null };
@@ -526,7 +537,6 @@ async function sendOrStop() {
   activeReply = reply;
   input.value = "";
   drafts.delete(tale.id);
-  tale.messages = tale.messages.filter(message => message.id >= 0);
   tale.messages.push({ id: -1, role: "user", content: text, thinking: "", model: null,
     status: "complete", elapsed_ms: null, thinking_ms: null, player_name: draftPlayer?.name,
     player_artwork: draftPlayer?.artwork }, assistant);
@@ -534,7 +544,7 @@ async function sendOrStop() {
   scrollToLatest();
   try {
     const response = await post(`${taleRoute(tale)}/generate`,
-      { generation_id: reply.id, content: text, title: tale.title, settings, persona_id: tale.persona_id }, { signal: reply.controller.signal });
+      { generation_id: reply.id, content: text, title: tale.title, settings, opening: opening ?? (tale.draft ? 0 : undefined), persona_id: tale.persona_id }, { signal: reply.controller.signal });
     if (!response.ok) throw await apiError(response);
     let finished = false;
     await readReply(response, event => {
@@ -617,7 +627,11 @@ export function syncWorlds() {
     const world = worlds.find(item => item.id === previous.id);
     if (world) {
       state.world = world;
-      if (previous.name !== world.name || previous.artwork !== world.artwork) keepReadingPosition(renderMessages);
+      const tale = state.tale;
+      if (tale?.draft && !activeReply && JSON.stringify(previous.openings) !== JSON.stringify(world.openings)) {
+        tale.messages = draftOpening(world, tale.messages[0]);
+        keepReadingPosition(renderMessages);
+      } else if (previous.name !== world.name || previous.artwork !== world.artwork) keepReadingPosition(renderMessages);
       refreshComposer();
     }
   }
