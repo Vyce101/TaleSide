@@ -1,36 +1,19 @@
 import type { ChatSettings } from "../shared/types.js";
-import { InputTooLarge, LEGACY_EMBEDDING, tokenBody, type GeminiClient } from "./gemini.js";
+import { InputTooLarge, LEGACY_EMBEDDING } from "./gemini.js";
 import { pythonWorker } from "./python.js";
 import type { WorldRow } from "./worlds.js";
 
 export type HistoryEntry = { role: "user" | "assistant"; content: string; model?: string | null; signed_parts?: string | null };
 
-export async function retrievalVector(provider: GeminiClient, world: WorldRow, nextKey: () => string,
-  history: HistoryEntry[], signal: AbortSignal) {
+export async function retrievalVector(world: WorldRow, history: HistoryEntry[],
+  count: (text: string) => Promise<number>, embed: (text: string) => Promise<number[]>) {
   const text = (messages: HistoryEntry[]) => "task: search result | query: " + messages.map(message => message.content).join("\n\n");
-  const count = (messages: HistoryEntry[]) => provider.count(world.model, nextKey(), tokenBody(text(messages)), signal);
-  const embed = (messages: HistoryEntry[]) => provider.embed(world.model, world.dimensions, nextKey(), text(messages), signal);
-  let messages = history;
-  if (world.model === LEGACY_EMBEDDING) {
-    while (messages.length) {
-      if (await count(messages) <= world.max_token_limit) return embed(messages);
-      messages = messages.slice(1);
-    }
-    throw new InputTooLarge();
+  if (world.model !== LEGACY_EMBEDDING) return embed(text(history));
+  for (let start = 0; start < history.length; start++) {
+    const query = text(history.slice(start));
+    if (await count(query) <= world.max_token_limit) return embed(query);
   }
-
-  for (;;) {
-    try { return await embed(messages); }
-    catch (error) {
-      if (!(error instanceof InputTooLarge) || messages.length <= 1) throw error;
-      messages = messages.slice(1);
-    }
-    while (messages.length > 1) {
-      try { if (await count(messages) <= world.max_token_limit) break; }
-      catch (error) { if (!(error instanceof InputTooLarge)) throw error; }
-      messages = messages.slice(1);
-    }
-  }
+  throw new InputTooLarge();
 }
 
 export async function openRetrieval(database: string, worldId: string, signal: AbortSignal) {

@@ -63,7 +63,7 @@ test("Windows DPAPI-protected key blobs reopen for the current user without plai
     const legacyId = id();
     db.prepare("INSERT INTO provider_keys (id, provider, nickname, protected_secret) VALUES (?, 'gemini', 'Imported', ?)").run(legacyId, encrypted);
     const keys = new ProviderKeys(db);
-    equal(keys.next("chat", [legacyId]), sample);
+    equal(await keys.retry("chat", [legacyId], new AbortController().signal, async key => key), sample);
     equal(keys.settings().keys[0].suffix, sample.slice(-4));
     equal(get<{ suffix: string }>(db, "SELECT suffix FROM provider_keys WHERE id = ?", legacyId)?.suffix, sample.slice(-4));
   } finally { db.close(); }

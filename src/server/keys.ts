@@ -92,14 +92,6 @@ export class ProviderKeys {
     throw new RequestError(EMBEDDING_KEY_REQUIRED, 409);
   }
 
-  next(purpose: "embedding" | "retrieval" | "chat", ids: string[]) {
-    if (!ids.length) throw new RequestError(EMBEDDING_KEY_REQUIRED, 409);
-    const selection = purpose + ids.join(",");
-    const position = this.rotation.get(selection) ?? 0;
-    this.rotation.set(selection, (position + 1) % ids.length);
-    return this.secret(this.require(ids[position]));
-  }
-
   private assignments(id: string) {
     return all<{ id: string; name: string; busy: number }>(this.db, `
       SELECT w.id, w.name, (w.status IN ('creating', 'pausing') AND EXISTS (

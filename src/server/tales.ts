@@ -1,6 +1,6 @@
 import type { ChatSettings, GenerationEvent, Message, Tale, TaleSummary } from "../shared/types.js";
 import { all, get, run, selectedKeys, transaction } from "./database.js";
-import { CHAT_MODEL, InputTooLarge, type GeminiClient, type Part } from "./gemini.js";
+import { CHAT_MODEL, InputTooLarge, tokenBody, type GeminiClient, type Part } from "./gemini.js";
 import { Profiles } from "./profiles.js";
 import { openRetrieval, retrievalVector, type HistoryEntry } from "./retrieval.js";
 import { identifier, RequestError, requiredText } from "./validation.js";
@@ -9,7 +9,7 @@ import { Worlds } from "./worlds.js";
 type Active = { id: string; worldId: string; controller: AbortController; stopped: boolean; message?: Message; done: Promise<void> };
 type TaleRow = Omit<TaleSummary, "pinned"> & { pinned: number };
 type Emit = (event: GenerationEvent) => void;
-const messageFields = "id, role, content, thinking, model, status, elapsed_ms, thinking_ms";
+const messageFields = "id, role, content, thinking, model, status, elapsed_ms, thinking_ms, error";
 const summarySql = `
   SELECT t.id, t.world_id, t.title, t.pinned, t.created_at, t.last_activity_at,
     (SELECT count(*) FROM tale_messages WHERE tale_id = t.id AND (content <> '' OR thinking <> '')) AS message_count,
@@ -107,6 +107,29 @@ export class Tales {
     });
   }
 
+  private async *chatWithRetry(settings: ChatSettings, payload: object, signal: AbortSignal) {
+    for (const { key, last } of this.worlds.keys.attempts("chat", settings.chat_key_ids, signal)) {
+      let started = false;
+      const pending: Part[] = [];
+      try {
+        for await (const part of this.provider.chat(settings.model, key, payload, signal)) {
+          signal.throwIfAborted();
+          if (!started && !part.text) { pending.push(part); continue; }
+          if (!started) {
+            started = true;
+            yield* pending;
+          }
+          yield part;
+        }
+        signal.throwIfAborted();
+        if (!started) yield* pending;
+        return;
+      } catch (error) {
+        if (last || started || signal.aborted) throw error;
+      }
+    }
+  }
+
   private async generate(id: string, active: Active, content: string, title: string | undefined, settings: ChatSettings,
     retrievalKeys: string[], emit: Emit) {
     const signal = active.controller.signal;
@@ -130,18 +153,18 @@ export class Tales {
       active.message = assistant;
       emit({ type: "accepted", tale: this.detail(worldId, id), user, assistant });
       history.push({ role: "user", content });
-      const key = (purpose: "retrieval" | "chat") => {
-        signal.throwIfAborted();
-        return this.worlds.keys.next(purpose, purpose === "retrieval" ? retrievalKeys : settings.chat_key_ids);
-      };
-      const query = await retrievalVector(this.provider, world, () => key("retrieval"), history.slice(-settings.messages_to_embed), signal);
+      const keys = this.worlds.keys;
+      const query = await retrievalVector(world, history.slice(-settings.messages_to_embed),
+        text => keys.retry("retrieval", retrievalKeys, signal, key => this.provider.count(world.model, key, tokenBody(text), signal)),
+        text => keys.retry("retrieval", retrievalKeys, signal, key => this.provider.embed(world.model, world.dimensions, key, text, signal)));
       const payload = await snapshot.build(query, history, settings);
       snapshot.close();
       if (settings.input_limit < CHAT_MODEL.context_limit) {
         const full = { generateContentRequest: { model: `models/${settings.model}`, ...payload } };
-        if (await this.provider.count(settings.model, key("chat"), full, signal) > settings.input_limit) throw new InputTooLarge();
+        const tokens = await keys.retry("chat", settings.chat_key_ids, signal, key => this.provider.count(settings.model, key, full, signal));
+        if (tokens > settings.input_limit) throw new InputTooLarge();
       }
-      for await (const part of this.provider.chat(settings.model, key("chat"), payload, signal)) {
+      for await (const part of this.chatWithRetry(settings, payload, signal)) {
         signal.throwIfAborted();
         if (typeof part.text === "string" && part.text) {
           if (part.thought) {
@@ -168,23 +191,24 @@ export class Tales {
     } catch (error) {
       if (!active.message) throw error;
       active.message.status = active.stopped ? "stopped" : "error";
-      if (!signal.aborted) failure = error instanceof InputTooLarge ? error.message : "The reply could not finish.";
+      if (!signal.aborted) failure = error instanceof Error ? error.message : "The reply could not finish.";
     } finally {
       snapshot.close();
       const assistant = active.message;
       if (assistant) {
         const ended = performance.now();
         assistant.elapsed_ms = Math.round(ended - started);
+        assistant.error = failure ?? null;
         try {
           run(this.db, `
-            UPDATE tale_messages SET content = ?, thinking = ?, status = ?, signed_parts = ?, elapsed_ms = ?, thinking_ms = ?
+            UPDATE tale_messages SET content = ?, thinking = ?, status = ?, signed_parts = ?, elapsed_ms = ?, thinking_ms = ?, error = ?
             WHERE tale_id = ? AND id = ?
           `, assistant.content, assistant.thinking, assistant.status,
           signedParts.some(part => part.thoughtSignature) ? JSON.stringify(signedParts) : null,
-          assistant.elapsed_ms, assistant.thinking_ms, id, assistant.id);
+          assistant.elapsed_ms, assistant.thinking_ms, assistant.error, id, assistant.id);
         } catch {
           assistant.status = "error";
-          failure = "The reply could not be saved.";
+          failure = assistant.error = "The reply could not be saved.";
         }
         emit({ type: "done", message: assistant, error: failure });
       }
