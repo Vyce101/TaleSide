@@ -21,6 +21,8 @@ export class Worlds {
   private running: Promise<void> | undefined;
   private active: IndexJob | undefined;
   private closing = false;
+  private indexCooldown = new Map<string, number>();
+  private cooldownWorld?: string;
 
   constructor(readonly db: DatabaseSync, readonly keys: ProviderKeys, private provider: GeminiClient) {}
 
@@ -277,13 +279,14 @@ export class Worlds {
   private async process() {
     while (!this.closing) {
       const world = get<WorldRow>(this.db, `SELECT ${worldColumns} FROM worlds WHERE status = 'creating' ORDER BY rowid LIMIT 1`);
-      if (!world) return;
+      if (!world) { this.indexCooldown.clear(); return; }
       try {
         await this.embedNext(world);
       } catch (error) {
         if (!this.closing) {
           const message = error instanceof Error ? error.message : "Could not index this World.";
-          run(this.db, "UPDATE worlds SET status = 'failed', error = ? WHERE id = ? AND status IN ('creating', 'pausing')", message, world.id);
+          run(this.db, "UPDATE worlds SET status = 'paused' WHERE id = ? AND status = 'pausing'", world.id);
+          run(this.db, "UPDATE worlds SET status = 'failed', error = ? WHERE id = ? AND status = 'creating'", message, world.id);
         }
       } finally {
         this.active = undefined;
@@ -307,7 +310,13 @@ export class Worlds {
     const signal = controller.signal;
     const prefix = `title: ${chunk.name} | text: `;
     const text = Array.from(chunk.text);
-    const count = (part: string) => this.provider.count(world.model, this.keys.next("embedding", keys), tokenBody(prefix + part), signal);
+    if (this.cooldownWorld !== world.id) {
+      this.indexCooldown.clear();
+      this.cooldownWorld = world.id;
+    }
+    const indexing = { cooldown: this.indexCooldown, paused: () => this.require(world.id).status === "pausing" };
+    const count = (part: string) => this.keys.retry("embedding", keys, signal,
+      key => this.provider.count(world.model, key, tokenBody(prefix + part), signal), indexing);
     const tokens = chunk.tokens || await count(chunk.text);
     let length = text.length;
     if (!chunk.tokens && tokens > world.max_token_limit) {
@@ -322,8 +331,8 @@ export class Worlds {
       length = minimum;
     }
     signal.throwIfAborted();
-    const values = await this.provider.embed(world.model, world.dimensions, this.keys.next("embedding", keys),
-      prefix + text.slice(0, length).join(""), signal);
+    const values = await this.keys.retry("embedding", keys, signal, key => this.provider.embed(world.model, world.dimensions, key,
+      prefix + text.slice(0, length).join(""), signal), indexing);
     signal.throwIfAborted();
     const vector = encodeVector(values, world.dimensions);
     transaction(this.db, () => {

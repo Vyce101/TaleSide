@@ -7,6 +7,9 @@ import { EMBEDDING_MODEL, EMBEDDING_MODELS } from "./gemini.js";
 import { identifier, makeId, RequestError, requiredText } from "./validation.js";
 
 type Key = { id: string; nickname: string; suffix: string | null; protected_secret: Uint8Array };
+type Purpose = "embedding" | "retrieval" | "chat";
+const INDEX_KEY_COOLDOWN_MS = 30_000;
+
 type Protector = (operation: "Protect" | "Unprotect", input: Uint8Array) => Buffer;
 const script = fileURLToPath(new URL("../../scripts/protect-key.ps1", import.meta.url));
 
@@ -52,6 +55,41 @@ export class ProviderKeys {
       this.secrets.set(key.id, secret);
     }
     return secret;
+  }
+
+  *attempts(purpose: Purpose, ids: string[], signal: AbortSignal, cooldown?: Map<string, number>) {
+    if (!ids.length) throw new RequestError(EMBEDDING_KEY_REQUIRED, 409);
+    const selection = purpose + ids.join(",");
+    const attempted = new Set<string>();
+    while (attempted.size < ids.length) {
+      signal.throwIfAborted();
+      const start = this.rotation.get(selection) ?? 0;
+      const ordered = [...ids.slice(start), ...ids.slice(0, start)].filter(id => !attempted.has(id));
+      const id = ordered.find(candidate => (cooldown?.get(candidate) ?? 0) <= performance.now()) ?? ordered[0];
+      attempted.add(id);
+      this.rotation.set(selection, (ids.indexOf(id) + 1) % ids.length);
+      yield { id, key: this.secret(this.require(id)), last: attempted.size === ids.length };
+    }
+  }
+
+  async retry<T>(purpose: Purpose, ids: string[], signal: AbortSignal, request: (key: string) => Promise<T>,
+    indexing?: { cooldown: Map<string, number>; paused: () => boolean }) {
+    const failed: string[] = [];
+    for (const { id, key, last } of this.attempts(purpose, ids, signal, indexing?.cooldown)) {
+      try {
+        const response = await request(key);
+        signal.throwIfAborted();
+        if (indexing) {
+          indexing.cooldown.delete(id);
+          for (const failedId of failed) indexing.cooldown.set(failedId, performance.now() + INDEX_KEY_COOLDOWN_MS);
+        }
+        return response;
+      } catch (error) {
+        if (last || signal.aborted || indexing?.paused()) throw error;
+        failed.push(id);
+      }
+    }
+    throw new RequestError(EMBEDDING_KEY_REQUIRED, 409);
   }
 
   next(purpose: "embedding" | "retrieval" | "chat", ids: string[]) {
