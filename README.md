@@ -4,9 +4,9 @@
 
 **TaleSide** is an app in development for turning source material into persistent, interactive worlds.
 
-> **Status:** Early development.
->
-> Create Worlds from TXT, Markdown, HTML, or EPUB books. Start or resume Tales with replies grounded in those books, and search saved Tales by title or message.
+**Status:** Early development.
+
+Create Worlds from TXT, Markdown, HTML, or EPUB books and play Tales with replies grounded in those books. Branch a Tale to explore a different direction, play as a custom Persona, or find a saved Tale by title or message.
 
 ## Vision
 
@@ -24,7 +24,7 @@ And none of this is staged. Harry, Umbridge, your missing friend, Ruijerd, Paul:
 
 | Home and Recent Tales | A Tale in progress |
 | --- | --- |
-| ![Recent Tales on the TaleSide home screen](./docs/screenshots/recent-tales.png) | ![A Tale showing a reply and its thinking summary](./docs/screenshots/tale-chat.png) |
+| ![Recent Tales on the TaleSide home screen](./docs/screenshots/recent-tales.png) | ![A Tale showing its opening, an AI reply, and the reply time](./docs/screenshots/tale-chat.png) |
 
 ![The former Demo Worlds shelf](./docs/screenshots/homepage.png)
 

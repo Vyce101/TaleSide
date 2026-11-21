@@ -10,5 +10,5 @@
 1. Get a Gemini API key from [Google AI Studio](https://aistudio.google.com/apikey). In TaleSide, open **API Keys**, choose **Add Key**, then name and save the key.
 2. Open **Worlds**, choose **New World** with the **+** button, and enter a name. Use the **+** beside **Books** to add one small `.txt` book.
 3. In **Indexing**, pick your key in **Embedding key**, then click the **Create World** checkmark.
-4. In **Tale Settings**, select the same key in **Chat key**.
-5. Close Tale Settings. When the first passage is indexed, type a message and send it.
+4. Open **Tale Settings**. Under **Model and reasoning**, select the same key in **Chat key**.
+5. Close Tale Settings. Once the first passage is indexed, send a message and wait for Gemini to reply. The World’s **First Message** is the opening you see before you send anything.
