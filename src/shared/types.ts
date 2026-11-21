@@ -12,6 +12,8 @@ export type KeySummary = { id: string; nickname: string; suffix: string | null; 
 export type KeyImpact = { worlds: KeySummary["worlds"]; busy: boolean };
 export type KeySettings = { keys: KeySummary[]; models: EmbeddingModel[]; defaults: { model: string; key_ids: string[] } };
 export type Wrappers = Record<"world_info" | "retrieved_passages" | "chat_history", [string, string]>;
+export type Persona = { id: string; name: string; nickname: string; description: string; artwork: string | null };
+export type PersonasView = { personas: Persona[]; global: string | null; world: string | null };
 export type ChatSettings = {
   model: string; chat_key_ids: string[]; thinking_level: string; thought_signatures: boolean;
   input_limit: number; output_limit: number; retrieved_chunks: number; minimum_similarity: number;

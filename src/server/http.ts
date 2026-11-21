@@ -1,3 +1,4 @@
+import { Personas } from "./personas.js";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { readFile, stat } from "node:fs/promises";
 import { resolve, sep } from "node:path";
@@ -117,6 +118,7 @@ export async function createApplication(databasePath: string, options: Options =
     const keys = new ProviderKeys(db, options.protect);
     const worlds = new Worlds(db, keys, provider);
     const profiles = new Profiles(db, keys);
+    const personas = new Personas(db);
     const tales = new Tales(worlds, profiles, provider, databasePath);
 
     async function handle(request: IncomingMessage, response: ServerResponse, origin: string) {
@@ -139,6 +141,10 @@ export async function createApplication(databasePath: string, options: Options =
         if (path === "/api/worlds") return json(response, worlds.list());
         if (path === "/api/settings") return json(response, keys.settings());
         if (path === "/api/tale-settings") return json(response, profiles.view());
+        if (path === "/api/personas") {
+          const world = url.searchParams.get("world");
+          return json(response, personas.view(world === null ? null : identifier(world)));
+        }
         if (path === "/api/tales") return json(response, tales.list());
         if (path === "/api/tales/search") {
           const query = url.searchParams.get("q") ?? "";
@@ -152,6 +158,22 @@ export async function createApplication(databasePath: string, options: Options =
         }
         if (!path.startsWith("/api/")) return staticFile(response, path);
       }
+
+      const portrait = /^\/api\/(personas|persona-artwork)\/([a-f0-9]{32})(?:\/artwork)?$/.exec(path);
+      if (getRequest && portrait?.[1] === "persona-artwork") {
+        const artwork = personas.artwork(portrait[2]);
+        if (!artwork) throw new RequestError("Artwork not found.", 404);
+        response.writeHead(200, { "Content-Type": artwork.content_type, "Cache-Control": "private, max-age=31536000, immutable",
+          "Content-Security-Policy": "sandbox; default-src 'none'" });
+        return response.end(artwork.image);
+      }
+      if (!getRequest && portrait?.[1] === "personas" && path.endsWith("/artwork")) {
+        const artwork = await readArtwork((await formData(request)).get("artwork"));
+        if (!artwork) throw new RequestError("Choose a Persona image.");
+        return json(response, personas.portrait(portrait[2], artwork));
+      }
+      const personaAction = /^\/api\/personas\/(create|save|default|delete)$/.exec(path);
+      if (!getRequest && personaAction) return json(response, personas.change(personaAction[1], await readJson(request)));
 
       const tale = /^\/api\/worlds\/([a-f0-9]{32})\/tales\/([a-f0-9]{32})(?:\/([a-z-]+))?$/.exec(path);
       if (tale) {

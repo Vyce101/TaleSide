@@ -264,7 +264,10 @@ export class Worlds {
 
   discard(id: string) {
     this.require(id);
-    run(this.db, "DELETE FROM worlds WHERE id = ?", id);
+    transaction(this.db, () => {
+      run(this.db, "DELETE FROM persona_defaults WHERE scope = ?", id);
+      run(this.db, "DELETE FROM worlds WHERE id = ?", id);
+    });
     if (this.active?.worldId === id) this.active.controller.abort();
   }
 
