@@ -8,7 +8,7 @@ from contextlib import closing
 from pathlib import Path
 from threading import Event
 
-from .books import BookSource, prepare_txt
+from .books import BookSource, prepare_book
 from .tale_retrieval import chat_request, passages
 
 
@@ -24,7 +24,7 @@ def prepare(request):
     prepared = []
     for book in request["books"]:
         source = BookSource(book["filename"], base64.b64decode(book["original"], validate=True), book["name"])
-        working, encoding, bom_size, chunks = prepare_txt(source, request["size"], request["search"])
+        working, encoding, bom_size, chunks = prepare_book(source, request["size"])
         prepared.append({
             "working": working,
             "encoding": encoding,

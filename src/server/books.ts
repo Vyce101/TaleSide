@@ -6,7 +6,6 @@ type PreparedText = { working: string; encoding: string; bomSize: number; chunks
 export type PreparedBook = BookInput & PreparedText;
 
 export const DEFAULT_CHUNK_SIZE = 8000;
-export const DEFAULT_BOUNDARY_SEARCH = 1000;
 
 export function normalizeLines(text: string) {
   return text.replaceAll("\r\n", "\n").replaceAll("\r", "\n");
@@ -16,11 +15,11 @@ export function decode(bytes: Uint8Array, encoding: string) {
   return new TextDecoder(encoding, { fatal: true, ignoreBOM: true }).decode(bytes);
 }
 
-export async function prepareBooks(books: BookInput[], size: number, search: number): Promise<PreparedBook[]> {
+export async function prepareBooks(books: BookInput[], size: number): Promise<PreparedBook[]> {
   if (!books.length) return [];
   const worker = pythonWorker("prepare");
   try {
-    await worker.send({ size, search, books: books.map(({ filename, name, original }) => ({
+    await worker.send({ size, books: books.map(({ filename, name, original }) => ({
       filename, name, original: Buffer.from(original).toString("base64"),
     })) });
     const result = await worker.receive<{ books: PreparedText[] }>();

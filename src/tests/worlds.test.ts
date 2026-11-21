@@ -40,7 +40,7 @@ test("pausing finishes the active chunk and Resume processes only queued chunks 
   };
   const app = await fixture(t, provider);
   const key = await app.addKey("Index");
-  const world = await app.newWorld({ name: "Long", key_ids: [key], max_chunk_size: 4, boundary_search_distance: 0 }, [["One.txt", "abcdefghijkl"]]);
+  const world = await app.newWorld({ name: "Long", key_ids: [key], max_chunk_size: 4 }, [["One.txt", "abcdefghijkl"]]);
   const base = `/api/worlds/${world.id}`;
   await until(() => sent.length, sent => sent === 1);
   const pausing = await app.call<World>(base + "/pause", {});
@@ -131,7 +131,7 @@ test("a large index reports progress after the first chunk even below one percen
   };
   const app = await fixture(t, provider);
   const key = await app.addKey("Index");
-  const world = await app.newWorld({ name: "Small chunks", key_ids: [key], max_chunk_size: 100, boundary_search_distance: 1000 },
+  const world = await app.newWorld({ name: "Small chunks", key_ids: [key], max_chunk_size: 100 },
     [["Long.txt", "word ".repeat(4000)]]);
   try {
     await until(() => sent, value => value === 1);

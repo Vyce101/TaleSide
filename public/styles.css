@@ -843,7 +843,6 @@ dialog label input { display: block; margin-top: 5px; }
 .key-picker-menu input { flex: none; width: 15px; height: 15px; margin: 0; accent-color: var(--mint); }
 #key-value[data-masked] { -webkit-text-security: disc; }
 .book-heading-actions { display: flex; align-items: center; gap: 4px; }
-#index-boundary-warning { display: block; margin-top: 5px; color: #e6c88e; }
 #reveal-key { margin-top: 5px; }
 .composer[data-waiting] textarea { opacity: .6; }
 .composer-spinner {

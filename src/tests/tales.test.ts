@@ -64,7 +64,7 @@ test("retrieval includes the full chunk even when indexing embedded only a prefi
     },
   });
   const key = await app.addKey("Gemini");
-  const world = await app.newWorld({ name: "Passages", key_ids: [key], max_chunk_size: 6, boundary_search_distance: 0 },
+  const world = await app.newWorld({ name: "Passages", key_ids: [key], max_chunk_size: 6 },
     [["Book.txt", "abcdefghi"]]);
   await until(() => app.world(world.id), value => value.status === "ready");
   const settings = { ...(await app.profiles()).defaults, chat_key_ids: [key], retrieved_chunks: 1, chunk_overlap: 2 };
@@ -102,7 +102,7 @@ test("deleting indexing preserves Tales and uses the first new passage without t
   equal(unavailable.status, 409);
   block = true;
   try {
-    await app.call(base + "/start-index", { book_revision: cleared.book_revision, key_ids: [key], max_chunk_size: 4, boundary_search_distance: 0 });
+    await app.call(base + "/start-index", { book_revision: cleared.book_revision, key_ids: [key], max_chunk_size: 4 });
     const partial = await until(() => app.world(world.id), value => value.embedded_chunks === 1);
     equal(partial.can_play, true);
     equal(partial.status, "creating");

@@ -4,7 +4,7 @@ import { keySettings, newId, removeWorld, request, worldRoute, worlds } from "./
 import { element, showError } from "./dom.js";
 import { renderKeyPicker } from "./key-picker.js";
 import { avatar, worldIndexStatus, worldRows } from "./view.js";
-import { editorMarkup, processing, renderBooks, renderIndex, renderWorldProgress, showBoundaryWarning, upload, type EditableBook } from "./world-form.js";
+import { editorMarkup, processing, renderBooks, renderIndex, renderWorldProgress, upload, type EditableBook } from "./world-form.js";
 
 type Editor = { id: string; world?: World; books: EditableBook[]; keyIds: string[]; artwork?: File;
   pendingPortrait?: string; dirty: boolean; busy: boolean; settingsSave?: Promise<void> };
@@ -77,8 +77,8 @@ export function openWorldEditor(world?: World) {
       if (editor === form) element("panel-title").textContent = world.name;
     } catch (error) { if (editor === form) showError("world-error", error); }
   });
-  for (const id of ["world-model", "world-chunk-size", "world-boundary"]) {
-    element(id).addEventListener("input", () => { markDirty(form); showBoundaryWarning(); });
+  for (const id of ["world-model", "world-chunk-size"]) {
+    element(id).addEventListener("input", () => { markDirty(form); });
     element(id).addEventListener("change", () => {
       if (form.world?.status === "unindexed") saveIndexSettings(form);
     });
@@ -166,14 +166,12 @@ function readSettings(form: Editor): WorldSettings {
     model: element<HTMLSelectElement>("world-model").value,
     key_ids: form.keyIds,
     max_chunk_size: element<HTMLInputElement>("world-chunk-size").valueAsNumber,
-    boundary_search_distance: element<HTMLInputElement>("world-boundary").valueAsNumber,
   };
 }
 
 function saveIndexSettings(form: Editor) {
   const settings = readSettings(form);
-  if (!Number.isSafeInteger(settings.max_chunk_size) || settings.max_chunk_size < 1
-    || !Number.isSafeInteger(settings.boundary_search_distance) || settings.boundary_search_distance < 0) return;
+  if (!Number.isSafeInteger(settings.max_chunk_size) || settings.max_chunk_size < 1) return;
   form.settingsSave = (form.settingsSave ?? Promise.resolve()).then(async () => {
     if (form.world?.status !== "unindexed") return;
     try {

@@ -6,7 +6,7 @@ export type EditableBook = Book & { file?: File };
 export const processing = (world?: World) => world?.status === "creating" || world?.status === "pausing";
 
 export function editorMarkup(world: World | undefined, indexingOpen: boolean | undefined) {
-  const options = { chunkSize: world?.max_chunk_size ?? 8000, boundarySearch: world?.boundary_search_distance ?? 1000 };
+  const chunkSize = world?.max_chunk_size ?? 8000;
   return `<form id="world-editor" autocomplete="off">
     <div class="world-editor-actions">
       ${iconButton("world-list", "back", "Back to Worlds", 'id="world-list-button"')}
@@ -38,10 +38,7 @@ export function editorMarkup(world: World | undefined, indexingOpen: boolean | u
         <label for="world-key-toggle">Embedding key</label>
         <div id="world-key"></div>
         <label for="world-chunk-size">Chunk size (characters)</label>
-        <input type="number" id="world-chunk-size" name="chunkSize" value="${options.chunkSize}" min="1" required>
-        <label for="world-boundary">Boundary search (characters)</label>
-        <input type="number" id="world-boundary" name="boundarySearch" value="${options.boundarySearch}" min="0" aria-describedby="index-boundary-warning" required>
-        <small id="index-boundary-warning" hidden>Boundary search covers the entire chunk. This can create many short chunks and slow indexing.</small>
+        <input type="number" id="world-chunk-size" name="chunkSize" value="${chunkSize}" min="1" required>
       </fieldset>
     </details>
     <details id="world-progress" class="index-settings" ${world ? "" : "hidden"}>
@@ -61,12 +58,6 @@ export function editorMarkup(world: World | undefined, indexingOpen: boolean | u
     <ul id="world-books" class="book-list"></ul>
     <p id="world-error" class="inline-error" role="alert" hidden></p>
   </form>`;
-}
-
-export function showBoundaryWarning() {
-  const size = element<HTMLInputElement>("world-chunk-size").valueAsNumber;
-  const boundary = element<HTMLInputElement>("world-boundary").valueAsNumber;
-  element("index-boundary-warning").hidden = !(size > 0 && boundary >= size);
 }
 
 export function renderBooks(books: EditableBook[], world: World | undefined) {
@@ -139,7 +130,7 @@ export function renderIndex(world: World | undefined, books: EditableBook[], bus
   const locked = world && status !== "unindexed";
   element("index-lock").hidden = !locked;
   element<HTMLSelectElement>("world-model").disabled = Boolean(locked || busy);
-  for (const id of ["world-chunk-size", "world-boundary"]) element<HTMLInputElement>(id).readOnly = Boolean(locked || busy);
+  element<HTMLInputElement>("world-chunk-size").readOnly = Boolean(locked || busy);
   element("book-upload").hidden = processing(world);
   element<HTMLButtonElement>("add-world-books").disabled = busy;
   element<HTMLInputElement>("world-books-input").disabled = processing(world) || busy;
@@ -151,7 +142,6 @@ export function renderIndex(world: World | undefined, books: EditableBook[], bus
     renderWorldProgress(world);
   }
   renderBooks(books, world);
-  showBoundaryWarning();
 }
 
 export function upload(settings: object, books: EditableBook[], picture?: File) {

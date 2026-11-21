@@ -4,7 +4,7 @@ import { prepareBooks } from "../server/books.js";
 
 test("TXT chunks preserve CRLF, Unicode character positions and original bytes", async () => {
   const original = Buffer.from("\uFEFFaé\r\n📕b\r\nc", "utf8");
-  const [book] = await prepareBooks([{ name: "Book", filename: "book.TXT", original }], 3, 2);
+  const [book] = await prepareBooks([{ name: "Book", filename: "book.TXT", original }], 3);
   equal(book.working, "aé\n📕b\nc");
   equal(book.bomSize, 3);
   equal(book.original, original);
@@ -16,10 +16,10 @@ test("TXT chunks preserve CRLF, Unicode character positions and original bytes",
 });
 
 test("chunking prefers paragraphs over nearer punctuation and rejects malformed TXT", async () => {
-  const [book] = await prepareBooks([{ name: "Book", filename: "book.txt", original: Buffer.from("A.\n\nB. C. D.") }], 10, 7);
-  equal(book.chunks[0].end, 4);
+  const [book] = await prepareBooks([{ name: "Book", filename: "book.txt", original: Buffer.from("aaaaaaa\n\n. continued") }], 10);
+  equal(book.chunks[0].end, 9);
   for (const original of [Buffer.from(" \n"), Buffer.from([0xf5]), Buffer.from([0, 65])]) {
-    await rejects(prepareBooks([{ name: "Book", filename: "book.txt", original }], 10, 1), /book.txt/);
+    await rejects(prepareBooks([{ name: "Book", filename: "book.txt", original }], 10), /book.txt/);
   }
-  await rejects(prepareBooks([{ name: "Book", filename: "../book.txt", original: Buffer.from("text") }], 10, 1), /without a directory/);
+  await rejects(prepareBooks([{ name: "Book", filename: "../book.txt", original: Buffer.from("text") }], 10), /without a directory/);
 });

@@ -1,19 +1,19 @@
 import type { DatabaseSync } from "node:sqlite";
 import { setImmediate as yieldToServer } from "node:timers/promises";
 import type { Book, World, WorldSettings } from "../shared/types.js";
-import { DEFAULT_BOUNDARY_SEARCH, DEFAULT_CHUNK_SIZE, decode, normalizeLines, prepareBooks, type BookInput, type PreparedBook } from "./books.js";
+import { DEFAULT_CHUNK_SIZE, decode, normalizeLines, prepareBooks, type BookInput, type PreparedBook } from "./books.js";
 import { all, get, run, saveSelection, selectedKeys, transaction } from "./database.js";
 import { EMBEDDING_MODEL, EMBEDDING_MODELS, encodeVector, tokenBody, type GeminiClient } from "./gemini.js";
 import { ProviderKeys } from "./keys.js";
 import { identifier, makeId, RequestError, requiredText, whole } from "./validation.js";
 
 export type WorldRow = Pick<World, "id" | "name" | "status" | "model" | "dimensions" | "max_token_limit"
-  | "max_chunk_size" | "boundary_search_distance" | "book_revision"> & { index_number: number };
+  | "max_chunk_size" | "book_revision"> & { index_number: number };
 type StoredBook = BookInput & { id: string; number: number; working: string; encoding: string; bom_size: number };
 export type Artwork = { content_type: string; image: Uint8Array };
 type IndexJob = { worldId: string; bookNumber: number; controller: AbortController };
 
-const worldColumns = "id, name, status, model, dimensions, max_token_limit, max_chunk_size, boundary_search_distance, book_revision, index_number";
+const worldColumns = "id, name, status, model, dimensions, max_token_limit, max_chunk_size, book_revision, index_number";
 const activeStatuses = new Set(["creating", "pausing"]);
 const TITLE_LIMIT = 100;
 
@@ -75,7 +75,6 @@ export class Worlds {
       name: requiredText(input.name, "Enter a World name up to 100 characters.", TITLE_LIMIT),
       model, key_ids: this.keys.validate(input.key_ids ?? [], requireKeys),
       max_chunk_size: whole(input.max_chunk_size ?? DEFAULT_CHUNK_SIZE, 1, "Enter a positive whole chunk size."),
-      boundary_search_distance: whole(input.boundary_search_distance ?? DEFAULT_BOUNDARY_SEARCH, 0, "Enter a nonnegative whole boundary search."),
     };
   }
 
@@ -104,15 +103,15 @@ export class Worlds {
     if (existing) return this.detail(id);
     const settings = this.settings(input, !!books.length);
     const spec = EMBEDDING_MODELS.find(model => model.id === settings.model)!;
-    const prepared = await prepareBooks(books, settings.max_chunk_size, settings.boundary_search_distance);
+    const prepared = await prepareBooks(books, settings.max_chunk_size);
     if (get(this.db, "SELECT 1 FROM worlds WHERE id = ? AND status <> 'draft'", id)) return this.detail(id);
     this.keys.validate(settings.key_ids, !!books.length);
     transaction(this.db, () => {
       run(this.db, `
-        INSERT INTO worlds (id, name, status, model, dimensions, max_token_limit, max_chunk_size, boundary_search_distance)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO worlds (id, name, status, model, dimensions, max_token_limit, max_chunk_size)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
       `, id, settings.name, books.length ? "creating" : "unindexed", settings.model, spec.dimensions,
-      spec.max_token_limit, settings.max_chunk_size, settings.boundary_search_distance);
+      spec.max_token_limit, settings.max_chunk_size);
       saveSelection(this.db, "world_embedding_keys", id, settings.key_ids);
       saveSelection(this.db, "world_retrieval_keys", id, settings.key_ids);
       if (books.length) this.keys.remember(settings.model, settings.key_ids);
@@ -137,7 +136,7 @@ export class Worlds {
   async append(id: string, revision: unknown, books: BookInput[]) {
     if (!books.length) throw new RequestError("Select at least one TXT book.");
     const world = this.editable(id, this.requireRevision(revision));
-    const prepared = await prepareBooks(books, world.max_chunk_size, world.boundary_search_distance);
+    const prepared = await prepareBooks(books, world.max_chunk_size);
     this.editable(id, revision);
     transaction(this.db, () => {
       const { next } = get<{ next: number }>(this.db, "SELECT coalesce(max(number), 0) + 1 AS next FROM books WHERE world_id = ?", id)!;
@@ -212,14 +211,14 @@ export class Worlds {
     const model = EMBEDDING_MODELS.find(item => item.id === settings.model)!;
     const books = start ? all<StoredBook>(this.db, "SELECT * FROM books WHERE world_id = ? ORDER BY number", id) : [];
     if (start && !books.length) throw new RequestError("Add a TXT book before starting indexing.");
-    const prepared = await prepareBooks(books, settings.max_chunk_size, settings.boundary_search_distance);
+    const prepared = await prepareBooks(books, settings.max_chunk_size);
     this.editable(id, input.book_revision);
     this.keys.validate(settings.key_ids, start);
     transaction(this.db, () => {
       run(this.db, `
         UPDATE worlds SET model = ?, dimensions = ?, max_token_limit = ?, max_chunk_size = ?,
-          boundary_search_distance = ?, status = ?, error = NULL, book_revision = book_revision + 1 WHERE id = ?
-      `, model.id, model.dimensions, model.max_token_limit, settings.max_chunk_size, settings.boundary_search_distance,
+          status = ?, error = NULL, book_revision = book_revision + 1 WHERE id = ?
+      `, model.id, model.dimensions, model.max_token_limit, settings.max_chunk_size,
       start ? "creating" : "unindexed", id);
       saveSelection(this.db, "world_embedding_keys", id, settings.key_ids);
       if (start) {

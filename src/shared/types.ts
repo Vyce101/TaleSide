@@ -2,7 +2,7 @@ export type WorldStatus = "unindexed" | "creating" | "pausing" | "paused" | "fai
 export type Book = { id: string; number: number; name: string; filename: string; total_chunks: number; embedded_chunks: number };
 export type World = {
   id: string; name: string; status: WorldStatus; model: string; dimensions: number; max_token_limit: number;
-  max_chunk_size: number; boundary_search_distance: number; book_revision: number; artwork: string | null;
+  max_chunk_size: number; book_revision: number; artwork: string | null;
   progress: number; total_chunks: number; embedded_chunks: number; active_book: number | null; can_play: boolean;
   embedding_key_ids: string[]; retrieval_key_ids: string[]; books: Book[];
 };
@@ -30,4 +30,4 @@ export type GenerationEvent = { type: "accepted"; tale: Tale; user: Message; ass
   | { type: "thinking"; text: string; thinking_ms: number }
   | { type: "done"; message: Message; error?: string };
 export type WorldSettings = { name: string; model: string; key_ids: string[];
-  max_chunk_size: number; boundary_search_distance: number };
+  max_chunk_size: number };

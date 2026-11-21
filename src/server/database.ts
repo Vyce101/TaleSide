@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
 import { backup, DatabaseSync, type SQLInputValue } from "node:sqlite";
+import { installTaleSearch } from "./tale-search.js";
 
 const booksSchema = `
 CREATE TABLE IF NOT EXISTS books (
@@ -36,7 +37,7 @@ CREATE TABLE IF NOT EXISTS embedding_defaults (
 CREATE TABLE IF NOT EXISTS worlds (
   id TEXT PRIMARY KEY, name TEXT NOT NULL, status TEXT NOT NULL, model TEXT NOT NULL,
   dimensions INTEGER NOT NULL, max_token_limit INTEGER NOT NULL, max_chunk_size INTEGER NOT NULL,
-  boundary_search_distance INTEGER NOT NULL, key_id TEXT REFERENCES provider_keys ON DELETE SET NULL,
+  key_id TEXT REFERENCES provider_keys ON DELETE SET NULL,
   retrieval_key_id TEXT REFERENCES provider_keys ON DELETE SET NULL, error TEXT,
   index_number INTEGER NOT NULL DEFAULT 1, book_revision INTEGER NOT NULL DEFAULT 0,
   last_tale_activity_at REAL
@@ -116,7 +117,7 @@ function columns(db: DatabaseSync, table: string) {
   return new Set(all<{ name: string }>(db, `PRAGMA table_info(${table})`).map(column => column.name));
 }
 
-function migrate(db: DatabaseSync, version: number) {
+function migrateLegacy(db: DatabaseSync, version: number) {
   db.exec(schema);
   const world = columns(db, "worlds");
   const requiredWorldColumns = {
@@ -168,23 +169,31 @@ function migrate(db: DatabaseSync, version: number) {
         previous_token_limit = NULL, previous_chunk_size = NULL, reindexing = 0;
     `);
   }
-  db.exec("PRAGMA user_version = 2");
+
 }
+
+const DATABASE_VERSION = 3;
 
 export async function openDatabase(path: string, onBackup?: () => void) {
   const existing = path !== ":memory:" && existsSync(path);
   const db = new DatabaseSync(path, { timeout: 5000 });
   try {
     const version = get<{ user_version: number }>(db, "PRAGMA user_version")!.user_version;
-    if (version > 2) throw new Error("Update TaleSide to a version that supports this database.");
-    if (existing && version < 2) {
+    if (version > DATABASE_VERSION) throw new Error("Update TaleSide to a version that supports this database.");
+    if (existing && version < DATABASE_VERSION) {
       onBackup?.();
       const stamp = new Date().toISOString().replaceAll(":", "-");
       await backup(db, `${path}.before-node-${stamp}.bak`);
     }
     db.exec("PRAGMA journal_mode = WAL");
     transaction(db, () => {
-      if (version < 2) migrate(db, version);
+      if (version < 2) migrateLegacy(db, version);
+      if (version < 3) {
+        if (columns(db, "worlds").has("boundary_search_distance")) db.exec("ALTER TABLE worlds DROP COLUMN boundary_search_distance");
+        db.exec("ALTER TABLE tale_messages ADD COLUMN error TEXT");
+        installTaleSearch(db);
+        db.exec("PRAGMA user_version = 3");
+      }
       db.exec(`
         UPDATE worlds SET status = 'paused' WHERE status IN ('creating', 'pausing');
         UPDATE tale_messages SET status = 'error' WHERE status = 'generating';

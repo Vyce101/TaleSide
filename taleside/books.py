@@ -6,8 +6,6 @@ from bisect import bisect_left
 from dataclasses import dataclass
 from pathlib import PureWindowsPath
 
-MAX_CHUNK_SIZE = 8000
-BOUNDARY_SEARCH_DISTANCE = 1000
 BOUNDARIES = (
     re.compile(r"\n(?:[^\S\n]*\n)+"),
     re.compile(r"\n"),
@@ -53,7 +51,8 @@ def normalize_lines(text):
     return text.replace("\r\n", "\n").replace("\r", "\n")
 
 
-def chunk_end(text, start, max_size, search_distance):
+def chunk_end(text, start, max_size):
+    search_distance = max_size // 10
     limit = min(start + max_size, len(text))
     if limit == len(text) or not search_distance:
         return limit
@@ -68,7 +67,7 @@ def chunk_end(text, start, max_size, search_distance):
     return limit
 
 
-def prepare_txt(source, max_size, search_distance):
+def prepare_book(source, max_size):
     if not source.filename or PureWindowsPath(source.filename).name != source.filename:
         raise ValueError("Supply a filename without a directory for each book.")
     if PureWindowsPath(source.filename).suffix.lower() != ".txt":
@@ -88,7 +87,7 @@ def prepare_txt(source, max_size, search_distance):
     chunks = []
     start, source_start = 0, bom_size
     while start < len(working):
-        end = chunk_end(working, start, max_size, search_distance)
+        end = chunk_end(working, start, max_size)
         crlf_count = bisect_left(crlf_positions, end) - bisect_left(crlf_positions, start)
         source_end = source_start + len(working[start:end].encode(encoding)) + crlf_count * carriage_return_size
         chunks.append(Chunk(start, end, source_start, source_end))
