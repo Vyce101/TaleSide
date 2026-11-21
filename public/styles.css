@@ -352,7 +352,7 @@ h1, h2, h3 { font-weight: 650; }
   grid-template-columns: 50px minmax(0, 1fr);
   column-gap: 10px;
   align-items: start;
-  padding: 10px 12px 13px 10px;
+  padding: 10px 38px 13px 10px;
   border: 1px solid #0d110e;
   border-radius: 8px;
   background: var(--message-surface);
@@ -942,14 +942,41 @@ dialog label input { display: block; margin-top: 5px; }
 .turn .prose pre { overflow-x: auto; }
 .turn .prose code, .thinking-block code { overflow-wrap: anywhere; }
 .turn .prose a, .thinking-block a { color: var(--mint); }
+
+
+.turn-actions { display: flex; margin-left: auto; align-self: center; opacity: 0; }
+.turn:hover .turn-actions, .turn:focus-within .turn-actions, .turn[data-final] .turn-actions { opacity: 1; }
+.turn-actions[inert] { visibility: hidden; }
+.turn-actions .icon-button, #opening-controls .icon-button {
+  inline-size: 29px; min-height: 29px; padding: 4px; color: var(--muted);
+}
+.turn-actions .icon-button:hover { color: var(--cream); }
+.turn-actions svg { width: 16px; height: 16px; }
+.turn[data-swipable] { position: relative; }
+.turn[data-swipable] > [data-action="previous-swipe"], .swipe-right {
+  position: absolute;
+  inset-block-end: 4px;
+  display: grid;
+  justify-items: center;
+  width: 33px;
+}
+.turn[data-swipable] > [data-action="previous-swipe"] { inset-inline-start: 8px; inset-block-end: 16px; }
+.turn:has(> [data-action="previous-swipe"]:not([hidden])) .turn-rail { padding-bottom: 30px; }
+.swipe-right { inset-inline-end: 3px; }
+.swipe-right button, .turn[data-swipable] > [data-action="previous-swipe"] {
+  width: 33px; height: 27px; padding: 2px;
+}
+.swipe-right button svg, .turn[data-swipable] > [data-action="previous-swipe"] svg { width: 21px; height: 21px; }
+.swipe-counter { color: var(--muted); font-size: 11px; line-height: 1; font-variant-numeric: tabular-nums; }
+.reply-time { font-variant-numeric: tabular-nums; }
 #world-description, #world-opening, #prompt-text, #persona-description {
   width: 100%; resize: vertical;
 }
 .opening-heading { display: flex; justify-content: space-between; align-items: center; }
 #opening-controls { display: flex; align-items: center; color: var(--muted); font-size: 13px; }
-#prompt-list, #persona-list { list-style: none; padding: 0; margin: 0; display: grid; gap: 5px; }
 #prompt-dialog { width: min(720px, calc(100vw - 28px)); }
 #prompt-form { display: grid; gap: 8px; }
+#prompt-list, #persona-list { list-style: none; padding: 0; margin: 0; display: grid; gap: 5px; }
 .prompt-tools {
   display: flex; align-items: center; justify-content: space-between;
   margin: 5px 0; padding: 3px 0;
@@ -1007,6 +1034,7 @@ dialog label input { display: block; margin-top: 5px; }
 .persona-fields > div { flex: 1; min-width: 0; }
 .persona-fields input:not([type="file"]) { width: 100%; }
 #persona-editor label { display: block; }
+#app-settings-error:empty { display: none; }
 @media (width < 520px) {
   .persona-select .avatar { width: 34px; height: 34px; }
   .persona-select { gap: 4px; padding: 5px; }
@@ -1014,14 +1042,15 @@ dialog label input { display: block; margin-top: 5px; }
   .persona-heading strong { font-size: 14px; }
   .persona-heading small { text-align: start; }
 }
+@media (hover: none) { .turn-actions { opacity: 1; } }
+
+
+@media (prefers-reduced-motion: no-preference) {
+  .toast-card { animation: toast-appear 180ms ease-out; }
+  @keyframes toast-appear { from { opacity: 0; } }
+}
 .persona-defaults { display: flex; flex-wrap: wrap; gap: 6px; margin: 9px 0 0; padding: 0; border: 0; min-width: 0; }
 .persona-defaults legend { padding: 0; margin-bottom: 5px; color: var(--muted); font-size: 12px; }
 .persona-defaults button { display: inline-flex; align-items: center; gap: 5px; background: #252925; color: var(--muted); }
 .persona-defaults button[aria-pressed="true"] { background: #294938; border-color: #578e6f; color: var(--mint); }
 .persona-defaults svg { width: 15px; height: 15px; }
-.reply-time { font-variant-numeric: tabular-nums; }
-@media (prefers-reduced-motion: no-preference) {
-  .toast-card { animation: toast-appear 180ms ease-out; }
-  @keyframes toast-appear { from { opacity: 0; } }
-}
-#app-settings-error:empty { display: none; }

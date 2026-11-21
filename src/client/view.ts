@@ -25,9 +25,9 @@ const iconPaths = {
   gear: '<path class="solid" fill-rule="evenodd" d="m10 2-1 3-2 .8-2.8-1.1-2 2.6 1.8 2.3-.3 2.1L1 13v3l3 .6 1.2 1.7-.3 2.7 3 1.3 1.9-2.2h2.1l2.1 2.2 2.9-1.3-.3-2.8 1.3-1.7 3-.6v-3l-2.7-1.4-.3-2.1 1.8-2.3-2-2.6L15 5.7l-2-.8L12 2Zm1 6.4a3.6 3.6 0 1 0 0 7.2 3.6 3.6 0 0 0 0-7.2Z"/>',
   model: '<path class="solid" d="M10.5 2c1 5.1 3.1 7.4 8.5 8.5-5.4 1.1-7.5 3.4-8.5 8.5-1.1-5.1-3.4-7.4-8.5-8.5 5.1-1.1 7.4-3.4 8.5-8.5Zm8.7 12.1c.5 2.5 1.5 3.5 4 4-2.5.5-3.5 1.5-4 4-.5-2.5-1.5-3.5-4-4 2.5-.5 3.5-1.5 4-4Z"/>',
   save: '<path class="solid" fill-rule="evenodd" d="M4 2h12l5 5v13a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Zm2 2v5h10V4H6Zm0 10v6h12v-6H6Z"/>',
+  personas: '<circle cx="9" cy="7" r="3"/><path d="M3 20v-2a6 6 0 0 1 12 0v2m2-16a3 3 0 0 1 0 6m1 4a5 5 0 0 1 3 5"/>',
   left: '<path d="m15 5-7 7 7 7"/>',
   right: '<path d="m9 5 7 7-7 7"/>',
-  personas: '<circle cx="9" cy="7" r="3"/><path d="M3 20v-2a6 6 0 0 1 12 0v2m2-16a3 3 0 0 1 0 6m1 4a5 5 0 0 1 3 5"/>',
   search: '<circle cx="10" cy="10" r="6"/><path d="m15 15 5 5"/>',
   star: '<path d="m12 3 3 6 7 .9-5 4.6 1 6.5-6-3.2L6 21l1-6.5-5-4.6L9 9Z"/>',
   globe: '<circle cx="12" cy="12" r="9"/><ellipse cx="12" cy="12" rx="4" ry="9"/><path d="M3 12h18"/>',
@@ -197,13 +197,27 @@ export function worldIndexStatus(world: World) {
   }
 }
 
-export function messageTurn(message: Message, world: World) {
+export function messageTurn(message: Message, world: World, last = false, canRegenerate = false, busy = false, draft = false) {
   const player = message.role === "user";
   const thinking = message.status === "generating" && !message.content;
   const role = player ? "player" : "narrator";
   const model = escapeHtml(message.model ?? "");
   const time = message.elapsed_ms === null ? (message.status === "generating" ? "0s" : "") : formatDuration(message.elapsed_ms);
-  return `<article class="turn ${role}" data-message="${message.id}">
+  const count = message.swipes?.length ?? 1;
+  const position = message.swipe ?? 0;
+  const pendingActions = draft || message.id < 0;
+  const disabled = busy ? "disabled" : "";
+  const actions = `<div class="turn-actions" ${pendingActions ? "inert" : ""}>
+    ${canRegenerate ? iconButton("regenerate-turn", "replace", "Regenerate", disabled) : ""}
+  </div>`;
+  const swipable = last && !player && (message.opening ? count > 1 : canRegenerate);
+  const previous = swipable ? iconButton("previous-swipe", "left", "Previous swipe",
+    !message.opening && position === 0 ? "hidden" : busy ? "disabled" : "") : "";
+  const next = swipable ? `<div class="swipe-right">
+    ${iconButton("next-swipe", "right", !message.opening && position === count - 1 ? "New swipe" : "Next swipe", disabled)}
+    <span class="swipe-counter">${position + 1}/${count}</span>
+  </div>` : "";
+  return `<article class="turn ${role}" data-message="${message.id}" ${last ? "data-final" : ""} ${swipable ? "data-swipable" : ""}>
     <div class="turn-rail">
       ${avatar(player ? message.player_name ? { artwork: message.player_artwork ?? null } : undefined : world)}
       ${time ? `<span class="reply-time" data-tooltip="Time to finished response">${time}</span>` : ""}
@@ -212,16 +226,22 @@ export function messageTurn(message: Message, world: World) {
       <header>
         <strong>${player ? escapeHtml(message.player_name ?? "You") : escapeHtml(world.name)}</strong>
         ${model ? `<span class="model-badge" role="img" tabindex="0" aria-label="Model: ${model}" data-tooltip="${model}">${icon("model")}</span>` : ""}
+        ${actions}
       </header>
       ${message.thinking ? thinkingView(message, thinking) : ""}
       <div class="prose"></div>
     </div>
+    ${previous}
+    ${next}
   </article>`;
 }
 
-export function messageRows(messages: Message[], world: World) {
-  return messages.length ? messages.map(message => messageTurn(message, world)).join("")
-    : '<p class="empty-copy">Write the first message to begin this Tale.</p>';
+export function messageRows(messages: Message[], world: World, busy = false, draft = false) {
+  const hasUser = messages.some(message => message.role === "user");
+  return messages.length ? messages.map((message, index) => {
+    const last = index === messages.length - 1;
+    return messageTurn(message, world, last, last && (message.role === "user" || (hasUser && !message.opening)), busy, draft);
+  }).join("") : '<p class="empty-copy">Write the first message to begin this Tale.</p>';
 }
 
 export function formatDuration(ms: number) {

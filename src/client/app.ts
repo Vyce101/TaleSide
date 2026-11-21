@@ -1,6 +1,6 @@
 import { refreshPromptCounts } from "./prompts.js";
 import { currentPersona, refreshPersonas } from "./personas.js";
-import type { GenerationEvent, Message, Tale, TaleSearchResult, TaleSummary, World } from "../shared/types.js";
+import type { GenerationEvent, Message, Swipe, Tale, TaleSearchResult, TaleSummary, World } from "../shared/types.js";
 import { apiError, keySettings, loadTales, loadWorlds, newId, orderedTales, post, recentTime, removeTale,
   request, storeTale, storeWorld, taleRoute, tales, worlds } from "./data.js";
 import { element } from "./dom.js";
@@ -14,8 +14,9 @@ import { handleWorldAction, hideWorldPanel, isWorldEditorOpen, leaveWorldSetup, 
 type OpenTale = Tale & { draft?: boolean };
 type Reply = { tale: OpenTale; id: string; controller: AbortController; assistant: Message; accepted: boolean; stopping: boolean; started: number; timer?: number; frame?: number };
 let activeReply: Reply | undefined;
-let warnSignatures = true;
 let navigation = 0;
+let turnPending = false;
+let warnSignatures = true;
 const drafts = new Map<string, string>();
 
 const workspace = element("workspace");
@@ -24,8 +25,8 @@ const drawers = {
   worlds: element("worlds-drawer"),
   settings: element("settings-drawer"),
   keys: element("keys-drawer"),
-  "app-settings": element("app-settings-drawer"),
   personas: element("personas-drawer"),
+  "app-settings": element("app-settings-drawer"),
 };
 type Panel = keyof typeof drawers;
 const panelNames = { worlds: "Worlds", settings: "Tale Settings", keys: "API Keys", "app-settings": "Settings", personas: "Personas", inspector: "World Inspector" };
@@ -144,7 +145,7 @@ function renderMessages() {
   const openThoughts = new Set([...messages.querySelectorAll<HTMLDetailsElement>(".thinking-block[open]")]
     .map(block => block.dataset.thoughtFor));
   const focusedThought = document.activeElement?.closest<HTMLElement>(".thinking-block")?.dataset.thoughtFor;
-  messages.innerHTML = messageRows(tale.messages, world);
+  messages.innerHTML = messageRows(tale.messages, world, !!activeReply || turnPending, tale.draft);
   fillMessageText(messages, tale.messages);
   for (const thought of messages.querySelectorAll<HTMLDetailsElement>(".thinking-block")) {
     thought.open = openThoughts.has(thought.dataset.thoughtFor);
@@ -188,7 +189,7 @@ export function refreshComposer() {
     button.dataset.shape = shape;
     button.innerHTML = shape === "spinner" ? '<span class="composer-spinner" aria-hidden="true"></span>' : icon(shape);
   }
-  button.disabled = reply ? reply.stopping : waiting;
+  button.disabled = reply ? reply.stopping : waiting || turnPending;
   button.setAttribute("aria-label", label);
   button.dataset.tooltip = label;
 }
@@ -400,7 +401,7 @@ const taleName = element<HTMLInputElement>("tale-name");
 type DialogOptions = { confirmLabel?: string; title: string; detail?: string; initialName?: string; nameLabel?: string; danger?: boolean };
 
 export function previewDialog(options: DialogOptions, onConfirm: (name: string) => void | Promise<void>, restoreFocus?: () => void) {
-  if (taleDialog.open) return;
+  if (taleDialog.open || closingDialog) return;
   const hasName = options.initialName !== undefined;
   const confirm = element<HTMLButtonElement>("dialog-confirm");
   element("dialog-title").textContent = options.title;
@@ -415,6 +416,7 @@ export function previewDialog(options: DialogOptions, onConfirm: (name: string) 
   confirm.classList.toggle("danger-button", Boolean(options.danger));
   taleDialog.returnValue = "";
   taleDialog.addEventListener("close", async () => {
+    closingDialog = false;
     if (taleDialog.returnValue === "confirm") await onConfirm(taleName.value.trim());
     restoreFocus?.();
   }, { once: true });
@@ -469,6 +471,73 @@ function setSignatureWarning(value: boolean, checkbox = element<HTMLInputElement
     checkbox.checked = previous;
     element("app-settings-error").textContent = error instanceof Error ? error.message : String(error);
   });
+}
+
+function turnError(message: number, error: unknown) {
+  const target = document.querySelector(`[data-message="${message}"] .turn-content`);
+  if (!target) return;
+  let spot = target.querySelector(".turn-action-error");
+  if (!spot) {
+    spot = document.createElement("p");
+    spot.className = "inline-error turn-action-error";
+    spot.setAttribute("role", "alert");
+    target.append(spot);
+  }
+  spot.textContent = error instanceof Error ? error.message : String(error);
+}
+
+function focusTurn(message: number, action: string) {
+  const article = document.querySelector<HTMLElement>(`[data-message="${message}"]`);
+  const control = article?.querySelector<HTMLButtonElement>(`[data-action="${action}"]:enabled`);
+  (control ?? article?.querySelector<HTMLButtonElement>(".swipe-right button:enabled") ?? article?.querySelector<HTMLButtonElement>(".turn-actions button:enabled")
+    ?? element("message-input")).focus({ preventScroll: true });
+}
+
+async function changeTurn(tale: OpenTale, message: Message, action: string, details: object = {}) {
+  turnPending = true;
+  refreshComposer();
+  try {
+    const updated = await request<Tale>(`${taleRoute(tale)}/${action}`, { message_id: message.id, swipe: message.swipe ?? 0, ...details });
+    storeTale(updated);
+    if (state.tale === tale) {
+      Object.assign(tale, updated);
+    }
+    refreshTaleLists();
+    return true;
+  } catch (error) {
+    if (state.tale === tale) turnError(message.id, error);
+    return false;
+  } finally {
+    turnPending = false;
+    refreshComposer();
+  }
+}
+
+async function handleTurn(button: HTMLButtonElement) {
+  const tale = state.tale;
+  const article = button.closest<HTMLElement>(".turn");
+  const message = tale?.messages.find(row => row.id === Number(article?.dataset.message));
+  if (!tale || !article || !message || activeReply || turnPending) return;
+  const action = button.dataset.action!;
+  if (action === "regenerate-turn") { await sendOrStop({ message, mode: message.role === "user" ? "answer" : "regenerate" }); return; }
+  if (action !== "previous-swipe" && action !== "next-swipe") return;
+
+  const count = message.swipes?.length ?? 1;
+  const position = (message.swipe ?? 0) + (action === "previous-swipe" ? -1 : 1);
+  if (position >= count && !message.opening) {
+    await sendOrStop({ message, mode: "swipe" });
+    return;
+  }
+  const selected = (position + count) % count;
+  const keyboardSwipe = button === document.activeElement && button.matches(":focus-visible");
+  const transcript = element("transcript");
+  const offset = transcript.scrollTop;
+  if (tale.draft && message.swipes) Object.assign(message, message.swipes[selected], { swipe: selected });
+  else if (!await changeTurn(tale, message, "select-swipe", { position: selected })) return;
+  if (state.tale !== tale) return;
+  renderMessages();
+  transcript.scrollTop = offset;
+  if (keyboardSwipe) focusTurn(message.id, action);
 }
 
 function stopReply(reply: Reply, leaving = false) {
@@ -543,32 +612,52 @@ async function readReply(response: Response, consume: (event: GenerationEvent) =
   } finally { await reader.cancel().catch(() => {}); }
 }
 
-async function sendOrStop() {
+async function sendOrStop(rewrite?: { message: Message; mode: "regenerate" | "swipe" | "answer" }) {
   const { tale, world } = state;
-  if (!tale || !world) return;
-  if (activeReply) { stopReply(activeReply); return; }
+  if (!tale || !world || turnPending) return;
+  if (activeReply) { if (!rewrite) stopReply(activeReply); return; }
   const input = element<HTMLTextAreaElement>("message-input");
   const text = input.value.trim();
   const settings = currentChatSettings();
-  if (!text || !settings || element<HTMLButtonElement>("send-message").disabled) return;
+  if ((!text && !rewrite) || !settings || element<HTMLButtonElement>("send-message").disabled) return;
   const missingKeys = warnMissingKeys(world, settings);
+  if (rewrite && missingKeys) return;
+  const replacesReply = rewrite && rewrite.mode !== "answer";
   const originalDraft = input.value;
+  const previousMessages = tale.messages;
   const opening = tale.draft ? tale.messages.find(message => message.opening)?.swipe : undefined;
   const draftPlayer = currentPersona();
-  const assistant: Message = { id: -2, role: "assistant", content: "", thinking: "", model: settings.model,
-    status: "generating", elapsed_ms: null, thinking_ms: null };
-  const reply: Reply = { tale, id: newId(), controller: new AbortController(), assistant, accepted: false, stopping: false, started: performance.now() };
+  const preview: Swipe = { content: "", thinking: "", model: settings.model, status: "generating",
+    elapsed_ms: null, thinking_ms: null, error: null, has_signature: false };
+  const assistant: Message = { ...(replacesReply ? rewrite.message : {}), ...preview,
+    id: replacesReply ? rewrite.message.id : -2, role: "assistant" };
+  const reply: Reply = { tale, id: newId(), controller: new AbortController(), assistant, accepted: false,
+    stopping: false, started: performance.now() };
   activeReply = reply;
-  input.value = "";
-  drafts.delete(tale.id);
-  tale.messages.push({ id: -1, role: "user", content: text, thinking: "", model: null,
-    status: "complete", elapsed_ms: null, thinking_ms: null, player_name: draftPlayer?.name,
-    player_artwork: draftPlayer?.artwork }, ...(missingKeys ? [] : [assistant]));
-  keepReadingPosition(renderMessages);
+  if (rewrite?.mode === "swipe") {
+    const swipes = rewrite.message.swipes ?? [rewrite.message];
+    assistant.swipe = swipes.length;
+    assistant.swipes = [...swipes, preview];
+  }
+  if (replacesReply) {
+    tale.messages = [...previousMessages.slice(0, -1), assistant];
+  } else if (rewrite) {
+    tale.messages = [...previousMessages, assistant];
+  } else {
+    input.value = "";
+    drafts.delete(tale.id);
+    tale.messages = [...previousMessages, { id: -1, role: "user", content: text, thinking: "", model: null,
+      status: "complete", elapsed_ms: null, thinking_ms: null, player_name: draftPlayer?.name,
+      player_artwork: draftPlayer?.artwork }, ...(missingKeys ? [] : [assistant])];
+  }
+  keepReadingPosition(renderMessages, !rewrite);
   reply.timer = window.setInterval(() => { if (activeReply === reply) updateReplyTime(reply); }, 250);
   try {
     const response = await post(`${taleRoute(tale)}/generate`,
-      { generation_id: reply.id, content: text, title: tale.title, settings, opening: opening ?? (tale.draft ? 0 : undefined), persona_id: tale.persona_id }, { signal: reply.controller.signal });
+      { generation_id: reply.id, title: tale.title, settings, ...(rewrite
+        ? { message_id: rewrite.message.id, swipe: rewrite.message.swipe ?? 0, mode: rewrite.mode }
+        : { content: text, opening: opening ?? (tale.draft ? 0 : undefined), persona_id: tale.persona_id }) },
+      { signal: reply.controller.signal });
     if (!response.ok) throw await apiError(response);
     let finished = false;
     await readReply(response, event => {
@@ -577,7 +666,7 @@ async function sendOrStop() {
         reply.accepted = true;
         reply.assistant = tale.messages.find(message => message.id === event.assistant.id)!;
         storeTale(event.tale);
-        if (state.tale === tale && activeReply === reply) keepReadingPosition(renderMessages);
+        if (state.tale === tale && activeReply === reply) keepReadingPosition(renderMessages, !rewrite);
         if (reply.stopping && !reply.controller.signal.aborted) stopReply(reply);
       } else if (event.type === "saved") {
         finished = true;
@@ -604,9 +693,11 @@ async function sendOrStop() {
   } catch (error) {
     if (!reply.stopping && !reply.controller.signal.aborted && state.tale === tale) showToast(error);
     if (!reply.accepted) {
-      tale.messages = tale.messages.filter(message => message.id !== -1);
-      if (!drafts.has(tale.id)) drafts.set(tale.id, originalDraft);
-      if (state.tale === tale && !input.value) input.value = originalDraft;
+      tale.messages = previousMessages;
+      if (!rewrite) {
+        if (!drafts.has(tale.id)) drafts.set(tale.id, originalDraft);
+        if (state.tale === tale && !input.value) input.value = originalDraft;
+      }
     }
   } finally {
     window.clearInterval(reply.timer);
@@ -614,12 +705,7 @@ async function sendOrStop() {
     if (reply.frame !== undefined) cancelAnimationFrame(reply.frame);
     if (activeReply === reply) {
       activeReply = undefined;
-      if (state.tale === tale) {
-        if (reply.accepted) {
-          keepReadingPosition(() => updateReplyTurn(reply));
-          refreshComposer();
-        } else keepReadingPosition(renderMessages);
-      }
+      if (state.tale === tale) keepReadingPosition(renderMessages, !rewrite);
     }
     if (reply.accepted || reply.controller.signal.aborted) {
       void loadTales().then(refreshTaleLists, error => showToast(error));
@@ -677,7 +763,6 @@ function closeTaleDialog(value = "cancel") {
   const close = () => {
     taleDialog.close(value);
     taleDialog.removeAttribute("data-closing");
-    closingDialog = false;
     motion?.cancel();
   };
   if (motion) motion.onfinish = close;
@@ -748,6 +833,7 @@ document.addEventListener("click", event => {
   const button = event.target.closest<HTMLButtonElement>("button[data-action]");
   if (!button) return;
   const { action, id } = button.dataset;
+  if (button.closest(".turn")) { void handleTurn(button); return; }
   const tale = id && state.tale?.id === id ? state.tale : tales.find(entry => entry.id === id) ?? searchResults.find(entry => entry.id === id);
   switch (action) {
     case "open-world": {
