@@ -180,15 +180,13 @@ export function refreshComposer() {
     composer.removeAttribute("aria-label");
     composer.removeAttribute("tabindex");
   }
-  const settings = currentChatSettings();
-  const canSend = settings?.chat_key_ids.length && world.retrieval_key_ids.some(id => keySettings.keys.some(key => key.id === id));
   const label = reply ? (reply.stopping ? "Stopping reply" : "Stop reply") : reason || "Send message";
   const shape = reply ? "stop" : reason && pendingIndex ? "spinner" : "send";
   if (button.dataset.shape !== shape) {
     button.dataset.shape = shape;
     button.innerHTML = shape === "spinner" ? '<span class="composer-spinner" aria-hidden="true"></span>' : icon(shape);
   }
-  button.disabled = reply ? reply.stopping : waiting || !canSend;
+  button.disabled = reply ? reply.stopping : waiting;
   button.setAttribute("aria-label", label);
   button.dataset.tooltip = label;
 }
@@ -309,11 +307,22 @@ async function openTale(world: World, tale: TaleSummary | undefined, inSidebar: 
       : tale ? await request<Tale>(taleRoute(tale)) : draftTale(world);
     if (navigation !== revision) return;
     const currentWorld = worlds.find(item => item.id === world.id) ?? world;
+    warnMissingKeys(currentWorld);
     if (inSidebar) {
       if (state.world?.id !== currentWorld.id || !state.tale) setWorkspace(currentWorld, selected);
       if (state.panel === "worlds") openWorldEditor(currentWorld);
     } else navigate(currentWorld, selected);
   } catch (error) { if (navigation === revision) showToast(error); }
+}
+
+function warnMissingKeys(world: World, settings = currentChatSettings()) {
+  if (!settings) return true;
+  const missingChat = settings.chat_key_ids.length === 0;
+  const missingRetrieval = settings.prompts.some(block => block.kind === "retrieved_passages" && block.enabled)
+    && !world.retrieval_key_ids.some(id => keySettings.keys.some(key => key.id === id));
+  if (missingRetrieval) showToast(`Select a retrieval key for “${world.name}” in Tale Settings.`);
+  if (missingChat) showToast("Select a chat key in Tale Settings.");
+  return missingRetrieval || missingChat;
 }
 
 export function enterWorld(world: World) {
@@ -529,6 +538,7 @@ async function sendOrStop() {
   const text = input.value.trim();
   const settings = currentChatSettings();
   if (!text || !settings || element<HTMLButtonElement>("send-message").disabled) return;
+  const missingKeys = warnMissingKeys(world, settings);
   const originalDraft = input.value;
   const opening = tale.draft ? tale.messages.find(message => message.opening)?.swipe : undefined;
   const draftPlayer = currentPersona();
@@ -540,7 +550,7 @@ async function sendOrStop() {
   drafts.delete(tale.id);
   tale.messages.push({ id: -1, role: "user", content: text, thinking: "", model: null,
     status: "complete", elapsed_ms: null, thinking_ms: null, player_name: draftPlayer?.name,
-    player_artwork: draftPlayer?.artwork }, assistant);
+    player_artwork: draftPlayer?.artwork }, ...(missingKeys ? [] : [assistant]));
   keepReadingPosition(renderMessages);
   reply.timer = window.setInterval(() => { if (activeReply === reply) updateReplyTime(reply); }, 250);
   try {
@@ -556,6 +566,11 @@ async function sendOrStop() {
         storeTale(event.tale);
         if (state.tale === tale && activeReply === reply) keepReadingPosition(renderMessages);
         if (reply.stopping && !reply.controller.signal.aborted) stopReply(reply);
+      } else if (event.type === "saved") {
+        finished = true;
+        reply.accepted = true;
+        Object.assign(tale, event.tale, { draft: false });
+        storeTale(event.tale);
       } else if (event.type === "done") {
         finished = true;
         Object.assign(reply.assistant, event.message);
