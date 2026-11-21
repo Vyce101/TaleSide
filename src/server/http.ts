@@ -204,6 +204,7 @@ export async function createApplication(databasePath: string, options: Options =
           }
           const input = await readJson(request);
           switch (action) {
+            case "story": return json(response, worlds.saveStory(id, input));
             case "start-index": return json(response, await worlds.saveSettings(id, input, true));
             case "index-settings": return json(response, await worlds.saveSettings(id, input, false));
             case "clear-index": return json(response, worlds.clearIndex(id));

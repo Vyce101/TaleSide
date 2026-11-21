@@ -48,6 +48,13 @@ export function editorMarkup(world: World | undefined, indexingOpen: boolean | u
         <ul id="world-progress-books"></ul>
       </div>
     </details>
+    <label for="world-description">World description</label>
+    <textarea id="world-description" rows="4"></textarea>
+    <div class="opening-heading">
+      <label for="world-opening">First Message</label>
+      <div id="opening-controls"></div>
+    </div>
+    <textarea id="world-opening" rows="6"></textarea>
     <div class="books-heading">
       <h3>Books</h3>
       <div class="book-heading-actions">

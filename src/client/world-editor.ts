@@ -1,3 +1,4 @@
+import { FIRST_MESSAGE, WORLD_DESCRIPTION } from "../shared/story-defaults.js";
 import type { World, WorldSettings } from "../shared/types.js";
 import { enterWorld, navigate, previewDialog, state, showPanel, updateWorld } from "./app.js";
 import { keySettings, newId, removeWorld, request, worldRoute, worlds } from "./data.js";
@@ -8,7 +9,7 @@ import { renderKeyPicker } from "./key-picker.js";
 import { avatar, iconButton, searchInput, worldRows } from "./view.js";
 import { editorMarkup, processing, renderBooks, renderIndex, renderWorldProgress, upload, type EditableBook } from "./world-form.js";
 
-type Editor = { id: string; world?: World; books: EditableBook[]; keyIds: string[]; artwork?: File;
+type Editor = { description: string; openings: string[]; id: string; world?: World; books: EditableBook[]; keyIds: string[]; artwork?: File;
   pendingPortrait?: string; dirty: boolean; busy: boolean; settingsSave?: Promise<void> };
 
 let editor: Editor | undefined;
@@ -93,11 +94,12 @@ export function openWorldEditor(world?: World) {
   closeWorldEditor();
   const form: Editor = {
     id: world?.id ?? newId(), world, books: world?.books ?? [], keyIds: world?.embedding_key_ids ?? keySettings.defaults.key_ids,
-    dirty: false, busy: false,
+    dirty: false, busy: false, description: world?.description ?? WORLD_DESCRIPTION, openings: [...(world?.openings ?? [FIRST_MESSAGE])],
   };
   editor = form;
   element("panel-title").textContent = world?.name ?? "New World";
   element("world-panel").innerHTML = editorMarkup(world, indexingOpen);
+  bindWorldStory(form);
   const model = element<HTMLSelectElement>("world-model");
   const selected = world && world.status !== "unindexed" ? world.model : keySettings.defaults.model;
   model.replaceChildren(...keySettings.models.map(item => new Option(item.id, item.id)));
@@ -174,6 +176,62 @@ export function openWorldEditor(world?: World) {
   (world ? element("world-list-button") : name).focus({ preventScroll: true });
 }
 
+function bindWorldStory(form: Editor) {
+  const description = element<HTMLTextAreaElement>("world-description");
+  const opening = element<HTMLTextAreaElement>("world-opening");
+  const controls = element("opening-controls");
+  let selected = 0;
+  let pending = Promise.resolve();
+  let saveTimer: number | undefined;
+  description.value = form.description;
+  const save = () => {
+    window.clearTimeout(saveTimer);
+    markDirty(form);
+    if (!form.world) return;
+    const body = { description: form.description, openings: [...form.openings] };
+    pending = pending.then(async () => {
+      try { updateWorld(await request<World>(`${worldRoute(form.id)}/story`, body)); }
+      catch (error) { if (editor === form) showDrawerError("world-error", error); }
+    });
+  };
+  const paint = () => {
+    opening.value = form.openings[selected];
+    controls.innerHTML = [
+      iconButton("opening-back", "left", "Previous First Message", selected === 0 ? "disabled" : ""),
+      `<span>${selected + 1}/${form.openings.length}</span>`,
+      iconButton("opening-next", "right", "Next First Message"),
+      iconButton("opening-delete", "delete", "Delete First Message"),
+    ].join("");
+  };
+  description.addEventListener("input", () => { form.description = description.value; markDirty(form); });
+  opening.addEventListener("input", () => {
+    form.openings[selected] = opening.value;
+    markDirty(form);
+    if (!form.world) return;
+    window.clearTimeout(saveTimer);
+    saveTimer = window.setTimeout(save, 250);
+  });
+  description.addEventListener("change", save);
+  opening.addEventListener("change", save);
+  controls.addEventListener("click", event => {
+    const action = (event.target as Element).closest("button")?.dataset.action;
+    if (action === "opening-back" && selected > 0) selected--;
+    if (action === "opening-next") {
+      selected++;
+      if (selected === form.openings.length) { form.openings.push(""); save(); }
+    }
+    if (action === "opening-delete") {
+      if (form.openings.length === 1) form.openings[0] = "";
+      else form.openings.splice(selected, 1);
+      selected = Math.min(selected, form.openings.length - 1);
+      save();
+    }
+    paint();
+    controls.querySelector<HTMLButtonElement>(`[data-action="${action}"]:enabled`)?.focus();
+  });
+  paint();
+}
+
 async function changeArtwork(form: Editor, file: File) {
   if (form.world) {
     const body = new FormData();
@@ -245,7 +303,7 @@ async function saveWorld(form: Editor) {
     await act(form, "start-index", { ...settings, book_revision: form.world.book_revision });
     return;
   }
-  const result = await act(form, "create", upload(settings, form.books, form.artwork));
+  const result = await act(form, "create", upload({ ...settings, description: form.description, openings: form.openings }, form.books, form.artwork));
   if (!result) return;
   closeWorldEditor();
   await enterWorld(result);

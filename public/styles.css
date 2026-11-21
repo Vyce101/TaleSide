@@ -941,3 +941,8 @@ dialog label input { display: block; margin-top: 5px; }
 .turn .prose pre { overflow-x: auto; }
 .turn .prose code, .thinking-block code { overflow-wrap: anywhere; }
 .turn .prose a, .thinking-block a { color: var(--mint); }
+#world-description, #world-opening {
+  width: 100%; resize: vertical;
+}
+.opening-heading { display: flex; justify-content: space-between; align-items: center; }
+#opening-controls { display: flex; align-items: center; color: var(--muted); font-size: 13px; }

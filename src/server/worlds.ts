@@ -1,3 +1,4 @@
+import { FIRST_MESSAGE, WORLD_DESCRIPTION } from "../shared/story-defaults.js";
 import type { DatabaseSync } from "node:sqlite";
 import { setImmediate as yieldToServer } from "node:timers/promises";
 import type { Book, World, WorldSettings } from "../shared/types.js";
@@ -8,12 +9,12 @@ import { ProviderKeys } from "./keys.js";
 import { identifier, makeId, RequestError, requiredText, whole } from "./validation.js";
 
 export type WorldRow = Pick<World, "id" | "name" | "status" | "model" | "dimensions" | "max_token_limit"
-  | "max_chunk_size" | "book_revision" | "error"> & { index_number: number };
+  | "max_chunk_size" | "book_revision" | "error"> & { index_number: number; description: string | null; openings: string | null };
 type StoredBook = BookInput & { id: string; number: number; working: string; encoding: string; bom_size: number };
 export type Artwork = { content_type: string; image: Uint8Array };
 type IndexJob = { worldId: string; bookNumber: number; controller: AbortController };
 
-const worldColumns = "id, name, status, model, dimensions, max_token_limit, max_chunk_size, book_revision, index_number, error";
+const worldColumns = "id, name, status, model, dimensions, max_token_limit, max_chunk_size, book_revision, index_number, error, description, openings";
 const activeStatuses = new Set(["creating", "pausing"]);
 const TITLE_LIMIT = 100;
 
@@ -40,7 +41,7 @@ export class Worlds {
   }
 
   private summary(row: WorldRow): World {
-    const { index_number, ...world } = row;
+    const { index_number, description, openings, ...world } = row;
     const books = all<Book>(this.db, `
       SELECT b.id, b.number, b.name, b.filename, count(c.number) AS total_chunks, count(c.vector) AS embedded_chunks
       FROM books b LEFT JOIN chunks c ON c.book_id = b.id AND c.index_number = ?
@@ -51,6 +52,7 @@ export class Worlds {
     const image = get<{ version: string }>(this.db, "SELECT version FROM world_artwork WHERE world_id = ?", row.id);
     return {
       ...world, books, total_chunks, embedded_chunks,
+      description: description ?? WORLD_DESCRIPTION, openings: openings ? JSON.parse(openings) : [FIRST_MESSAGE],
       artwork: image ? `/api/worlds/${row.id}/artwork?v=${image.version}` : null,
       active_book: this.active?.worldId === row.id ? this.active.bookNumber : null,
       can_play: this.canPlay(row),
@@ -104,16 +106,17 @@ export class Worlds {
     const existing = get(this.db, "SELECT 1 FROM worlds WHERE id = ? AND status <> 'draft'", id);
     if (existing) return this.detail(id);
     const settings = this.settings(input, !!books.length);
+    const story = this.story(input.description ?? WORLD_DESCRIPTION, input.openings ?? [FIRST_MESSAGE]);
     const spec = EMBEDDING_MODELS.find(model => model.id === settings.model)!;
     const prepared = await prepareBooks(books, settings.max_chunk_size);
     if (get(this.db, "SELECT 1 FROM worlds WHERE id = ? AND status <> 'draft'", id)) return this.detail(id);
     this.keys.validate(settings.key_ids, !!books.length);
     transaction(this.db, () => {
       run(this.db, `
-        INSERT INTO worlds (id, name, status, model, dimensions, max_token_limit, max_chunk_size)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO worlds (id, name, status, model, dimensions, max_token_limit, max_chunk_size, description, openings)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       `, id, settings.name, books.length ? "creating" : "unindexed", settings.model, spec.dimensions,
-      spec.max_token_limit, settings.max_chunk_size);
+      spec.max_token_limit, settings.max_chunk_size, story.description, story.openings);
       saveSelection(this.db, "world_embedding_keys", id, settings.key_ids);
       saveSelection(this.db, "world_retrieval_keys", id, settings.key_ids);
       if (books.length) this.keys.remember(settings.model, settings.key_ids);
@@ -121,6 +124,21 @@ export class Worlds {
       if (artwork) this.storeArtwork(id, artwork);
     });
     this.wake();
+    return this.detail(id);
+  }
+
+  private story(description: unknown, openings: unknown) {
+    if (typeof description !== "string" || !Array.isArray(openings) || !openings.length
+      || openings.some(opening => typeof opening !== "string")) {
+      throw new RequestError("Enter a World description and at least one First Message slot.");
+    }
+    return { description, openings: JSON.stringify(openings) };
+  }
+
+  saveStory(id: string, input: Record<string, unknown>) {
+    this.require(id);
+    const { description, openings } = this.story(input.description, input.openings);
+    run(this.db, "UPDATE worlds SET description = ?, openings = ? WHERE id = ?", description, openings, id);
     return this.detail(id);
   }
 

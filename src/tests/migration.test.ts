@@ -1,4 +1,4 @@
-import { deepEqual, equal, ok } from "node:assert/strict";
+import { deepEqual, equal, match, ok } from "node:assert/strict";
 import { readdir } from "node:fs/promises";
 import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -105,7 +105,13 @@ test("a version 2 database keeps existing Tales and builds their search index", 
   } finally { db.close(); }
 
   const app = await fixture(t, undefined, path);
-  equal((await app.world(world)).status, "paused");
+  const migratedWorld = await app.world(world);
+  equal(migratedWorld.status, "paused");
+  match(migratedWorld.description, /narrator of this world/);
+  match(migratedWorld.openings[0], /Ready to begin/);
+  const saved = await app.call<{ messages: { id: number; content: string }[] }>(`/api/worlds/${world}/tales/${tale}`);
+  equal(saved.messages[0].id, 1);
+  equal(saved.messages[0].content, "Quiet glen");
   const found = await app.call<{ id: string; title: string }[]>("/api/tales/search?q=glen");
   equal(found.length, 1);
   equal(found[0].id, tale);

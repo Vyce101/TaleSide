@@ -4,6 +4,7 @@ export type World = {
   id: string; name: string; status: WorldStatus; model: string; dimensions: number; max_token_limit: number;
   max_chunk_size: number; book_revision: number; artwork: string | null;
   progress: number; error: string | null; total_chunks: number; embedded_chunks: number; active_book: number | null; can_play: boolean;
+  description: string; openings: string[];
   embedding_key_ids: string[]; retrieval_key_ids: string[]; books: Book[];
 };
 export type EmbeddingModel = { id: string; dimensions: number; max_token_limit: number };
