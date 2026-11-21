@@ -1,4 +1,5 @@
 import type { ChatModel, EmbeddingModel } from "../shared/types.js";
+import { RequestError } from "./validation.js";
 
 export const EMBEDDING_MODEL = "gemini-embedding-2";
 export const LEGACY_EMBEDDING = "gemini-embedding-001";
@@ -23,6 +24,43 @@ export type GeminiClient = {
   chat: (model: string, key: string, body: object, signal: AbortSignal) => AsyncIterable<Part>;
 };
 
+class ProviderError extends RequestError {
+  constructor(status: number, detail: unknown, key: string, method: string) {
+    const error = detail && typeof detail === "object" ? detail as { status?: unknown; code?: unknown; message?: unknown } : null;
+    const safe = (value: string) => value.replaceAll(key, "[redacted]")
+      .replace(/AIza[\w-]{20,}/g, "[redacted]").replace(/[\u0000-\u001f\u007f]+/g, " ").trim();
+    const label = typeof error?.status === "string" ? safe(error.status).slice(0, 80) : "";
+    const original = typeof detail === "string" ? detail : typeof error?.message === "string" ? error.message : "";
+    const message = /^\s*(?:<!doctype\s+html|<html\b)/i.test(original) ? "" : safe(original).slice(0, 500);
+    const code = Number.isInteger(error?.code) ? error!.code as number : status;
+    const description = [code || undefined, label || undefined].filter(Boolean).join(" ") || method;
+    super(`Gemini · ${description}: ${message || "The provider did not return a readable error message."}`,
+      status >= 400 && status <= 599 ? status : code >= 400 && code <= 599 ? code : 502);
+  }
+}
+
+async function readError(response: Response) {
+  const reader = response.body?.getReader();
+  if (!reader) return null;
+  let text = "";
+  let bytes = 0;
+  const decoder = new TextDecoder();
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) {
+        text += decoder.decode();
+        try { return JSON.parse(text); }
+        catch { return response.headers.get("content-type")?.startsWith("text/plain") ? text : null; }
+      }
+      bytes += value.byteLength;
+      if (bytes > 64 * 1024) return null;
+      text += decoder.decode(value, { stream: true });
+    }
+  } catch { return null; }
+  finally { await reader.cancel().catch(() => {}); }
+}
+
 async function request(model: string, key: string, method: string, body: object, signal: AbortSignal, stream = false) {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:${method}${stream ? "?alt=sse" : ""}`;
   let response: Response;
@@ -33,16 +71,11 @@ async function request(model: string, key: string, method: string, body: object,
     });
   } catch (error) {
     if (signal.aborted) throw error;
-    throw new Error(`Could not reach Gemini for ${method}.`);
+    throw new RequestError(`Could not reach Gemini for ${method}.`, 502);
   }
   if (!response.ok) {
-    const detail = await response.json().catch(() => null);
-    const message = String(detail?.error?.message ?? "");
-    if (response.status === 413 || (response.status === 400 && /token|context|input|payload|request size/i.test(message))) {
-      throw new InputTooLarge();
-    }
-    if ([401, 403].includes(response.status)) throw new Error("Gemini denied access. Check the selected API key.");
-    throw new Error(`Gemini ${method} returned HTTP ${response.status}.`);
+    const detail = await readError(response);
+    throw new ProviderError(response.status, detail?.error ?? detail, key, method);
   }
   return response;
 }
@@ -69,6 +102,7 @@ export const gemini: GeminiClient = {
   async count(model, key, body, signal) {
     const response = await request(model, key, "countTokens", body, signal);
     const json = await response.json();
+    if (json.error) throw new ProviderError(0, json.error, key, "countTokens");
     if (!Number.isSafeInteger(json.totalTokens) || json.totalTokens < 1) throw new Error("Gemini returned an invalid token count.");
     return json.totalTokens;
   },
@@ -78,6 +112,7 @@ export const gemini: GeminiClient = {
       : { content, embedContentConfig: { outputDimensionality: dimensions, autoTruncate: false } };
     const response = await request(model, key, "embedContent", body, signal);
     const json = await response.json();
+    if (json.error) throw new ProviderError(0, json.error, key, "embedContent");
     const values = json.embedding?.values;
     encodeVector(values, dimensions);
     return values;
@@ -86,21 +121,24 @@ export const gemini: GeminiClient = {
     const response = await request(model, key, "streamGenerateContent", body, signal, true);
     const reader = response.body!.pipeThrough(new TextDecoderStream()).getReader();
     let buffer = "";
+    let errorEvent = false;
     try {
       for (;;) {
         const { done, value } = await reader.read();
-        if (done) break;
-        buffer += value;
+        buffer += done ? "\n" : value;
         const lines = buffer.split("\n");
         buffer = lines.pop()!;
         for (const line of lines) {
+          if (!line.trim()) { errorEvent = false; continue; }
+          if (line.trim() === "event: error") { errorEvent = true; continue; }
           if (!line.startsWith("data:")) continue;
           const payload = line.slice(5).trim();
           if (!payload || payload === "[DONE]") continue;
           const packet = JSON.parse(payload);
-          if (packet.error) throw new Error("Gemini could not finish the reply.");
+          if (errorEvent || packet.error) throw new ProviderError(0, packet.error ?? packet, key, "streamGenerateContent");
           for (const part of packet.candidates?.[0]?.content?.parts ?? []) yield part;
         }
+        if (done) break;
       }
     } finally {
       await reader.cancel().catch(() => {});
