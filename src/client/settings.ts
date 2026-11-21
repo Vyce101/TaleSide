@@ -88,8 +88,9 @@ function renderProfilePicker() {
   const select = element<HTMLSelectElement>("chat-profile");
   select.replaceChildren(...profiles.profiles.map(profile => new Option(profile.name, profile.id, false, profile.id === profiles.selected)));
   select.disabled = profilePending;
+  const locked = profiles.profiles.find(profile => profile.id === profiles.selected)?.locked;
   for (const button of element("profile-actions").querySelectorAll<HTMLButtonElement>("button")) {
-    button.disabled = profilePending || (button.id === "delete-profile" && profiles.profiles.length < 2);
+    button.disabled = profilePending || !!locked && ["rename", "delete"].includes(button.dataset.profileAction!);
   }
 }
 
@@ -115,6 +116,12 @@ function loadWorkingProfile() {
   element<HTMLSelectElement>("thinking-level").value = working.thinking_level;
   element<HTMLInputElement>("send-thinking").checked = working.thought_signatures;
   renderWrappers();
+  const locked = !!profiles.profiles.find(profile => profile.id === profiles.selected)?.locked;
+  for (const id of ["wrapper-controls", "retrieval-controls", "model-limits"]) {
+    for (const control of element(id).querySelectorAll<HTMLInputElement | HTMLButtonElement | HTMLTextAreaElement>("input, button, textarea")) {
+      control.disabled = locked;
+    }
+  }
   renderChatKey();
   renderProfilePicker();
   refreshComposer();
