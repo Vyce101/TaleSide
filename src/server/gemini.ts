@@ -25,16 +25,14 @@ export type GeminiClient = {
 };
 
 class ProviderError extends RequestError {
-  constructor(status: number, detail: unknown, key: string, method: string) {
-    const error = detail && typeof detail === "object" ? detail as { status?: unknown; code?: unknown; message?: unknown } : null;
+  constructor(status: number, detail: unknown, key: string) {
+    const error = detail && typeof detail === "object" ? detail as { code?: unknown; message?: unknown } : null;
     const safe = (value: string) => value.replaceAll(key, "[redacted]")
-      .replace(/AIza[\w-]{20,}/g, "[redacted]").replace(/[\u0000-\u001f\u007f]+/g, " ").trim();
-    const label = typeof error?.status === "string" ? safe(error.status).slice(0, 80) : "";
+      .replace(/AIza[\w-]{20,}/g, "[redacted]");
     const original = typeof detail === "string" ? detail : typeof error?.message === "string" ? error.message : "";
-    const message = /^\s*(?:<!doctype\s+html|<html\b)/i.test(original) ? "" : safe(original).slice(0, 500);
+    const message = /^\s*(?:<!doctype\s+html|<html\b)/i.test(original) ? "" : safe(original);
     const code = Number.isInteger(error?.code) ? error!.code as number : status;
-    const description = [code || undefined, label || undefined].filter(Boolean).join(" ") || method;
-    super(`Gemini · ${description}: ${message || "The provider did not return a readable error message."}`,
+    super(message || "The provider did not return a readable error message.",
       status >= 400 && status <= 599 ? status : code >= 400 && code <= 599 ? code : 502);
   }
 }
@@ -75,7 +73,7 @@ async function request(model: string, key: string, method: string, body: object,
   }
   if (!response.ok) {
     const detail = await readError(response);
-    throw new ProviderError(response.status, detail?.error ?? detail, key, method);
+    throw new ProviderError(response.status, detail?.error ?? detail, key);
   }
   return response;
 }
@@ -102,7 +100,7 @@ export const gemini: GeminiClient = {
   async count(model, key, body, signal) {
     const response = await request(model, key, "countTokens", body, signal);
     const json = await response.json();
-    if (json.error) throw new ProviderError(0, json.error, key, "countTokens");
+    if (json.error) throw new ProviderError(0, json.error, key);
     if (!Number.isSafeInteger(json.totalTokens) || json.totalTokens < 1) throw new Error("Gemini returned an invalid token count.");
     return json.totalTokens;
   },
@@ -112,7 +110,7 @@ export const gemini: GeminiClient = {
       : { content, embedContentConfig: { outputDimensionality: dimensions, autoTruncate: false } };
     const response = await request(model, key, "embedContent", body, signal);
     const json = await response.json();
-    if (json.error) throw new ProviderError(0, json.error, key, "embedContent");
+    if (json.error) throw new ProviderError(0, json.error, key);
     const values = json.embedding?.values;
     encodeVector(values, dimensions);
     return values;
@@ -135,7 +133,7 @@ export const gemini: GeminiClient = {
           const payload = line.slice(5).trim();
           if (!payload || payload === "[DONE]") continue;
           const packet = JSON.parse(payload);
-          if (errorEvent || packet.error) throw new ProviderError(0, packet.error ?? packet, key, "streamGenerateContent");
+          if (errorEvent || packet.error) throw new ProviderError(0, packet.error ?? packet, key);
           for (const part of packet.candidates?.[0]?.content?.parts ?? []) yield part;
         }
         if (done) break;

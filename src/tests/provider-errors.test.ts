@@ -58,7 +58,7 @@ test("Gemini forwards HTTP and streaming provider errors with credentials remove
     error: { code: 429, status: "RESOURCE_EXHAUSTED", message: `Quota exceeded for ${key}` },
   }), { status: 429 }));
   await rejects(gemini.count("fixture", key, {}, signal), {
-    status: 429, message: "Gemini · 429 RESOURCE_EXHAUSTED: Quota exceeded for [redacted]",
+    status: 429, message: "Quota exceeded for [redacted]",
   });
   t.mock.restoreAll();
   t.mock.method(globalThis, "fetch", async () => new Response(
@@ -69,7 +69,7 @@ test("Gemini forwards HTTP and streaming provider errors with credentials remove
   await rejects(async () => {
     for await (const part of gemini.chat("fixture", key, {}, signal)) parts.push(part.text!);
   }, error => {
-    match(String(error), /503 UNAVAILABLE: Capacity exhausted/);
+    match(String(error), /Capacity exhausted/);
     return true;
   });
   deepEqual(parts, ["Partial"]);
