@@ -1,4 +1,4 @@
-import type { Message, Tale, TaleSummary, World } from "../shared/types.js";
+import type { Message, Tale, TaleSearchResult, World } from "../shared/types.js";
 import { worlds } from "./data.js";
 import { renderMarkdown, tintDialogue } from "./markdown.js";
 
@@ -80,11 +80,13 @@ export function worldRows(entries: World[], active: World | undefined, searching
   }).join("");
 }
 
-export function taleRows(entries: TaleSummary[], currentId?: string) {
+export function taleRows(entries: TaleSearchResult[], currentId?: string) {
   return `<ul class="tale-list">${entries.map(tale => {
     const world = worlds.find(entry => entry.id === tale.world_id);
     const count = tale.message_count;
     const preview = tale.content.replace(/\s+/g, " ").slice(0, 320) || "No messages yet";
+    const highlighted = tale.match?.map(({ text, highlighted }) => highlighted
+      ? `<mark>${escapeHtml(text)}</mark>` : escapeHtml(text)).join("");
     const name = escapeHtml(tale.title);
     const id = `data-id="${tale.id}"`;
     return `<li class="tale-row"${currentId === tale.id ? ' data-current' : ''}>
@@ -99,7 +101,7 @@ export function taleRows(entries: TaleSummary[], currentId?: string) {
         ${iconButton("rename-tale", "rename", `Rename ${name}`, id)}
         ${iconButton("delete-tale", "delete", `Delete ${name}`, id)}
       </div>
-      <p class="tale-preview" id="preview-${tale.id}">${escapeHtml(preview)}</p>
+      <p class="tale-preview" id="preview-${tale.id}">${highlighted ?? escapeHtml(preview)}</p>
       <span class="tale-count">${count} ${count === 1 ? "message" : "messages"}</span>
     </li>`;
   }).join("")}</ul>`;
@@ -108,20 +110,29 @@ export function taleRows(entries: TaleSummary[], currentId?: string) {
 export const recentCollapsed = 5;
 const recentExpanded = 10;
 
-export function homeView(entries: TaleSummary[], expanded: boolean) {
+export function recentTaleRows(entries: TaleSearchResult[], expanded: boolean, searching: boolean) {
+  if (!entries.length) return searching ? '<p class="empty-copy">No matching Tales</p>'
+    : '<p class="empty-copy">Open Worlds to start a Tale.</p>';
+  return taleRows(searching ? entries : entries.slice(0, expanded ? recentExpanded : recentCollapsed));
+}
+
+export function homeView(entries: TaleSearchResult[], expanded: boolean) {
   return `<section class="home-view" aria-labelledby="screen-title">
     <div class="welcome-card">
       <div class="home-heading">
         <img src="assets/logo.png" width="31" height="31" alt="">
         <h1 id="screen-title" tabindex="-1">TaleSide</h1>
       </div>
-      <h2 id="recent-tales-title">Recent Tales</h2>
-      <div id="recent-tales" aria-labelledby="recent-tales-title">
-        ${entries.length ? taleRows(entries.slice(0, expanded ? recentExpanded : recentCollapsed)) : '<p class="empty-copy">Open Worlds to start a Tale.</p>'}
+      <div class="search-heading recent-heading">
+        <h2 id="recent-tales-title">Recent Tales</h2>
+        ${searchInput("home-tale-search", "Search Tales")}
       </div>
-      ${entries.length > recentCollapsed ? `<button class="icon-button show-more" type="button" data-action="expand-recent"
+      <div id="recent-tales" aria-labelledby="recent-tales-title">
+        ${recentTaleRows(entries, expanded, false)}
+      </div>
+      <button class="icon-button show-more" type="button" data-action="expand-recent" ${entries.length > recentCollapsed ? "" : "hidden"}
         aria-label="${expanded ? "Show fewer" : "Show more Tales"}" data-tooltip="${expanded ? "Show fewer" : "Show more Tales"}"
-        aria-controls="recent-tales" aria-expanded="${expanded}">${icon("down")}</button>` : ""}
+        aria-controls="recent-tales" aria-expanded="${expanded}">${icon("down")}</button>
     </div>
   </section>`;
 }
@@ -154,8 +165,9 @@ export function taleView(tale: Tale, world: World) {
       </div>
     </header>
     <section id="tale-history" class="tale-history" aria-labelledby="history-title" hidden>
-      <div class="history-heading">
+      <div class="history-heading search-heading">
         <h2 id="history-title">Tales</h2>
+        ${searchInput("world-tale-search", "Search Tales")}
       </div>
       <div id="history-list" class="history-list" role="region" aria-label="Tales list" tabindex="0"></div>
     </section>

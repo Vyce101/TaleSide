@@ -1,9 +1,9 @@
-import type { GenerationEvent, Message, Tale, TaleSummary, World } from "../shared/types.js";
+import type { GenerationEvent, Message, Tale, TaleSearchResult, TaleSummary, World } from "../shared/types.js";
 import { apiError, keySettings, loadTales, loadWorlds, newId, orderedTales, post, recentTime, removeTale,
   request, storeTale, storeWorld, taleRoute, tales, worlds } from "./data.js";
 import { element } from "./dom.js";
 import { closeKeyEditor, currentChatSettings, initializeSettings, refreshKeys, renderKeysView, renderWorldContext } from "./settings.js";
-import { fillMessageText, formatDate, homeView, icon, idleView, messageRows, messageTurn, recentCollapsed, taleRows, taleView, type Icon } from "./view.js";
+import { fillMessageText, formatDate, homeView, icon, idleView, messageRows, messageTurn, recentCollapsed, recentTaleRows, taleRows, taleView, type Icon } from "./view.js";
 import { animateSurface, historyFrames, setSurfaceVisible, slideFrames } from "./motion.js";
 import { clearToast, showToast } from "./toasts.js";
 import { initializeTooltips } from "./tooltips.js";
@@ -195,7 +195,57 @@ function scrollToLatest() {
   transcript.scrollTop = transcript.scrollHeight;
 }
 
+let homeQuery = "";
+let searchResults: TaleSearchResult[] = [];
+let searchTimer: number | undefined;
+let searchRequest: AbortController | undefined;
+let searchedWorldNames = "";
+
+function cancelTaleSearch() {
+  window.clearTimeout(searchTimer);
+  searchRequest?.abort();
+  searchRequest = undefined;
+  searchResults = [];
+}
+
+function updateTaleSearch(input: HTMLInputElement, debounce = true) {
+  cancelTaleSearch();
+  const world = input.id === "world-tale-search" ? state.world : undefined;
+  const list = element(world ? "history-list" : "recent-tales");
+  const more = workspace.querySelector<HTMLButtonElement>('[data-action="expand-recent"]');
+  const query = input.value.trim();
+  if (more) more.hidden = !!query || tales.length <= recentCollapsed;
+  if (!query) {
+    list.removeAttribute("aria-busy");
+    list.innerHTML = world ? taleRows(orderedTales(world), state.tale?.id)
+      : recentTaleRows(orderedTales(), state.expanded, false);
+    return;
+  }
+
+  list.setAttribute("aria-busy", "true");
+  const search = async () => {
+    const controller = new AbortController();
+    searchRequest = controller;
+    const params = new URLSearchParams({ q: query });
+    if (world) params.set("world", world.id);
+    try {
+      const results = await request<TaleSearchResult[]>(`/api/tales/search?${params}`, undefined, controller.signal);
+      if (controller.signal.aborted || !input.isConnected) return;
+      searchResults = results;
+      list.innerHTML = world && results.length ? taleRows(results, state.tale?.id)
+        : recentTaleRows(results, state.expanded, true);
+    } catch (error) {
+      if (!controller.signal.aborted && input.isConnected) showToast(error, { key: "tale-search" });
+    } finally {
+      if (!controller.signal.aborted) list.removeAttribute("aria-busy");
+    }
+  };
+  if (debounce) searchTimer = window.setTimeout(() => void search(), 175);
+  else void search();
+}
+
 function renderWorkspace() {
+  cancelTaleSearch();
   const { tale, world } = state;
   element("home-button").setAttribute("aria-current", String(!world));
   if (tale && world) {
@@ -205,6 +255,9 @@ function renderWorkspace() {
     scrollToLatest();
   } else {
     workspace.innerHTML = idleView(homeView(orderedTales(), state.expanded));
+    const input = element<HTMLInputElement>("home-tale-search");
+    input.value = homeQuery;
+    if (homeQuery.trim()) updateTaleSearch(input, false);
   }
 }
 
@@ -259,8 +312,7 @@ function newTale() {
 }
 
 function renderHistory() {
-  const list = element("history-list");
-  list.innerHTML = taleRows(orderedTales(state.world), state.tale?.id);
+  updateTaleSearch(element<HTMLInputElement>("world-tale-search"), false);
 }
 
 function setHistory(show: boolean, returnFocus = false) {
@@ -268,6 +320,7 @@ function setHistory(show: boolean, returnFocus = false) {
   if (!toggle) return;
   if (show && state.panel) showPanel(null, false);
   if (show) renderHistory();
+  else cancelTaleSearch();
   const history = element("tale-history");
   const transcript = element("transcript");
   const followingLatest = transcript.scrollHeight - transcript.clientHeight - transcript.scrollTop < 3;
@@ -299,9 +352,7 @@ function followLatestDuringResize(transcript: HTMLElement, motion: Animation) {
 function refreshTaleLists() {
   if (state.history) renderHistory();
   if (!state.tale) {
-    const scrollTop = workspace.querySelector(".home-view")?.scrollTop ?? 0;
-    renderWorkspace();
-    workspace.querySelector(".home-view")!.scrollTop = scrollTop;
+    updateTaleSearch(element<HTMLInputElement>("home-tale-search"), false);
   }
 }
 
@@ -543,6 +594,12 @@ export function syncWorlds() {
     }
   }
   lastWorlds = new Map(worlds.map(world => [world.id, world]));
+  const worldNames = JSON.stringify(worlds.map(world => [world.id, world.name]).sort());
+  if (searchedWorldNames !== worldNames) {
+    searchedWorldNames = worldNames;
+    const input = document.querySelector<HTMLInputElement>("#home-tale-search");
+    if (input?.value.trim()) updateTaleSearch(input, false);
+  }
   if (state.world) {
     const previous = state.world;
     const world = worlds.find(item => item.id === previous.id);
@@ -639,7 +696,7 @@ document.addEventListener("click", event => {
   const button = event.target.closest<HTMLButtonElement>("button[data-action]");
   if (!button) return;
   const { action, id } = button.dataset;
-  const tale = id && state.tale?.id === id ? state.tale : tales.find(entry => entry.id === id);
+  const tale = id && state.tale?.id === id ? state.tale : tales.find(entry => entry.id === id) ?? searchResults.find(entry => entry.id === id);
   switch (action) {
     case "open-world": {
       const world = worlds.find(entry => entry.id === id);
@@ -686,6 +743,10 @@ workspace.addEventListener("submit", event => {
 
 workspace.addEventListener("input", event => {
   const input = event.target;
+  if (input instanceof HTMLInputElement && ["home-tale-search", "world-tale-search"].includes(input.id)) {
+    if (input.id === "home-tale-search") homeQuery = input.value;
+    updateTaleSearch(input);
+  }
   if (state.tale && input instanceof HTMLTextAreaElement && input.id === "message-input") {
     drafts.set(state.tale.id, input.value);
   }

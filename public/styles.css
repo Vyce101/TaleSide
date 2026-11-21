@@ -173,7 +173,7 @@ h1, h2, h3 { font-weight: 650; }
 
 .home-heading h1 { font-size: 21px; }
 .home-heading > span { color: var(--muted); font-size: 12px; }
-.welcome-card h2 { font-size: 18px; margin-bottom: 8px; }
+.welcome-card h2 { font-size: 18px; }
 
 .avatar {
   display: inline-grid;
@@ -858,9 +858,13 @@ dialog label input { display: block; margin-top: 5px; }
 @keyframes composer-spin { to { rotate: 360deg; } }
 @media (prefers-reduced-motion: reduce) { .composer-spinner { animation: none; } }
 .search-heading, .world-picker-tools { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.search-heading h2 { flex: none; }
+.recent-heading { margin-bottom: 10px; }
 .list-search { min-width: 0; width: 11rem; max-width: 100%; }
+.search-heading .list-search { width: 17rem; }
 .world-picker-tools .list-search { flex: 1; }
 .world-picker-tools .icon-button { flex: none; }
+.tale-preview mark { background: #d9bd78; color: #182018; border-radius: 2px; }
 
 .toasts {
   position: fixed;
