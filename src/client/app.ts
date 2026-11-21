@@ -647,16 +647,15 @@ function outside({ clientX, clientY }: MouseEvent, surface: HTMLElement) {
   return clientX < left || clientX > right || clientY < top || clientY > bottom;
 }
 taleName.addEventListener("input", () => taleName.setCustomValidity(""));
+element("dialog-cancel").addEventListener("click", () => closeTaleDialog());
 taleDialogForm.addEventListener("submit", event => {
   event.preventDefault();
-  const submit = (event as SubmitEvent).submitter as HTMLButtonElement | null;
-  if (submit?.value === "confirm" && !taleName.disabled && !taleName.value.trim()) {
-    event.preventDefault();
-    taleName.setCustomValidity("Enter a Tale name.");
+  if (!taleName.disabled && !taleName.value.trim()) {
+    taleName.setCustomValidity("Enter a name.");
     taleName.reportValidity();
     return;
   }
-  closeTaleDialog(submit?.value);
+  closeTaleDialog("confirm");
 });
 
 for (const button of panelButtons) {
