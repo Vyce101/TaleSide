@@ -3,13 +3,15 @@ import { element } from "./dom.js";
 type Crop = { x: number; y: number; size: number };
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(value, max));
 
-export async function cropArtwork(file: File): Promise<File | undefined> {
+export async function cropArtwork(file: File, subject = "World"): Promise<File | undefined> {
   const signature = new TextDecoder().decode(await file.slice(0, 6).arrayBuffer());
   if (file.type === "image/gif" || /\.gif$/i.test(file.name) || /^GIF8[79]a$/.test(signature)) {
     throw new Error("Choose an image other than GIF.");
   }
   const dialog = element<HTMLDialogElement>("artwork-dialog");
   const image = element<HTMLImageElement>("crop-image");
+  element("crop-title").textContent = `Crop ${subject} picture`;
+  image.alt = `Selected ${subject} picture`;
   const box = element("crop-box");
   const save = element<HTMLButtonElement>("crop-save");
   const url = URL.createObjectURL(file);

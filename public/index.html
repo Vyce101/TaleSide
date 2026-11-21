@@ -23,6 +23,8 @@
         <img src="assets/logo.png" width="40" height="40" alt="">
       </button>
       <button id="app-settings-button" type="button" data-panel="app-settings" disabled>Settings</button>
+      <button id="personas-button" type="button" data-panel="personas" aria-controls="personas-drawer" aria-expanded="false">Personas</button>
+      <button id="inspector-button" type="button" data-panel="inspector" disabled>World Inspector</button>
       <button id="worlds-button" type="button" data-panel="worlds" aria-expanded="false" aria-controls="worlds-drawer">Worlds</button>
     </nav>
   </header>
@@ -89,6 +91,19 @@
           </details>
           <p id="settings-error" class="inline-error" role="alert" hidden></p>
         </div>
+      </div>
+    </aside>
+    <aside id="personas-drawer" class="side-panel dropdown-panel" data-kind="personas" aria-label="Personas" hidden>
+      <header class="panel-header"><button class="icon-button panel-back" type="button"></button><h2>Personas</h2></header>
+      <div class="panel-content" id="persona-panel">
+        <div class="persona-columns">
+          <div class="persona-directory">
+            <div id="persona-tools"></div>
+            <ul id="persona-list" aria-label="Personas"></ul>
+          </div>
+          <section id="persona-editor" aria-label="Persona editor"></section>
+        </div>
+        <p class="inline-error" id="persona-error" role="alert" hidden></p>
       </div>
     </aside>
     <aside id="keys-drawer" class="side-panel" data-kind="keys" aria-labelledby="keys-title" hidden>

@@ -27,6 +27,10 @@ const iconPaths = {
   save: '<path class="solid" fill-rule="evenodd" d="M4 2h12l5 5v13a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Zm2 2v5h10V4H6Zm0 10v6h12v-6H6Z"/>',
   left: '<path d="m15 5-7 7 7 7"/>',
   right: '<path d="m9 5 7 7-7 7"/>',
+  personas: '<circle cx="9" cy="7" r="3"/><path d="M3 20v-2a6 6 0 0 1 12 0v2m2-16a3 3 0 0 1 0 6m1 4a5 5 0 0 1 3 5"/>',
+  search: '<circle cx="10" cy="10" r="6"/><path d="m15 15 5 5"/>',
+  star: '<path d="m12 3 3 6 7 .9-5 4.6 1 6.5-6-3.2L6 21l1-6.5-5-4.6L9 9Z"/>',
+  globe: '<circle cx="12" cy="12" r="9"/><ellipse cx="12" cy="12" rx="4" ry="9"/><path d="M3 12h18"/>',
   duplicate: '<path d="M8 5H5v16h12v-3M9 3h10v13H9zM11 9h6m-3-3v6"/>',
 } satisfies Record<string, string>;
 
@@ -200,12 +204,12 @@ export function messageTurn(message: Message, world: World) {
   const time = message.elapsed_ms === null ? "" : (message.elapsed_ms / 1000).toFixed(1) + "s";
   return `<article class="turn ${role}" data-message="${message.id}">
     <div class="turn-rail">
-      ${avatar(player ? undefined : world)}
+      ${avatar(player ? message.player_name ? { artwork: message.player_artwork ?? null } : undefined : world)}
       ${time ? `<span class="reply-time" data-tooltip="Time to get the answer">${time}</span>` : ""}
     </div>
     <div class="turn-content">
       <header>
-        <strong>${player ? "You" : escapeHtml(world.name)}</strong>
+        <strong>${player ? escapeHtml(message.player_name ?? "You") : escapeHtml(world.name)}</strong>
         ${model ? `<span class="model-badge" role="img" tabindex="0" aria-label="Model: ${model}" data-tooltip="${model}">${icon("model")}</span>` : ""}
       </header>
       ${message.thinking ? thinkingView(message, thinking) : ""}

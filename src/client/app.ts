@@ -1,3 +1,4 @@
+import { currentPersona, refreshPersonas } from "./personas.js";
 import type { GenerationEvent, Message, Tale, TaleSearchResult, TaleSummary, World } from "../shared/types.js";
 import { apiError, keySettings, loadTales, loadWorlds, newId, orderedTales, post, recentTime, removeTale,
   request, storeTale, storeWorld, taleRoute, tales, worlds } from "./data.js";
@@ -21,9 +22,10 @@ const drawers = {
   worlds: element("worlds-drawer"),
   settings: element("settings-drawer"),
   keys: element("keys-drawer"),
+  personas: element("personas-drawer"),
 };
 type Panel = keyof typeof drawers;
-const panelNames = { worlds: "Worlds", settings: "Tale Settings", keys: "API Keys", "app-settings": "Settings" };
+const panelNames = { worlds: "Worlds", settings: "Tale Settings", keys: "API Keys", "app-settings": "Settings", personas: "Personas", inspector: "World Inspector" };
 const narrow = matchMedia("(width < 1100px)");
 
 export const state = {
@@ -83,7 +85,7 @@ function keepReadingPosition(update: () => void) {
 }
 
 function updatePanelLayout() {
-  const showFullWidth = narrow.matches && state.panel !== null && state.panel !== "keys";
+  const showFullWidth = narrow.matches && state.panel !== null && state.panel !== "keys" && state.panel !== "personas";
   workspace.inert = showFullWidth;
   if (!state.panel) return;
   const back = drawers[state.panel].querySelector<HTMLButtonElement>(".panel-back")!;
@@ -127,6 +129,7 @@ export function showPanel(next: Panel | null, returnFocus = true) {
     void refreshKeys().catch(error => showToast(error));
   }
   if (next === "settings") renderWorldContext();
+  if (next === "personas") void refreshPersonas();
   const drawer = drawers[next];
   drawer.querySelector(".panel-content")!.scrollTop = 0;
   drawer.querySelector<HTMLButtonElement>(".panel-back")!.focus({ preventScroll: true });
@@ -265,6 +268,7 @@ function setWorkspace(world?: World, tale?: OpenTale) {
   if (activeReply && activeReply.tale.id !== tale?.id) stopReply(activeReply, true);
   state.world = world;
   state.tale = tale;
+  if (world) void refreshPersonas();
   state.history = false;
   renderWorkspace();
 }
@@ -513,6 +517,7 @@ async function sendOrStop() {
   const settings = currentChatSettings();
   if (!text || !settings || element<HTMLButtonElement>("send-message").disabled) return;
   const originalDraft = input.value;
+  const draftPlayer = currentPersona();
   const assistant: Message = { id: -2, role: "assistant", content: "", thinking: "", model: settings.model,
     status: "generating", elapsed_ms: null, thinking_ms: null };
   const reply: Reply = { tale, id: newId(), controller: new AbortController(), assistant, accepted: false, stopping: false };
@@ -521,12 +526,13 @@ async function sendOrStop() {
   drafts.delete(tale.id);
   tale.messages = tale.messages.filter(message => message.id >= 0);
   tale.messages.push({ id: -1, role: "user", content: text, thinking: "", model: null,
-    status: "complete", elapsed_ms: null, thinking_ms: null }, assistant);
+    status: "complete", elapsed_ms: null, thinking_ms: null, player_name: draftPlayer?.name,
+    player_artwork: draftPlayer?.artwork }, assistant);
   renderMessages();
   scrollToLatest();
   try {
     const response = await post(`${taleRoute(tale)}/generate`,
-      { generation_id: reply.id, content: text, title: tale.title, settings }, { signal: reply.controller.signal });
+      { generation_id: reply.id, content: text, title: tale.title, settings, persona_id: tale.persona_id }, { signal: reply.controller.signal });
     if (!response.ok) throw await apiError(response);
     let finished = false;
     await readReply(response, event => {
@@ -660,11 +666,11 @@ taleDialogForm.addEventListener("submit", event => {
 
 for (const button of panelButtons) {
   const name = button.dataset.panel as keyof typeof panelNames;
-  const glyph: Icon = name === "keys" ? "key" : name === "app-settings" ? "gear" : name;
+  const glyph: Icon = name === "keys" ? "key" : name === "app-settings" ? "gear" : name === "inspector" ? "search" : name;
   button.innerHTML = icon(glyph);
   button.setAttribute("aria-label", panelNames[name]);
   button.dataset.tooltip = panelNames[name];
-  if (name !== "app-settings") button.addEventListener("click", () => showPanel(state.panel === name ? null : name));
+  if (name !== "app-settings" && name !== "inspector") button.addEventListener("click", () => showPanel(state.panel === name ? null : name));
 }
 
 element("home-button").addEventListener("click", () => leaveWorldSetup(() => navigate()));
