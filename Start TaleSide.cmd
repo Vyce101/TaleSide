@@ -1,13 +1,16 @@
 @echo off
 setlocal
 pushd "%~dp0" || exit /b 1
-if not exist node_modules\typescript\bin\tsc (
-  echo Run npm ci in the TaleSide folder before starting the app.
+title TaleSide
+where node >nul 2>&1
+if errorlevel 1 (
+  echo Install Node.js 24 LTS, then start TaleSide again.
   pause
   popd
   exit /b 1
 )
-call npm start
+set "NODE_NO_WARNINGS=1"
+node scripts/start.mjs
 set "TALESIDE_EXIT=%errorlevel%"
 if not "%TALESIDE_EXIT%"=="0" pause
 popd

@@ -6,13 +6,13 @@ import { RequestError } from "./validation.js";
 const root = fileURLToPath(new URL("../../", import.meta.url));
 
 let executable: string | undefined;
-function pythonExecutable() {
+export function pythonExecutable() {
   if (executable) return executable;
   if (process.platform !== "win32") return "python3";
   const located = spawnSync("py", ["-3.12", "-c", "import sys; print(sys.executable)"],
     { encoding: "utf8", windowsHide: true, timeout: 5000 });
   if (located.status !== 0 || !located.stdout?.trim()) {
-    throw new RequestError("The Python worker is unavailable. Check the Python 3.12 installation.", 503);
+    throw new RequestError("Install Python 3.12 with the Windows Python launcher, then start TaleSide again.", 503);
   }
   executable = located.stdout.trim();
   return executable;
@@ -23,7 +23,7 @@ export function pythonWorker(operation: "prepare" | "retrieve", signal?: AbortSi
     { cwd: root, stdio: ["pipe", "pipe", "ignore"], windowsHide: true });
   const stream = createInterface({ input: child.stdout, crlfDelay: Infinity });
   const lines = stream[Symbol.asyncIterator]();
-  const unavailable = () => new RequestError("The Python worker is unavailable. Check the Python 3.12 installation.", 503);
+  const unavailable = () => new RequestError("Install Python 3.12 with the Windows Python launcher, then start TaleSide again.", 503);
   let startupFailed = false;
   child.once("error", () => { startupFailed = true; });
   child.stdin.on("error", () => {});

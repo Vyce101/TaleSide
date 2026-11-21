@@ -23,7 +23,7 @@ const types: Record<string, string> = {
 const imageTypes = new Set(["image/png", "image/jpeg", "image/gif", "image/webp", "image/avif", "image/svg+xml",
   "image/x-icon", "image/vnd.microsoft.icon", "image/bmp"]);
 
-type Options = { provider?: GeminiClient; protect?: typeof dpapi };
+type Options = { provider?: GeminiClient; protect?: typeof dpapi; onBackup?: () => void };
 
 function json(response: ServerResponse, value: unknown, status = 200) {
   response.writeHead(status, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" });
@@ -111,7 +111,7 @@ async function staticFile(response: ServerResponse, path: string) {
 }
 
 export async function createApplication(databasePath: string, options: Options = {}) {
-  const db = await openDatabase(databasePath);
+  const db = await openDatabase(databasePath, options.onBackup);
   try {
     const provider = options.provider ?? gemini;
     const keys = new ProviderKeys(db, options.protect);
@@ -250,7 +250,6 @@ export async function createApplication(databasePath: string, options: Options =
           if (response.headersSent) { response.end(); return; }
           if (error instanceof RequestError) json(response, { error: error.message }, error.status);
           else {
-            console.error("TaleSide request failed:", (error as Error).name);
             json(response, { error: "Could not complete the local request." }, 500);
           }
         }).finally(() => inFlight.delete(pending));

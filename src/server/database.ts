@@ -171,13 +171,14 @@ function migrate(db: DatabaseSync, version: number) {
   db.exec("PRAGMA user_version = 2");
 }
 
-export async function openDatabase(path: string) {
+export async function openDatabase(path: string, onBackup?: () => void) {
   const existing = path !== ":memory:" && existsSync(path);
   const db = new DatabaseSync(path, { timeout: 5000 });
   try {
     const version = get<{ user_version: number }>(db, "PRAGMA user_version")!.user_version;
-    if (version > 2) throw new Error("This database needs a newer version of TaleSide.");
+    if (version > 2) throw new Error("Update TaleSide to a version that supports this database.");
     if (existing && version < 2) {
+      onBackup?.();
       const stamp = new Date().toISOString().replaceAll(":", "-");
       await backup(db, `${path}.before-node-${stamp}.bak`);
     }
