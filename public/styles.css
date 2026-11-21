@@ -945,8 +945,10 @@ dialog label input { display: block; margin-top: 5px; }
 
 
 .turn-actions { display: flex; margin-left: auto; align-self: center; opacity: 0; }
-.turn:hover .turn-actions, .turn:focus-within .turn-actions, .turn[data-final] .turn-actions { opacity: 1; }
+.turn:hover .turn-actions, .turn:focus-within .turn-actions, .turn[data-final] .turn-actions, .turn .turn-edit-actions { opacity: 1; }
 .turn-actions[inert] { visibility: hidden; }
+.turn-edit-actions { gap: 5px; }
+.turn-edit-actions button { min-height: 29px; padding: 3px 8px; font-size: 12px; }
 .turn-actions .icon-button, #opening-controls .icon-button {
   inline-size: 29px; min-height: 29px; padding: 4px; color: var(--muted);
 }
@@ -969,9 +971,10 @@ dialog label input { display: block; margin-top: 5px; }
 .swipe-right button svg, .turn[data-swipable] > [data-action="previous-swipe"] svg { width: 21px; height: 21px; }
 .swipe-counter { color: var(--muted); font-size: 11px; line-height: 1; font-variant-numeric: tabular-nums; }
 .reply-time { font-variant-numeric: tabular-nums; }
-#world-description, #world-opening, #prompt-text, #persona-description {
+.turn-editor textarea, #world-description, #world-opening, #prompt-text, #persona-description {
   width: 100%; resize: vertical;
 }
+.turn-editor textarea { display: block; line-height: 1.55; }
 .opening-heading { display: flex; justify-content: space-between; align-items: center; }
 #opening-controls { display: flex; align-items: center; color: var(--muted); font-size: 13px; }
 #prompt-dialog { width: min(720px, calc(100vw - 28px)); }
@@ -1045,6 +1048,8 @@ dialog label input { display: block; margin-top: 5px; }
 @media (hover: none) { .turn-actions { opacity: 1; } }
 
 
+#dialog-choice-row { display: flex; align-items: center; gap: 7px; margin-block: 12px; }
+#dialog-choice-row input { width: auto; margin: 0; }
 @media (prefers-reduced-motion: no-preference) {
   .toast-card { animation: toast-appear 180ms ease-out; }
   @keyframes toast-appear { from { opacity: 0; } }

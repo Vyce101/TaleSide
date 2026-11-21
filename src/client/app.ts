@@ -16,6 +16,7 @@ type Reply = { tale: OpenTale; id: string; controller: AbortController; assistan
 let activeReply: Reply | undefined;
 let navigation = 0;
 let turnPending = false;
+let editingTurn = false;
 let warnSignatures = true;
 const drafts = new Map<string, string>();
 
@@ -140,12 +141,12 @@ export function showPanel(next: Panel | null, returnFocus = true) {
 
 function renderMessages() {
   const { tale, world } = state;
-  if (!tale || !world) return;
+  if (!tale || !world || (editingTurn && document.querySelector(".turn-editor"))) return;
   const messages = element("messages");
   const openThoughts = new Set([...messages.querySelectorAll<HTMLDetailsElement>(".thinking-block[open]")]
     .map(block => block.dataset.thoughtFor));
   const focusedThought = document.activeElement?.closest<HTMLElement>(".thinking-block")?.dataset.thoughtFor;
-  messages.innerHTML = messageRows(tale.messages, world, !!activeReply || turnPending, tale.draft);
+  messages.innerHTML = messageRows(tale.messages, world, !!activeReply || turnPending || editingTurn, tale.draft);
   fillMessageText(messages, tale.messages);
   for (const thought of messages.querySelectorAll<HTMLDetailsElement>(".thinking-block")) {
     thought.open = openThoughts.has(thought.dataset.thoughtFor);
@@ -189,7 +190,7 @@ export function refreshComposer() {
     button.dataset.shape = shape;
     button.innerHTML = shape === "spinner" ? '<span class="composer-spinner" aria-hidden="true"></span>' : icon(shape);
   }
-  button.disabled = reply ? reply.stopping : waiting || turnPending;
+  button.disabled = reply ? reply.stopping : waiting || turnPending || editingTurn;
   button.setAttribute("aria-label", label);
   button.dataset.tooltip = label;
 }
@@ -267,6 +268,7 @@ function renderWorkspace() {
 
 function setWorkspace(world?: World, tale?: OpenTale) {
   if (activeReply && activeReply.tale.id !== tale?.id) stopReply(activeReply, true);
+  editingTurn = false;
   state.world = world;
   state.tale = tale;
   refreshPromptCounts(tale?.prompt_counts);
@@ -398,9 +400,9 @@ function restoreRowFocus(button: HTMLButtonElement) {
 const taleDialog = element<HTMLDialogElement>("tale-dialog");
 const taleName = element<HTMLInputElement>("tale-name");
 
-type DialogOptions = { confirmLabel?: string; title: string; detail?: string; initialName?: string; nameLabel?: string; danger?: boolean };
+type DialogOptions = { checkbox?: string; confirmLabel?: string; title: string; detail?: string; initialName?: string; nameLabel?: string; danger?: boolean };
 
-export function previewDialog(options: DialogOptions, onConfirm: (name: string) => void | Promise<void>, restoreFocus?: () => void) {
+export function previewDialog(options: DialogOptions, onConfirm: (name: string, checked: boolean) => void | Promise<void>, restoreFocus?: () => void) {
   if (taleDialog.open || closingDialog) return;
   const hasName = options.initialName !== undefined;
   const confirm = element<HTMLButtonElement>("dialog-confirm");
@@ -414,10 +416,14 @@ export function previewDialog(options: DialogOptions, onConfirm: (name: string) 
   taleName.setCustomValidity("");
   confirm.textContent = options.confirmLabel ?? (options.danger ? "Delete" : "Save");
   confirm.classList.toggle("danger-button", Boolean(options.danger));
+  const checkbox = element<HTMLInputElement>("dialog-choice");
+  element("dialog-choice-row").hidden = !options.checkbox;
+  element("dialog-choice-label").textContent = options.checkbox ?? "";
+  checkbox.checked = false;
   taleDialog.returnValue = "";
   taleDialog.addEventListener("close", async () => {
     closingDialog = false;
-    if (taleDialog.returnValue === "confirm") await onConfirm(taleName.value.trim());
+    if (taleDialog.returnValue === "confirm") await onConfirm(taleName.value.trim(), checkbox.checked);
     restoreFocus?.();
   }, { once: true });
   taleDialog.showModal();
@@ -513,12 +519,63 @@ async function changeTurn(tale: OpenTale, message: Message, action: string, deta
   }
 }
 
+function editTurn(tale: OpenTale, message: Message) {
+  editingTurn = true;
+  keepReadingPosition(renderMessages);
+  const article = document.querySelector(`[data-message="${message.id}"]`)!;
+  const form = document.createElement("form");
+  form.className = "turn-editor";
+  form.id = "inline-turn-editor";
+  form.innerHTML = '<textarea aria-label="Edit message" required></textarea>';
+  const actions = article.querySelector<HTMLElement>(".turn-actions")!;
+  actions.classList.add("turn-edit-actions");
+  actions.innerHTML = `<button type="button" class="quiet-button">Cancel</button>
+    <button type="submit" form="${form.id}" class="primary-button">Save</button>`;
+  const text = form.querySelector("textarea")!;
+  text.value = message.content;
+  const initialText = text.value;
+  const prose = article.querySelector<HTMLElement>(".prose")!;
+  const proseHeight = prose.getBoundingClientRect().height;
+  prose.replaceWith(form);
+  const style = getComputedStyle(text);
+  const padding = parseFloat(style.paddingTop) + parseFloat(style.paddingBottom);
+  const borders = parseFloat(style.borderTopWidth) + parseFloat(style.borderBottomWidth);
+  text.style.height = Math.max(proseHeight, parseFloat(style.lineHeight)) + padding + borders + "px";
+  const finish = () => {
+    editingTurn = false;
+    keepReadingPosition(renderMessages);
+    focusTurn(message.id, "edit-turn");
+  };
+  actions.querySelector("button")!.onclick = () => { if (!turnPending) finish(); };
+  form.addEventListener("submit", async event => {
+    event.preventDefault();
+    if (turnPending) return;
+    if (text.value.trim() === initialText.trim()) { finish(); return; }
+    if (!await changeTurn(tale, message, "edit-message", { content: text.value })) return;
+    if (state.tale === tale) finish();
+  });
+  text.focus({ preventScroll: true });
+}
+
 async function handleTurn(button: HTMLButtonElement) {
   const tale = state.tale;
   const article = button.closest<HTMLElement>(".turn");
   const message = tale?.messages.find(row => row.id === Number(article?.dataset.message));
-  if (!tale || !article || !message || activeReply || turnPending) return;
+  if (!tale || !article || !message || activeReply || turnPending || editingTurn) return;
   const action = button.dataset.action!;
+  if (action === "edit-turn") {
+    if (message.has_signature && warnSignatures) previewDialog({
+      title: "Edit this AI reply?",
+      detail: "Saving changes clears the reply’s Gemini thinking signature for future messages.",
+      confirmLabel: "Edit",
+      checkbox: "Don’t show again",
+    }, (_, suppressWarning) => {
+      if (suppressWarning) setSignatureWarning(false);
+      editTurn(tale, message);
+    }, () => { if (!editingTurn) focusTurn(message.id, action); });
+    else editTurn(tale, message);
+    return;
+  }
   if (action === "regenerate-turn") { await sendOrStop({ message, mode: message.role === "user" ? "answer" : "regenerate" }); return; }
   if (action !== "previous-swipe" && action !== "next-swipe") return;
 
@@ -614,7 +671,7 @@ async function readReply(response: Response, consume: (event: GenerationEvent) =
 
 async function sendOrStop(rewrite?: { message: Message; mode: "regenerate" | "swipe" | "answer" }) {
   const { tale, world } = state;
-  if (!tale || !world || turnPending) return;
+  if (!tale || !world || turnPending || editingTurn) return;
   if (activeReply) { if (!rewrite) stopReply(activeReply); return; }
   const input = element<HTMLTextAreaElement>("message-input");
   const text = input.value.trim();
