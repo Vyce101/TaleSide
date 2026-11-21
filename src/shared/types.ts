@@ -28,13 +28,17 @@ export type Profile = { locked?: boolean; id: string; name: string; settings: Ch
 export type ProfileSettings = { selected: string; profiles: Profile[]; models: ChatModel[]; defaults: ChatSettings };
 export type ChatModel = { id: string; context_limit: number; max_output: number; thinking_levels: string[] };
 export type TurnStatus = "complete" | "generating" | "stopped" | "error";
-export type Message = { id: number; role: "user" | "assistant"; content: string; thinking: string;
-  model: string | null; status: TurnStatus; elapsed_ms: number | null; thinking_ms: number | null; error?: string | null };
+export type Swipe = {
+  content: string; thinking: string; model: string | null; status: TurnStatus;
+  elapsed_ms: number | null; thinking_ms: number | null; error?: string | null; has_signature?: boolean;
+};
+export type Message = Swipe & { id: number; role: "user" | "assistant";
+  swipes?: Swipe[]; swipe?: number; opening?: boolean; player_name?: string | null; player_artwork?: string | null };
 export type TaleSummary = { id: string; world_id: string; title: string; pinned: boolean; created_at: number;
   last_activity_at: number | null; message_count: number; content: string };
 export type SearchSpan = { text: string; highlighted: boolean };
 export type TaleSearchResult = TaleSummary & { match?: SearchSpan[] };
-export type Tale = TaleSummary & { messages: Message[] };
+export type Tale = TaleSummary & { persona_id?: string | null; messages: Message[] };
 export type GenerationEvent = { type: "accepted"; tale: Tale; user: Message; assistant: Message }
   | { type: "reply"; text: string }
   | { type: "thinking"; text: string; thinking_ms: number }

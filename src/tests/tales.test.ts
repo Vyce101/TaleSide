@@ -15,7 +15,7 @@ test("a Tale is saved on its first accepted send and uses live World metadata an
     },
   });
   const key = await app.addKey("Gemini");
-  const created = await app.newWorld({ name: "Original name", key_ids: [key] }, [["First.txt", "A passage"], ["Second.txt", "Another passage"]]);
+  const created = await app.newWorld({ name: "Original name", openings: [""], key_ids: [key] }, [["First.txt", "A passage"], ["Second.txt", "Another passage"]]);
   const base = `/api/worlds/${created.id}`;
   const ready = await until(() => app.world(created.id), world => world.status === "ready");
   await app.call(base + "/rename", { name: "Current World" });
@@ -87,7 +87,7 @@ test("deleting indexing preserves Tales and uses the first new passage without t
     },
   });
   const key = await app.addKey("Gemini");
-  const world = await app.newWorld({ name: "Rebuild", key_ids: [key] }, [["Book.txt", "abcdefghij"]]);
+  const world = await app.newWorld({ name: "Rebuild", openings: [""], key_ids: [key] }, [["Book.txt", "abcdefghij"]]);
   const base = `/api/worlds/${world.id}`;
   await until(() => app.world(world.id), value => value.status === "ready");
   const tale = id();

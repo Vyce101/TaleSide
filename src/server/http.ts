@@ -119,7 +119,7 @@ export async function createApplication(databasePath: string, options: Options =
     const worlds = new Worlds(db, keys, provider);
     const profiles = new Profiles(db, keys);
     const personas = new Personas(db);
-    const tales = new Tales(worlds, profiles, provider, databasePath);
+    const tales = new Tales(worlds, profiles, provider, databasePath, personas);
 
     async function handle(request: IncomingMessage, response: ServerResponse, origin: string) {
       response.setHeader("X-Content-Type-Options", "nosniff");

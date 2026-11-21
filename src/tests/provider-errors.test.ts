@@ -29,7 +29,7 @@ test("chat tries each selected key once before output and persists partial or ex
     const tale = await app.call<Tale>(`/api/worlds/${world.id}/tales/${taleId}`);
     equal(events[0].type, "accepted");
     equal(events.at(-1)?.type, "done");
-    return { message: tale.messages[1], errors: events.flatMap(event => event.type === "done" && event.error ? [event.error] : []) };
+    return { message: tale.messages.at(-1)!, errors: events.flatMap(event => event.type === "done" && event.error ? [event.error] : []) };
   };
   const recovered = await send();
   equal(recovered.message.content, "Recovered reply");
