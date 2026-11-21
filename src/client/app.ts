@@ -489,10 +489,6 @@ function updateReplyTurn(reply: Reply) {
   else previousThought?.remove();
   prose.replaceWith(template.content.querySelector(".prose")!);
 
-  previous.querySelector(".reply-error")?.remove();
-  const error = template.content.querySelector(".reply-error");
-  if (error) previous.querySelector(".turn-content")!.append(error);
-
   updateReplyTime(reply);
 }
 
@@ -563,6 +559,7 @@ async function sendOrStop() {
       } else if (event.type === "done") {
         finished = true;
         Object.assign(reply.assistant, event.message);
+        if (event.error && state.tale === tale) showToast(event.error);
         if (event.prompt_counts) {
           tale.prompt_counts = event.prompt_counts;
           if (state.tale === tale) refreshPromptCounts(tale.prompt_counts);
@@ -577,10 +574,7 @@ async function sendOrStop() {
     });
     if (!finished) throw new Error("The connection closed before the reply finished.");
   } catch (error) {
-    if (!reply.stopping && !reply.controller.signal.aborted) {
-      if (reply.accepted) reply.assistant.error = error instanceof Error ? error.message : "The connection closed.";
-      else showToast(error);
-    }
+    if (!reply.stopping && !reply.controller.signal.aborted && state.tale === tale) showToast(error);
     if (!reply.accepted) {
       tale.messages = tale.messages.filter(message => message.id !== -1);
       if (!drafts.has(tale.id)) drafts.set(tale.id, originalDraft);

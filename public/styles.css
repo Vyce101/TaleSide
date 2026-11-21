@@ -891,6 +891,7 @@ dialog label input { display: block; margin-top: 5px; }
   color: #f0f5ee;
   box-shadow: 0 4px 14px #0006;
   overflow-wrap: anywhere;
+  white-space: pre-wrap;
   pointer-events: auto;
   cursor: pointer;
   transition: opacity 180ms, background-color 120ms;
@@ -898,7 +899,6 @@ dialog label input { display: block; margin-top: 5px; }
 .toast-card:hover, .toast-card:focus-visible { background: #2b392f; }
 .toast-card:focus-visible { outline-offset: -3px; }
 .toast-leaving { opacity: 0; }
-.reply-error { overflow-wrap: anywhere; }
 .world-row .progress-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .world-index-progress span { overflow-wrap: anywhere; }
 
@@ -1020,3 +1020,7 @@ dialog label input { display: block; margin-top: 5px; }
 .persona-defaults button[aria-pressed="true"] { background: #294938; border-color: #578e6f; color: var(--mint); }
 .persona-defaults svg { width: 15px; height: 15px; }
 .reply-time { font-variant-numeric: tabular-nums; }
+@media (prefers-reduced-motion: no-preference) {
+  .toast-card { animation: toast-appear 180ms ease-out; }
+  @keyframes toast-appear { from { opacity: 0; } }
+}
