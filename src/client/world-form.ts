@@ -17,7 +17,7 @@ export function editorMarkup(world: World | undefined, indexingOpen: boolean | u
     </div>
     <div class="world-identity">
       <label class="world-art-picker" for="world-art-input" data-tooltip="Change World artwork">
-        <span id="world-editor-art">${avatar(world)}</span>
+        <span id="world-editor-art">${avatar(world ?? { artwork: null })}</span>
       </label>
       <input id="world-art-input" type="file" accept="image/*" class="offscreen-input" aria-label="World artwork" >
       <div>

@@ -16,7 +16,7 @@ const distRoot = fileURLToPath(new URL("../", import.meta.url));
 const MAX_BODY_BYTES = 256 * 1024 * 1024;
 const MAX_ARTWORK_BYTES = 16 * 1024 * 1024;
 const types: Record<string, string> = {
-  html: "text/html; charset=utf-8", css: "text/css; charset=utf-8", js: "text/javascript; charset=utf-8",
+  svg: "image/svg+xml", html: "text/html; charset=utf-8", css: "text/css; charset=utf-8", js: "text/javascript; charset=utf-8",
   mjs: "text/javascript; charset=utf-8", png: "image/png", ico: "image/x-icon", woff2: "font/woff2", ttf: "font/ttf",
   webmanifest: "application/manifest+json", txt: "text/plain; charset=utf-8",
 };

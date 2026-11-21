@@ -57,8 +57,8 @@ export function formatDate(timestamp: number) {
 }
 
 export function avatar(world?: Pick<World, "artwork">) {
-  const image = world?.artwork ?? "assets/logo.png";
-  const treatment = world?.artwork ? "world-portrait" : "default-art";
+  const image = world?.artwork ?? (world ? "assets/world-logo.png" : "assets/logo.png");
+  const treatment = world?.artwork ? "world-portrait" : world ? "default-world-art" : "default-art";
   return `<span class="avatar ${treatment}"><img src="${escapeHtml(image)}" alt="" width="42" height="42"></span>`;
 }
 
