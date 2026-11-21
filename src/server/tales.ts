@@ -99,6 +99,49 @@ export class Tales {
     run(this.db, "UPDATE worlds SET last_tale_activity_at = ? WHERE id = ?", now, worldId);
   }
 
+  changeMessage(worldId: string, id: string, action: string, input: Record<string, unknown>): Tale {
+    if (this.active.has(id) && action !== "persona") throw new RequestError("Wait for the current reply to finish.", 409);
+    const tale = this.detail(worldId, id);
+    if (action === "persona") {
+      const persona = this.personas.require(input.persona_id);
+      run(this.db, "UPDATE tales SET persona_id = ? WHERE id = ?", persona.id, id);
+      return this.detail(worldId, id);
+    }
+    const messageId = whole(input.message_id, 1, "Choose a message.");
+    const rows = this.rows(id);
+    const index = rows.findIndex(row => row.id === messageId);
+    const row = rows[index];
+    if (!row) throw new RequestError("This message could not be found.", 404);
+    const last = index === rows.length - 1;
+    const swipes = this.swipes(row);
+    if (input.swipe !== row.swipe) throw new RequestError("The selected swipe changed. Reopen the Tale and try again.", 409);
+    return transaction(this.db, () => {
+      if (action === "edit-message") {
+        const content = requiredText(input.content, "Enter a message.");
+        if (row.content.trim() !== content) {
+          if (row.role === "assistant") {
+            const swipe = swipes[row.swipe];
+            swipes[row.swipe] = { ...swipe, content, signed_parts: null };
+            this.writeSwipes(row.id, swipes, row.swipe);
+          } else run(this.db, "UPDATE tale_messages SET content = ? WHERE id = ?", content, row.id);
+        }
+      } else if (action === "select-swipe" && last && row.role === "assistant") {
+        this.writeSwipes(row.id, swipes, whole(input.position, 0, "Choose a saved swipe.", swipes.length - 1));
+      } else if (action === "delete-message") {
+        if (input.mode === "swipe" && last && swipes.length > 1) {
+          swipes.splice(row.swipe, 1);
+          this.writeSwipes(row.id, swipes, Math.min(row.swipe, swipes.length - 1));
+        } else if (input.mode === "rewind" && !last) {
+          run(this.db, "DELETE FROM tale_messages WHERE tale_id = ? AND id >= ?", id, row.id);
+        } else if (input.mode === "message") {
+          run(this.db, "DELETE FROM tale_messages WHERE id = ?", row.id);
+        } else throw new RequestError("Choose what to delete.");
+      } else throw new RequestError("This action is unavailable for the message.");
+      this.touch(worldId, id);
+      return this.detail(worldId, id);
+    });
+  }
+
   change(worldId: string, id: string, action: string, input: Record<string, unknown>) {
     if (action === "stop") {
       this.stop(worldId, id, identifier(input.generation_id), input.user_stopped === true);
