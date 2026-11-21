@@ -222,7 +222,11 @@ export class Tales {
       while (history.length && history.at(-1)!.role !== "user") history.pop();
       if (!history.length) throw new RequestError("Send a message before generating another reply.", 409);
     }
-    const content = rewrite ? undefined : requiredText(input.content, "Enter a message.");
+    const answer = input.mode === "answer";
+    if (answer && (history.at(-1)?.role !== "user" || history.at(-1)?.id !== input.message_id)) {
+      throw new RequestError("Only the final user message can be answered.", 409);
+    }
+    const content = rewrite || answer ? undefined : requiredText(input.content, "Enter a message.");
     const personaSelection = !existing && input.persona_id != null ? this.personas.require(input.persona_id).id : undefined;
     const openings: string[] = title === undefined ? []
       : (world.openings === null ? [FIRST_MESSAGE] : JSON.parse(world.openings)).filter((text: string) => text.trim());
@@ -327,10 +331,15 @@ export class Tales {
           assistant.swipe = previous.swipes!.length;
           assistant.swipes = [...previous.swipes!, publicSwipe({ ...assistant, signed_parts: null })];
         }
-      } else {
-        const saved = this.saveMessage(id, worldId, title, content!, settings.model, persona, openings, opening);
+      } else if (content !== undefined) {
+        const saved = this.saveMessage(id, worldId, title, content, settings.model, persona, openings, opening);
         user = saved.user;
         assistant = saved.assistant!;
+      } else {
+        assistant = transaction(this.db, () => {
+          this.touch(worldId, id);
+          return this.insertReply(id, settings.model);
+        });
       }
       active.message = assistant;
       emit({ type: "accepted", tale: this.detail(worldId, id), user, assistant });
