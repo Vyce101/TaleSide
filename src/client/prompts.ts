@@ -1,8 +1,25 @@
 import { BUILTIN_PROMPTS } from "../shared/story-defaults.js";
-import type { PromptBlock, PromptRole } from "../shared/types.js";
+import type { PromptBlock, PromptCounts, PromptRole } from "../shared/types.js";
 import { newId } from "./data.js";
 import { element } from "./dom.js";
 import { escapeHtml, icon, iconButton } from "./view.js";
+
+let lastCounts: PromptCounts | undefined;
+
+export function refreshPromptCounts(counts: PromptCounts | undefined) {
+  lastCounts = counts;
+  paintCounts();
+}
+
+function paintCounts() {
+  const characters = (count?: number) => count === undefined ? "— chars" : `${count.toLocaleString()} chars`;
+  element("prompt-total").textContent = characters(lastCounts?.total);
+  for (const row of element("prompt-list").querySelectorAll<HTMLElement>("[data-prompt]")) {
+    const id = row.dataset.prompt!;
+    const count = lastCounts && Object.hasOwn(lastCounts.blocks, id) ? lastCounts.blocks[id] : undefined;
+    row.querySelector("small")!.textContent = characters(count);
+  }
+}
 
 export function renderPrompts(blocks: PromptBlock[], locked: boolean) {
   const list = element("prompt-list");
@@ -14,16 +31,19 @@ export function renderPrompts(blocks: PromptBlock[], locked: boolean) {
       const editable = block.kind === "custom";
       const name = editable ? block.name : BUILTIN_PROMPTS[block.kind];
       const disabled = locked ? "disabled" : "";
+      // Replace the character count with a token count when tokenization is available.
       return `<li class="prompt-row" data-prompt="${escapeHtml(block.id)}">
         <button type="button" class="icon-button prompt-handle" aria-label="Move ${escapeHtml(name)}"
           aria-description="Drag or use the up and down arrow keys" ${disabled}>${icon("drag")}</button>
         <strong class="prompt-name">${escapeHtml(name)}</strong>
+        <small class="prompt-count"></small>
         ${iconButton("edit-prompt", "rename", editable ? "Edit prompt" : "Edit role", disabled)}
         ${editable ? iconButton("delete-prompt", "delete", "Delete prompt", disabled) : "<span></span>"}
         <label class="prompt-switch"><input type="checkbox" role="switch" aria-label="Enable ${escapeHtml(name)}"
           ${block.enabled ? "checked" : ""} ${disabled}><span></span></label>
       </li>`;
     }).join("");
+    paintCounts();
   };
   const dialog = element<HTMLDialogElement>("prompt-dialog");
   const name = element<HTMLInputElement>("prompt-name");

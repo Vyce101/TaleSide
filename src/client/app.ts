@@ -1,3 +1,4 @@
+import { refreshPromptCounts } from "./prompts.js";
 import { currentPersona, refreshPersonas } from "./personas.js";
 import type { GenerationEvent, Message, Tale, TaleSearchResult, TaleSummary, World } from "../shared/types.js";
 import { apiError, keySettings, loadTales, loadWorlds, newId, orderedTales, post, recentTime, removeTale,
@@ -268,6 +269,7 @@ function setWorkspace(world?: World, tale?: OpenTale) {
   if (activeReply && activeReply.tale.id !== tale?.id) stopReply(activeReply, true);
   state.world = world;
   state.tale = tale;
+  refreshPromptCounts(tale?.prompt_counts);
   if (world) void refreshPersonas();
   state.history = false;
   renderWorkspace();
@@ -546,6 +548,10 @@ async function sendOrStop() {
       } else if (event.type === "done") {
         finished = true;
         Object.assign(reply.assistant, event.message);
+        if (event.prompt_counts) {
+          tale.prompt_counts = event.prompt_counts;
+          if (state.tale === tale) refreshPromptCounts(tale.prompt_counts);
+        }
       } else if (event.type === "thinking") {
         reply.assistant.thinking += event.text;
         reply.assistant.thinking_ms = event.thinking_ms;
