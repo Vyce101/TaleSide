@@ -26,6 +26,7 @@ const iconPaths = {
   model: '<path class="solid" d="M10.5 2c1 5.1 3.1 7.4 8.5 8.5-5.4 1.1-7.5 3.4-8.5 8.5-1.1-5.1-3.4-7.4-8.5-8.5 5.1-1.1 7.4-3.4 8.5-8.5Zm8.7 12.1c.5 2.5 1.5 3.5 4 4-2.5.5-3.5 1.5-4 4-.5-2.5-1.5-3.5-4-4 2.5-.5 3.5-1.5 4-4Z"/>',
   save: '<path class="solid" fill-rule="evenodd" d="M4 2h12l5 5v13a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Zm2 2v5h10V4H6Zm0 10v6h12v-6H6Z"/>',
   personas: '<circle cx="9" cy="7" r="3"/><path d="M3 20v-2a6 6 0 0 1 12 0v2m2-16a3 3 0 0 1 0 6m1 4a5 5 0 0 1 3 5"/>',
+  branch: '<circle cx="6" cy="5" r="2"/><circle cx="6" cy="19" r="2"/><circle cx="18" cy="5" r="2"/><path d="M6 7v10m0-4c7 0 12-2 12-6"/>',
   left: '<path d="m15 5-7 7 7 7"/>',
   right: '<path d="m9 5 7 7-7 7"/>',
   search: '<circle cx="10" cy="10" r="6"/><path d="m15 15 5 5"/>',
@@ -208,6 +209,7 @@ export function messageTurn(message: Message, world: World, last = false, canReg
   const pendingActions = draft || message.id < 0;
   const disabled = busy ? "disabled" : "";
   const actions = `<div class="turn-actions" ${pendingActions ? "inert" : ""}>
+    ${iconButton("branch-turn", "branch", "Branch", disabled)}
     ${canRegenerate ? iconButton("regenerate-turn", "replace", "Regenerate", disabled) : ""}
     ${iconButton("edit-turn", "rename", "Edit", disabled)}
     ${iconButton("delete-turn", "delete", "Delete", disabled)}

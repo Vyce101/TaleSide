@@ -506,7 +506,8 @@ async function changeTurn(tale: OpenTale, message: Message, action: string, deta
     const updated = await request<Tale>(`${taleRoute(tale)}/${action}`, { message_id: message.id, swipe: message.swipe ?? 0, ...details });
     storeTale(updated);
     if (state.tale === tale) {
-      Object.assign(tale, updated);
+      if (action === "branch") navigate(state.world, updated);
+      else Object.assign(tale, updated);
     }
     refreshTaleLists();
     return true;
@@ -576,6 +577,7 @@ async function handleTurn(button: HTMLButtonElement) {
     else editTurn(tale, message);
     return;
   }
+  if (action === "branch-turn") { await changeTurn(tale, message, "branch"); return; }
   if (action === "regenerate-turn") { await sendOrStop({ message, mode: message.role === "user" ? "answer" : "regenerate" }); return; }
   if (action === "delete-turn") {
     const below = tale.messages.length - tale.messages.indexOf(message) - 1;
