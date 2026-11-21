@@ -134,7 +134,7 @@ export class Worlds {
   }
 
   async append(id: string, revision: unknown, books: BookInput[]) {
-    if (!books.length) throw new RequestError("Select at least one TXT book.");
+    if (!books.length) throw new RequestError("Select at least one book.");
     const world = this.editable(id, this.requireRevision(revision));
     const prepared = await prepareBooks(books, world.max_chunk_size);
     this.editable(id, revision);
@@ -210,7 +210,7 @@ export class Worlds {
     const settings = this.settings({ ...input, name: world.name }, start);
     const model = EMBEDDING_MODELS.find(item => item.id === settings.model)!;
     const books = start ? all<StoredBook>(this.db, "SELECT * FROM books WHERE world_id = ? ORDER BY number", id) : [];
-    if (start && !books.length) throw new RequestError("Add a TXT book before starting indexing.");
+    if (start && !books.length) throw new RequestError("Add a book before starting indexing.");
     const prepared = await prepareBooks(books, settings.max_chunk_size);
     this.editable(id, input.book_revision);
     this.keys.validate(settings.key_ids, start);
@@ -341,18 +341,21 @@ export class Worlds {
       const chunks = all<{ number: number; start: number; end: number; embed_end: number; original_start: number; original_end: number; vector: Uint8Array }>(
         this.db, "SELECT * FROM chunks WHERE book_id = ? AND index_number = ? ORDER BY number", book.id, world.index_number);
       let start = 0;
+      const exactSource = book.encoding !== "extracted";
       let sourceStart = book.bom_size;
       for (const [position, chunk] of chunks.entries()) {
         const original = book.original.subarray(sourceStart, chunk.original_end);
-        if (chunk.number !== position + 1 || chunk.start !== start || chunk.original_start !== sourceStart
+        const invalidSource = exactSource && (chunk.original_start !== sourceStart
+          || normalizeLines(decode(original, book.encoding)) !== text.slice(start, chunk.end).join(""));
+        if (chunk.number !== position + 1 || chunk.start !== start
           || chunk.embed_end <= start || chunk.embed_end > chunk.end || chunk.end - start > world.max_chunk_size
-          || chunk.vector?.length !== world.dimensions * 4 || normalizeLines(decode(original, book.encoding)) !== text.slice(start, chunk.end).join("")) {
+          || chunk.end > text.length || chunk.vector?.length !== world.dimensions * 4 || invalidSource) {
           throw new Error("Could not verify the saved World.");
         }
         start = chunk.end;
         sourceStart = chunk.original_end;
       }
-      if (start !== text.length || sourceStart !== book.original.length) throw new Error("Could not verify the saved World.");
+      if (start !== text.length || (exactSource && sourceStart !== book.original.length)) throw new Error("Could not verify the saved World.");
     }
   }
 

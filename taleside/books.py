@@ -1,10 +1,12 @@
-"""Lossless TXT preparation and source offsets."""
+"""Prepare book text and preserve source offsets for plain-text formats."""
 
 import codecs
 import re
 from bisect import bisect_left
 from dataclasses import dataclass
 from pathlib import PureWindowsPath
+
+from .book_documents import epub_text, html_text
 
 BOUNDARIES = (
     re.compile(r"\n(?:[^\S\n]*\n)+"),
@@ -70,16 +72,30 @@ def chunk_end(text, start, max_size):
 def prepare_book(source, max_size):
     if not source.filename or PureWindowsPath(source.filename).name != source.filename:
         raise ValueError("Supply a filename without a directory for each book.")
-    if PureWindowsPath(source.filename).suffix.lower() != ".txt":
-        raise ValueError(f"{source.filename}: select a TXT file.")
+    suffix = PureWindowsPath(source.filename).suffix.lower()
     try:
-        decoded, encoding, bom_size = decode_txt(source.original)
+        if suffix in {".txt", ".md", ".markdown"}:
+            decoded, encoding, bom_size = decode_txt(source.original)
+        elif suffix in {".htm", ".html", ".epub"}:
+            decoded = epub_text(source.original) if suffix == ".epub" else html_text(source.original)
+            encoding, bom_size = "extracted", 0
+        else:
+            raise ValueError("Select a TXT, Markdown, HTML, or EPUB file.")
     except (ValueError, UnicodeError) as error:
         raise ValueError(f"{source.filename}: {error}") from error
 
     working = normalize_lines(decoded)
     if not working.strip():
         raise ValueError(f"{source.filename}: the book contains no text.")
+
+    if encoding == "extracted":
+        chunks = []
+        start = 0
+        while start < len(working):
+            end = chunk_end(working, start, max_size)
+            chunks.append(Chunk(start, end, 0, 0))
+            start = end
+        return working, encoding, bom_size, tuple(chunks)
 
     # Each CRLF adds one encoded character to the source range.
     crlf_positions = [match.start() - index for index, match in enumerate(re.finditer(r"\r\n", decoded))]

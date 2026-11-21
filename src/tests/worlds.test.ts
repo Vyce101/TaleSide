@@ -1,4 +1,5 @@
 import { deepEqual, equal, match, ok } from "node:assert/strict";
+import { DatabaseSync } from "node:sqlite";
 import { test } from "node:test";
 import type { World } from "../shared/types.js";
 import { fakeProvider, fixture, id, until, upload } from "./fixture.js";
@@ -141,4 +142,20 @@ test("a large index reports progress after the first chunk even below one percen
   equal(paused.embedded_chunks, 1);
   ok(paused.total_chunks >= 200);
   ok(paused.progress > 0 && paused.progress < 1);
+});
+
+test("HTML books finish indexing against extracted text and retain the original upload", async t => {
+  const app = await fixture(t);
+  const key = await app.addKey("Embedding");
+  const original = "<h1>Prologue</h1><p>The garden gate.</p><p hidden>Omitted</p>";
+  const world = await app.newWorld({ name: "HTML World", key_ids: [key], max_chunk_size: 12 },
+    [["Book.html", original]]);
+  const ready = await until(() => app.world(world.id), world => world.status === "ready" || world.status === "failed");
+  equal(ready.status, "ready");
+  const db = new DatabaseSync(app.database, { readOnly: true });
+  try {
+    const book = db.prepare("SELECT original, working FROM books WHERE world_id = ?").get(world.id)!;
+    equal(Buffer.from(book.original as Uint8Array).toString("utf8"), original);
+    equal(book.working, "Prologue\n\nThe garden gate.");
+  } finally { db.close(); }
 });
