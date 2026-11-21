@@ -753,7 +753,7 @@ workspace.addEventListener("input", event => {
 });
 
 document.addEventListener("keydown", event => {
-  if (event.key === "Escape" && !taleDialog.open) {
+  if (event.key === "Escape" && !document.querySelector("dialog[open]")) {
     if (state.panel) showPanel(null);
     else if (state.history) setHistory(false, true);
   }

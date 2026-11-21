@@ -141,6 +141,27 @@
       </div>
     </form>
   </dialog>
+  <dialog id="artwork-dialog" aria-labelledby="crop-title">
+    <form method="dialog">
+      <h2 id="crop-title">Crop World picture</h2>
+      <div class="crop-stage">
+        <img id="crop-image" alt="Selected World picture" draggable="false">
+        <div class="crop-clip">
+          <div id="crop-box" tabindex="0" role="group" aria-label="Crop square. Use arrow keys to move it.">
+            <div class="crop-guide" aria-hidden="true"></div>
+            <button type="button" data-corner="nw" aria-label="Resize top left with arrow keys"></button>
+            <button type="button" data-corner="ne" aria-label="Resize top right with arrow keys"></button>
+            <button type="button" data-corner="sw" aria-label="Resize bottom left with arrow keys"></button>
+            <button type="button" data-corner="se" aria-label="Resize bottom right with arrow keys"></button>
+          </div>
+        </div>
+      </div>
+      <div class="dialog-actions">
+        <button type="submit" value="cancel" autofocus>Cancel</button>
+        <button type="submit" value="save" id="crop-save" class="primary-button">Save</button>
+      </div>
+    </form>
+  </dialog>
   <div id="toasts" class="toasts" aria-label="Notifications"></div>
   <div id="tooltip" class="tooltip" role="tooltip" hidden></div>
 </body>

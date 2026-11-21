@@ -1,6 +1,7 @@
 import type { World, WorldSettings } from "../shared/types.js";
 import { enterWorld, navigate, previewDialog, state, showPanel, updateWorld } from "./app.js";
 import { keySettings, newId, removeWorld, request, worldRoute, worlds } from "./data.js";
+import { cropArtwork } from "./artwork.js";
 import { element, showError } from "./dom.js";
 import { showDrawerError, showToast } from "./toasts.js";
 import { renderKeyPicker } from "./key-picker.js";
@@ -130,9 +131,22 @@ export function openWorldEditor(world?: World) {
     event.preventDefault();
     void saveWorld(form);
   });
-  element<HTMLInputElement>("world-art-input").addEventListener("change", event => {
-    const file = (event.target as HTMLInputElement).files?.[0];
-    if (file) void changeArtwork(form, file);
+  element<HTMLInputElement>("world-art-input").addEventListener("change", async event => {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    input.value = "";
+    if (!file) return;
+    input.disabled = true;
+    showError("world-error");
+    try {
+      const picture = await cropArtwork(file);
+      if (picture && editor === form) await changeArtwork(form, picture);
+    } catch (error) {
+      if (editor === form) showError("world-error", error);
+    } finally {
+      input.disabled = false;
+      if (editor === form) input.focus({ preventScroll: true });
+    }
   });
   element<HTMLInputElement>("world-books-input").addEventListener("change", async event => {
     const input = event.target as HTMLInputElement;
