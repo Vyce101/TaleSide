@@ -11,15 +11,20 @@ export type EmbeddingModel = { id: string; dimensions: number; max_token_limit: 
 export type KeySummary = { id: string; nickname: string; suffix: string | null; worlds: { id: string; name: string }[] };
 export type KeyImpact = { worlds: KeySummary["worlds"]; busy: boolean };
 export type KeySettings = { keys: KeySummary[]; models: EmbeddingModel[]; defaults: { model: string; key_ids: string[] } };
-export type Wrappers = Record<"world_info" | "retrieved_passages" | "chat_history", [string, string]>;
+export type BuiltinPrompt = "world_description" | "world_info" | "persona" | "retrieved_passages" | "chat_history";
+export type PromptRole = "system" | "user" | "model";
+export type PromptBlock = { id: string; enabled: boolean } & (
+  { kind: BuiltinPrompt; role?: PromptRole | "multi-role" } | { kind: "custom"; name: string; role: PromptRole; text: string }
+);
+export type Wrappers = Record<BuiltinPrompt, [string, string]>;
 export type Persona = { id: string; name: string; nickname: string; description: string; artwork: string | null };
 export type PersonasView = { personas: Persona[]; global: string | null; world: string | null };
 export type ChatSettings = {
   model: string; chat_key_ids: string[]; thinking_level: string; thought_signatures: boolean;
   input_limit: number; output_limit: number; retrieved_chunks: number; minimum_similarity: number;
-  chunk_overlap: number; messages_to_embed: number; wrappers: Wrappers;
+  chunk_overlap: number; messages_to_embed: number; wrappers: Wrappers; prompts: PromptBlock[];
 };
-export type Profile = { id: string; name: string; settings: ChatSettings };
+export type Profile = { locked?: boolean; id: string; name: string; settings: ChatSettings };
 export type ProfileSettings = { selected: string; profiles: Profile[]; models: ChatModel[]; defaults: ChatSettings };
 export type ChatModel = { id: string; context_limit: number; max_output: number; thinking_levels: string[] };
 export type TurnStatus = "complete" | "generating" | "stopped" | "error";

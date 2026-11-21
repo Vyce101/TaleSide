@@ -188,7 +188,7 @@ test("appending books uses completed passages while the new book waits, and dele
   await app.call(base + "/add-books", upload({ book_revision: world.book_revision }, [["Next.txt", "Next story"]]));
   const profiles = await app.profiles();
   const saved = { ...profiles.defaults, chat_key_ids: [first, second], retrieved_chunks: 17 };
-  await app.call("/api/chat-profiles/save", { id: profiles.selected, settings: saved });
+  await app.call("/api/chat-profiles/create", { name: "My preset", settings: saved });
   const keys = await app.keys();
   equal(keys.keys[0].worlds[0].name, world.name);
   equal("protected_secret" in keys.keys[0], false);
@@ -196,8 +196,8 @@ test("appending books uses completed passages while the new book waits, and dele
   await app.call(`/api/provider-keys/${first}/delete`, { impact });
   deepEqual((await app.world(world.id)).retrieval_key_ids, [second]);
   deepEqual((await app.world(world.id)).embedding_key_ids, [second]);
-  deepEqual((await app.profiles()).profiles[0].settings.chat_key_ids, [second]);
-  equal((await app.profiles()).profiles[0].settings.retrieved_chunks, 17);
+  deepEqual((await app.profiles()).profiles.find(profile => profile.name === "My preset")!.settings.chat_key_ids, [second]);
+  equal((await app.profiles()).profiles.find(profile => profile.name === "My preset")!.settings.retrieved_chunks, 17);
   const tale = id();
   await app.generate(world.id, tale, "Waiting on new books", { ...saved, chat_key_ids: [second] });
   await app.call(base + "/retrieval-key", { key_ids: [] });
