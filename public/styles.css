@@ -1024,3 +1024,4 @@ dialog label input { display: block; margin-top: 5px; }
   .toast-card { animation: toast-appear 180ms ease-out; }
   @keyframes toast-appear { from { opacity: 0; } }
 }
+#app-settings-error:empty { display: none; }

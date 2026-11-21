@@ -1,4 +1,5 @@
 import { Personas } from "./personas.js";
+import { get, run } from "./database.js";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { readFile, stat } from "node:fs/promises";
 import { resolve, sep } from "node:path";
@@ -141,6 +142,10 @@ export async function createApplication(databasePath: string, options: Options =
         if (path === "/api/worlds") return json(response, worlds.list());
         if (path === "/api/settings") return json(response, keys.settings());
         if (path === "/api/tale-settings") return json(response, profiles.view());
+        if (path === "/api/app-settings") {
+          return json(response, { warn_signatures: get<{ warn_signatures: number }>(db,
+            "SELECT warn_signatures FROM app_settings WHERE id = 1")?.warn_signatures !== 0 });
+        }
         if (path === "/api/personas") {
           const world = url.searchParams.get("world");
           return json(response, personas.view(world === null ? null : identifier(world)));
@@ -159,6 +164,12 @@ export async function createApplication(databasePath: string, options: Options =
         if (!path.startsWith("/api/")) return staticFile(response, path);
       }
 
+      if (!getRequest && path === "/api/app-settings") {
+        const { warn_signatures } = await readJson(request);
+        if (typeof warn_signatures !== "boolean") throw new RequestError("Choose whether to warn before clearing signatures.");
+        run(db, "INSERT OR REPLACE INTO app_settings (id, warn_signatures) VALUES (1, ?)", Number(warn_signatures));
+        return json(response, { warn_signatures });
+      }
       const portrait = /^\/api\/(personas|persona-artwork)\/([a-f0-9]{32})(?:\/artwork)?$/.exec(path);
       if (getRequest && portrait?.[1] === "persona-artwork") {
         const artwork = personas.artwork(portrait[2]);

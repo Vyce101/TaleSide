@@ -14,6 +14,7 @@ import { handleWorldAction, hideWorldPanel, isWorldEditorOpen, leaveWorldSetup, 
 type OpenTale = Tale & { draft?: boolean };
 type Reply = { tale: OpenTale; id: string; controller: AbortController; assistant: Message; accepted: boolean; stopping: boolean; started: number; timer?: number; frame?: number };
 let activeReply: Reply | undefined;
+let warnSignatures = true;
 let navigation = 0;
 const drafts = new Map<string, string>();
 
@@ -23,6 +24,7 @@ const drawers = {
   worlds: element("worlds-drawer"),
   settings: element("settings-drawer"),
   keys: element("keys-drawer"),
+  "app-settings": element("app-settings-drawer"),
   personas: element("personas-drawer"),
 };
 type Panel = keyof typeof drawers;
@@ -85,7 +87,7 @@ function keepReadingPosition(update: () => void, follow = true) {
 }
 
 function updatePanelLayout() {
-  const showFullWidth = narrow.matches && state.panel !== null && state.panel !== "keys" && state.panel !== "personas";
+  const showFullWidth = narrow.matches && state.panel !== null && state.panel !== "keys" && state.panel !== "personas" && state.panel !== "app-settings";
   workspace.inert = showFullWidth;
   if (!state.panel) return;
   const back = drawers[state.panel].querySelector<HTMLButtonElement>(".panel-back")!;
@@ -458,6 +460,17 @@ function editTale(action: "rename" | "delete", tale: TaleSummary, button: HTMLBu
   }, () => restoreRowFocus(button));
 }
 
+function setSignatureWarning(value: boolean, checkbox = element<HTMLInputElement>("warn-signatures")) {
+  const previous = warnSignatures;
+  warnSignatures = value;
+  checkbox.checked = value;
+  void request("/api/app-settings", { warn_signatures: value }).catch(error => {
+    warnSignatures = previous;
+    checkbox.checked = previous;
+    element("app-settings-error").textContent = error instanceof Error ? error.message : String(error);
+  });
+}
+
 function stopReply(reply: Reply, leaving = false) {
   reply.stopping = true;
   if (leaving) window.clearInterval(reply.timer);
@@ -705,7 +718,7 @@ for (const button of panelButtons) {
   button.innerHTML = icon(glyph);
   button.setAttribute("aria-label", panelNames[name]);
   button.dataset.tooltip = panelNames[name];
-  if (name !== "app-settings" && name !== "inspector") button.addEventListener("click", () => showPanel(state.panel === name ? null : name));
+  if (name !== "inspector") button.addEventListener("click", () => showPanel(state.panel === name ? null : name));
 }
 
 element("home-button").addEventListener("click", () => leaveWorldSetup(() => navigate()));
@@ -807,6 +820,12 @@ document.addEventListener("keydown", event => {
 
 window.addEventListener("pagehide", () => { if (activeReply) stopReply(activeReply, true); });
 initializeTooltips();
+const warning = element<HTMLInputElement>("warn-signatures");
+warning.addEventListener("change", () => setSignatureWarning(warning.checked, warning));
+void request<{ warn_signatures: boolean }>("/api/app-settings").then(saved => {
+  warnSignatures = saved.warn_signatures;
+  warning.checked = warnSignatures;
+}).catch(error => { element("app-settings-error").textContent = String(error); });
 renderWorkspace();
 void Promise.all([loadWorlds(), loadTales(), initializeSettings(), refreshKeys()]).then(() => {
   syncWorlds();
