@@ -62,18 +62,22 @@ export function avatar(world?: Pick<World, "artwork">) {
   return `<span class="avatar ${treatment}"><img src="${escapeHtml(image)}" alt="" width="42" height="42"></span>`;
 }
 
-export function worldRows(active: World | undefined) {
-  return `<div class="world-picker-tools">${iconButton("create-world", "plus", "New World")}</div>
-    <ul class="world-list">${worlds.map(world => {
+export function searchInput(id: string, label: string) {
+  return `<input type="search" id="${id}" class="list-search" aria-label="${label}" placeholder="${label}" maxlength="512" autocomplete="off">`;
+}
+
+export function worldRows(entries: World[], active: World | undefined, searching: boolean) {
+  if (!entries.length && searching) return '<li class="empty-copy">No matching Worlds</li>';
+  return entries.map(world => {
     const name = escapeHtml(world.name);
     const hasJob = ["creating", "pausing", "paused", "failed"].includes(world.status);
     return `<li><button class="world-row" type="button" data-action="open-world" data-id="${world.id}" data-tooltip="${name}"
       ${world.id === active?.id ? 'aria-current="true"' : ''}>
       ${avatar(world)}<span class="world-name">${name}</span>
       <progress max="100" value="${world.progress}" aria-label="${name} indexing" ${hasJob ? "" : "hidden"}></progress>
-      <span class="progress-text" ${world.status === "ready" ? "hidden" : ""}>${worldIndexStatus(world)}</span>
+      <span class="progress-text" ${world.status === "ready" ? "hidden" : ""}>${escapeHtml(worldIndexStatus(world))}</span>
     </button></li>`;
-  }).join("")}</ul>`;
+  }).join("");
 }
 
 export function taleRows(entries: TaleSummary[], currentId?: string) {

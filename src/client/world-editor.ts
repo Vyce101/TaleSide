@@ -4,7 +4,7 @@ import { keySettings, newId, removeWorld, request, worldRoute, worlds } from "./
 import { element, showError } from "./dom.js";
 import { showDrawerError, showToast } from "./toasts.js";
 import { renderKeyPicker } from "./key-picker.js";
-import { avatar, worldIndexStatus, worldRows } from "./view.js";
+import { avatar, iconButton, searchInput, worldRows } from "./view.js";
 import { editorMarkup, processing, renderBooks, renderIndex, renderWorldProgress, upload, type EditableBook } from "./world-form.js";
 
 type Editor = { id: string; world?: World; books: EditableBook[]; keyIds: string[]; artwork?: File;
@@ -17,8 +17,44 @@ export function restoreWorldPanel() {
   else showWorldList();
 }
 
+let worldQuery = "";
+let renderedWorldRows = "";
+
+function normalizeSearch(text: string) {
+  return text.toLowerCase().normalize("NFD").replace(/\p{M}/gu, "").replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+}
+
+function updateWorldRows() {
+  const query = normalizeSearch(worldQuery);
+  const words = query.split(" ");
+  const entries = query ? worlds.flatMap(world => {
+    const name = normalizeSearch(world.name);
+    const text = [name, ...world.books.flatMap(book => [normalizeSearch(book.name), normalizeSearch(book.filename)])].join(" ");
+    if (!words.every(word => text.includes(word))) return [];
+    const rank = name.startsWith(query) ? 0 : words.every(word => name.includes(word)) ? 1 : 2;
+    return [{ world, rank }];
+  }).sort((a, b) => a.rank - b.rank).map(({ world }) => world) : worlds;
+  const list = element("world-list");
+  const rows = worldRows(entries, state.world, !!query);
+  if (renderedWorldRows !== rows) {
+    const focusedId = list.contains(document.activeElement) ? (document.activeElement as HTMLElement).dataset.id : undefined;
+    list.innerHTML = rows;
+    renderedWorldRows = rows;
+    if (focusedId) list.querySelector<HTMLElement>(`[data-id="${focusedId}"]`)?.focus({ preventScroll: true });
+  }
+}
+
 function showWorldList() {
-  element("world-panel").innerHTML = worldRows(state.world);
+  renderedWorldRows = "";
+  element("world-panel").innerHTML = `<div class="world-picker-tools">${searchInput("world-search", "Search Worlds")}
+    ${iconButton("create-world", "plus", "New World")}</div><ul id="world-list" class="world-list"></ul>`;
+  const input = element<HTMLInputElement>("world-search");
+  input.value = worldQuery;
+  input.addEventListener("input", () => {
+    worldQuery = input.value;
+    updateWorldRows();
+  });
+  updateWorldRows();
   element("panel-title").textContent = "Worlds";
 }
 
@@ -251,20 +287,8 @@ export function syncWorldPanel() {
     if (previous.status !== world.status || previous.error !== world.error || previous.progress !== world.progress || previous.active_book !== world.active_book
       || previous.book_revision !== world.book_revision) refreshEditor(editor);
   } else if (!editor && state.panel === "worlds") {
-    const list = element("world-panel");
-    if (list.querySelectorAll(".world-row").length !== worlds.length) { showWorldList(); return; }
-    for (const world of worlds) {
-      const row = list.querySelector<HTMLButtonElement>(`[data-action="open-world"][data-id="${world.id}"]`);
-      if (!row) { showWorldList(); return; }
-      const progress = row.querySelector("progress")!;
-      progress.value = world.progress;
-      progress.hidden = !["creating", "pausing", "paused", "failed"].includes(world.status);
-      const status = row.querySelector<HTMLElement>(".progress-text")!;
-      status.textContent = worldIndexStatus(world);
-      status.hidden = world.status === "ready";
-      row.querySelector<HTMLElement>(".world-name")!.textContent = world.name;
-      row.dataset.tooltip = world.name;
-    }
+    if (document.getElementById("world-list")) updateWorldRows();
+    else showWorldList();
   }
 }
 
