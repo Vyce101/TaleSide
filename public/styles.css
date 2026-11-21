@@ -857,7 +857,37 @@ dialog label input { display: block; margin-top: 5px; }
 }
 @keyframes composer-spin { to { rotate: 360deg; } }
 @media (prefers-reduced-motion: reduce) { .composer-spinner { animation: none; } }
-.app-error { position: fixed; inset: auto 12px 9px; z-index: 3; text-align: center; pointer-events: none; }
+.toasts {
+  position: fixed;
+  right: max(12px, env(safe-area-inset-right));
+  bottom: max(65px, calc(env(safe-area-inset-bottom) + 60px));
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(370px, calc(100% - 24px));
+  max-height: calc(100dvh - 95px);
+  overflow: auto;
+  pointer-events: none;
+}
+.toast-card {
+  display: flex;
+  align-items: center;
+  min-height: 50px;
+  padding: 10px 12px;
+  border: 1px solid #597060;
+  border-radius: 9px;
+  background: #212e26;
+  color: #f0f5ee;
+  box-shadow: 0 4px 14px #0006;
+  overflow-wrap: anywhere;
+  pointer-events: auto;
+  cursor: pointer;
+  transition: opacity 180ms, background-color 120ms;
+}
+.toast-card:hover, .toast-card:focus-visible { background: #2b392f; }
+.toast-card:focus-visible { outline-offset: -3px; }
+.toast-leaving { opacity: 0; }
 .turn .prose pre { overflow-x: auto; }
 .turn .prose code, .thinking-block code { overflow-wrap: anywhere; }
 .turn .prose a, .thinking-block a { color: var(--mint); }

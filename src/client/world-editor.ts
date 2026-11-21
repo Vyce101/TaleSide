@@ -2,6 +2,7 @@ import type { World, WorldSettings } from "../shared/types.js";
 import { enterWorld, navigate, previewDialog, state, showPanel, updateWorld } from "./app.js";
 import { keySettings, newId, removeWorld, request, worldRoute, worlds } from "./data.js";
 import { element, showError } from "./dom.js";
+import { showDrawerError, showToast } from "./toasts.js";
 import { renderKeyPicker } from "./key-picker.js";
 import { avatar, worldIndexStatus, worldRows } from "./view.js";
 import { editorMarkup, processing, renderBooks, renderIndex, renderWorldProgress, upload, type EditableBook } from "./world-form.js";
@@ -75,7 +76,7 @@ export function openWorldEditor(world?: World) {
       const world = await request<World>(`${worldRoute(form.id)}/rename`, { name: name.value });
       updateWorld(world);
       if (editor === form) element("panel-title").textContent = world.name;
-    } catch (error) { if (editor === form) showError("world-error", error); }
+    } catch (error) { if (editor === form) showDrawerError("world-error", error); }
   });
   for (const id of ["world-model", "world-chunk-size"]) {
     element(id).addEventListener("input", () => { markDirty(form); });
@@ -131,7 +132,7 @@ async function changeArtwork(form: Editor, file: File) {
       const result = await request<World>(`${worldRoute(form.id)}/artwork`, body);
       updateWorld(result);
       if (editor === form) element("world-editor-art").innerHTML = avatar(result);
-    } catch (error) { if (editor === form) showError("world-error", error); }
+    } catch (error) { if (editor === form) showDrawerError("world-error", error); }
     return;
   }
   if (form.pendingPortrait) URL.revokeObjectURL(form.pendingPortrait);
@@ -176,7 +177,7 @@ function saveIndexSettings(form: Editor) {
     if (form.world?.status !== "unindexed") return;
     try {
       updateWorld(await request<World>(`${worldRoute(form.id)}/index-settings`, { ...settings, book_revision: form.world.book_revision }));
-    } catch (error) { if (editor === form) showError("world-error", error); }
+    } catch (error) { if (editor === form) showDrawerError("world-error", error); }
   });
 }
 
@@ -215,7 +216,7 @@ async function act(form: Editor, action: string, input: object = {}): Promise<Wo
     return result;
   } catch (error) {
     if (editor === form) {
-      showError("world-error", error);
+      showDrawerError("world-error", error);
       if (form.world) {
         try { updateWorld(await request<World>(worldRoute(form.id))); } catch { /* Keep the original error. */ }
       }
@@ -287,7 +288,7 @@ function discardWorld(world: World) {
         removeWorld(world.id);
         if (editor?.id === world.id) closeWorldEditor();
         navigate();
-      } catch (error) { showError("app-error", error); }
+      } catch (error) { showToast(error); }
     });
 }
 

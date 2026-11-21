@@ -1,10 +1,11 @@
 import type { GenerationEvent, Message, Tale, TaleSummary, World } from "../shared/types.js";
 import { keySettings, loadTales, loadWorlds, newId, orderedTales, post, recentTime, removeTale,
   request, storeTale, storeWorld, taleRoute, tales, worlds } from "./data.js";
-import { element, showError } from "./dom.js";
+import { element } from "./dom.js";
 import { closeKeyEditor, currentChatSettings, initializeSettings, refreshKeys, renderKeysView, renderWorldContext } from "./settings.js";
 import { fillMessageText, formatDate, homeView, icon, idleView, messageRows, messageTurn, recentCollapsed, taleRows, taleView, type Icon } from "./view.js";
 import { animateSurface, historyFrames, setSurfaceVisible, slideFrames } from "./motion.js";
+import { clearToast, showToast } from "./toasts.js";
 import { initializeTooltips } from "./tooltips.js";
 import { handleWorldAction, hideWorldPanel, leaveWorldSetup, openWorldEditor, restoreWorldPanel, syncWorldPanel } from "./world-editor.js";
 
@@ -123,7 +124,7 @@ export function showPanel(next: Panel | null, returnFocus = true) {
   if (next === "worlds") restoreWorldPanel();
   if (next === "keys") {
     renderKeysView();
-    void refreshKeys().catch(error => showError("keys-error", error));
+    void refreshKeys().catch(error => showToast(error));
   }
   if (next === "settings") renderWorldContext();
   const drawer = drawers[next];
@@ -212,7 +213,6 @@ function setWorkspace(world?: World, tale?: OpenTale) {
   state.world = world;
   state.tale = tale;
   state.history = false;
-  showError("app-error");
   renderWorkspace();
 }
 
@@ -245,7 +245,7 @@ async function openTale(world: World, tale: TaleSummary | undefined, inSidebar: 
       if (state.world?.id !== currentWorld.id || !state.tale) setWorkspace(currentWorld, selected);
       if (state.panel === "worlds") openWorldEditor(currentWorld);
     } else navigate(currentWorld, selected);
-  } catch (error) { if (navigation === revision) showError("app-error", error); }
+  } catch (error) { if (navigation === revision) showToast(error); }
 }
 
 export function enterWorld(world: World) {
@@ -379,7 +379,7 @@ function editTale(action: "rename" | "delete", tale: TaleSummary, button: HTMLBu
           else navigate();
         } else refreshTaleLists();
       }
-    } catch (error) { showError("app-error", error); }
+    } catch (error) { showToast(error); }
   }, () => restoreRowFocus(button));
 }
 
@@ -510,7 +510,7 @@ async function sendOrStop() {
       }
     }
     if (reply.accepted || reply.controller.signal.aborted) {
-      void loadTales().then(refreshTaleLists, () => {});
+      void loadTales().then(refreshTaleLists, error => showToast(error));
     }
   }
 }
@@ -594,8 +594,8 @@ for (const drawer of Object.values(drawers)) {
   drawer.querySelector(".panel-back")!.addEventListener("click", () => showPanel(null));
 }
 document.addEventListener("click", event => {
-  if ((!state.panel && !state.history) || taleDialog.open || !(event.target instanceof Element)
-    || event.target.closest(".toolbar button")) return;
+  if ((!state.panel && !state.history) || !(event.target instanceof Element)
+    || event.target.closest(".toolbar button, dialog[open], #toasts")) return;
   if (state.panel && drawers[state.panel].contains(event.target)) return;
   if (state.history && event.target.closest('#tale-history, [data-action="toggle-history"]')) return;
   event.preventDefault();
@@ -645,7 +645,7 @@ document.addEventListener("click", event => {
           storeTale(tale);
           refreshTaleLists();
           restoreRowFocus(button);
-        }).catch(error => showError("app-error", error));
+        }).catch(error => showToast(error));
       }
       break;
     case "rename-tale":
@@ -689,13 +689,13 @@ renderWorkspace();
 void Promise.all([loadWorlds(), loadTales(), initializeSettings(), refreshKeys()]).then(() => {
   syncWorlds();
   refreshTaleLists();
-}).catch(error => showError("app-error", error));
+}).catch(error => showToast(error));
 
 let polling = false;
 window.setInterval(async () => {
   if (polling || !worlds.some(world => world.status === "creating" || world.status === "pausing")) return;
   polling = true;
-  try { await loadWorlds(); syncWorlds(); }
-  catch (error) { showError("app-error", error); }
+  try { await loadWorlds(); clearToast("world-poll"); syncWorlds(); }
+  catch (error) { showToast(error, { key: "world-poll", onceUntilCleared: true }); }
   finally { polling = false; }
 }, 750);

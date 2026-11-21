@@ -1,6 +1,7 @@
 import type { ChatSettings, KeyImpact, KeySummary, ProfileSettings, World, Wrappers } from "../shared/types.js";
 import { updateWorld, syncWorlds, previewDialog, refreshComposer, state } from "./app.js";
 import { keySettings, loadKeys, loadWorlds, request, worldRoute } from "./data.js";
+import { showDrawerError, showToast } from "./toasts.js";
 import { element, showError } from "./dom.js";
 import { setSurfaceVisible, slideFrames } from "./motion.js";
 import { renderKeyPicker } from "./key-picker.js";
@@ -127,7 +128,8 @@ async function changeProfile(action: string, input: object, reload: boolean) {
   try {
     profiles = await request<ProfileSettings>(`/api/chat-profiles/${action}`, input);
     if (reload) loadWorkingProfile();
-  } catch (error) { showError("settings-error", error); }
+    if (action === "save") showToast("Chat profile saved.", { temporary: true, success: true });
+  } catch (error) { showDrawerError("settings-error", error); }
   finally { profilePending = false; renderProfilePicker(); }
 }
 
@@ -159,7 +161,7 @@ export function renderWorldContext() {
     picker.inert = true;
     showError("settings-error");
     try { updateWorld(await request<World>(`${worldRoute(world.id)}/retrieval-key`, { key_ids: ids })); }
-    catch (error) { showError("settings-error", error); }
+    catch (error) { showDrawerError("settings-error", error); }
     finally { retrievalPending = false; picker.inert = false; renderWorldContext(); }
   }, retrievalPending);
 }
@@ -247,9 +249,9 @@ async function deleteKey(key: KeySummary) {
         await Promise.all([refreshKeys(), loadWorlds()]);
         syncWorlds();
         element("add-key").focus();
-      } catch (error) { showError("keys-error", error); }
+      } catch (error) { showToast(error); }
     });
-  } catch (error) { showError("keys-error", error); }
+  } catch (error) { showToast(error); }
 }
 
 export async function initializeSettings() {
@@ -293,9 +295,9 @@ export async function initializeSettings() {
       await request(key ? `/api/provider-keys/${key.id}/${action}` : "/api/provider-keys",
         { nickname: keyName.value, secret: keyValue.value });
       closeKeyEditor();
-      await refreshKeys();
+      await refreshKeys().catch(error => showToast(error));
       if (state.panel === "keys") element("add-key").focus();
-    } catch (error) { showError("keys-error", error); }
+    } catch (error) { showDrawerError("keys-error", error); }
     finally { keysPending = false; }
   });
   profiles = await request<ProfileSettings>("/api/tale-settings");
