@@ -101,8 +101,8 @@ export function openWorldEditor(world?: World) {
     const input = event.target as HTMLInputElement;
     const incoming = [...(input.files ?? [])];
     input.value = "";
-    const books = incoming.filter(file => /\.txt$/i.test(file.name) && file.size).map(file => ({
-      id: newId(), number: 0, name: file.name.slice(0, -4).slice(0, 100), filename: file.name, file,
+    const books = incoming.filter(file => /\.(txt|md|markdown|html?|epub)$/i.test(file.name) && file.size).map(file => ({
+      id: newId(), number: 0, name: file.name.replace(/\.[^.]+$/, "").slice(0, 100), filename: file.name, file,
       total_chunks: 0, embedded_chunks: 0,
     }));
     if (books.length) {
@@ -114,7 +114,7 @@ export function openWorldEditor(world?: World) {
       }
     }
     if (editor === form && incoming.length !== books.length) {
-      showError("world-error", "Some files were skipped. Choose nonempty TXT files.");
+      showError("world-error", "Choose nonempty TXT, Markdown, HTML, or EPUB files.");
     }
   });
   refreshEditor(form);

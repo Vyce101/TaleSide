@@ -51,7 +51,7 @@ export function editorMarkup(world: World | undefined, indexingOpen: boolean | u
     <div class="books-heading">
       <h3>Books</h3>
       <div class="book-heading-actions">
-        <div id="book-upload"><input type="file" id="world-books-input" class="offscreen-input" accept=".txt,text/plain" multiple aria-label="Add books">${iconButton("add-world-books", "plus", "Add books", 'id="add-world-books"')}</div>
+        <div id="book-upload"><input type="file" id="world-books-input" class="offscreen-input" accept=".txt,.md,.markdown,.html,.htm,.epub" multiple aria-label="Add books">${iconButton("add-world-books", "plus", "Add books", 'id="add-world-books"')}</div>
         ${iconButton("clear-index", "delete", "Delete indexing", 'id="clear-world-index"')}
       </div>
     </div>
@@ -63,7 +63,7 @@ export function editorMarkup(world: World | undefined, indexingOpen: boolean | u
 export function renderBooks(books: EditableBook[], world: World | undefined) {
   const list = element<HTMLUListElement>("world-books");
   if (!books.length) {
-    if (!list.querySelector(".empty-copy")) list.innerHTML = '<li class="empty-copy">Add a TXT book to get started.</li>';
+    if (!list.querySelector(".empty-copy")) list.innerHTML = '<li class="empty-copy">Add a book to get started.</li>';
     return;
   }
   list.querySelector(".empty-copy")?.remove();
