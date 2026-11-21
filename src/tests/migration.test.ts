@@ -68,3 +68,33 @@ test("Windows DPAPI-protected key blobs reopen for the current user without plai
     equal(get<{ suffix: string }>(db, "SELECT suffix FROM provider_keys WHERE id = ?", legacyId)?.suffix, sample.slice(-4));
   } finally { db.close(); }
 });
+
+test("a version 2 database keeps existing Tales and builds their search index", async t => {
+  const path = await databasePath(t);
+  const db = await openDatabase(path);
+  const world = id();
+  const tale = id();
+  try {
+    db.exec(`
+      DROP TRIGGER search_title_insert; DROP TRIGGER search_title_update; DROP TRIGGER search_title_delete;
+      DROP TRIGGER search_world_insert; DROP TRIGGER search_world_update; DROP TRIGGER search_world_delete;
+      DROP TRIGGER search_message_insert; DROP TRIGGER search_message_update; DROP TRIGGER search_message_delete;
+      DROP TABLE tale_search;
+      DROP TABLE tale_search_sources;
+      ALTER TABLE worlds ADD COLUMN boundary_search_distance INTEGER NOT NULL DEFAULT 1000;
+      ALTER TABLE tale_messages DROP COLUMN error;
+      PRAGMA user_version = 2;
+    `);
+    db.prepare(`INSERT INTO worlds (id, name, status, model, dimensions, max_token_limit, max_chunk_size)
+      VALUES (?, 'Saved World', 'paused', 'gemini-embedding-2', 3072, 8192, 8000)`).run(world);
+    db.prepare("INSERT INTO tales (id, world_id, title, created_at) VALUES (?, ?, 'Saved Tale', 1)").run(tale, world);
+    db.prepare("INSERT INTO tale_messages (tale_id, role, content) VALUES (?, 'user', 'Quiet glen')").run(tale);
+  } finally { db.close(); }
+
+  const app = await fixture(t, undefined, path);
+  equal((await app.world(world)).status, "paused");
+  const found = await app.call<{ id: string; title: string }[]>("/api/tales/search?q=glen");
+  equal(found.length, 1);
+  equal(found[0].id, tale);
+  equal(found[0].title, "Saved Tale");
+});

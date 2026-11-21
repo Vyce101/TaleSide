@@ -140,6 +140,12 @@ export async function createApplication(databasePath: string, options: Options =
         if (path === "/api/settings") return json(response, keys.settings());
         if (path === "/api/tale-settings") return json(response, profiles.view());
         if (path === "/api/tales") return json(response, tales.list());
+        if (path === "/api/tales/search") {
+          const query = url.searchParams.get("q") ?? "";
+          if (query.length > 512) throw new RequestError("Use 512 characters or fewer to search Tales.");
+          const world = url.searchParams.get("world");
+          return json(response, tales.search(query, world === null ? null : identifier(world)));
+        }
         if (path === "/create" || path.startsWith("/worlds/")) {
           response.writeHead(302, { Location: "/" });
           return response.end();

@@ -24,6 +24,8 @@ export type Message = { id: number; role: "user" | "assistant"; content: string;
   model: string | null; status: TurnStatus; elapsed_ms: number | null; thinking_ms: number | null; error?: string | null };
 export type TaleSummary = { id: string; world_id: string; title: string; pinned: boolean; created_at: number;
   last_activity_at: number | null; message_count: number; content: string };
+export type SearchSpan = { text: string; highlighted: boolean };
+export type TaleSearchResult = TaleSummary & { match?: SearchSpan[] };
 export type Tale = TaleSummary & { messages: Message[] };
 export type GenerationEvent = { type: "accepted"; tale: Tale; user: Message; assistant: Message }
   | { type: "reply"; text: string }

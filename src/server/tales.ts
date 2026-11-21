@@ -4,6 +4,7 @@ import { CHAT_MODEL, InputTooLarge, tokenBody, type GeminiClient, type Part } fr
 import { Profiles } from "./profiles.js";
 import { openRetrieval, retrievalVector, type HistoryEntry } from "./retrieval.js";
 import { identifier, RequestError, requiredText } from "./validation.js";
+import { searchTales } from "./tale-search.js";
 import { Worlds } from "./worlds.js";
 
 type Active = { id: string; worldId: string; controller: AbortController; stopped: boolean; message?: Message; done: Promise<void> };
@@ -30,6 +31,10 @@ export class Tales {
   list() {
     return all<TaleRow>(this.db, summarySql + " ORDER BY t.pinned DESC, coalesce(t.last_activity_at, t.created_at) DESC, t.rowid DESC")
       .map(summary);
+  }
+
+  search(query: string, worldId: string | null) {
+    return searchTales<TaleRow>(this.db, summarySql, query, worldId).map(row => ({ ...row, pinned: Boolean(row.pinned) }));
   }
 
   detail(worldId: string, id: string): Tale {
