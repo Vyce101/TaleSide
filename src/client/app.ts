@@ -1,5 +1,5 @@
 import type { GenerationEvent, Message, Tale, TaleSummary, World } from "../shared/types.js";
-import { keySettings, loadTales, loadWorlds, newId, orderedTales, post, recentTime, removeTale,
+import { apiError, keySettings, loadTales, loadWorlds, newId, orderedTales, post, recentTime, removeTale,
   request, storeTale, storeWorld, taleRoute, tales, worlds } from "./data.js";
 import { element } from "./dom.js";
 import { closeKeyEditor, currentChatSettings, initializeSettings, refreshKeys, renderKeysView, renderWorldContext } from "./settings.js";
@@ -389,8 +389,8 @@ function stopReply(reply: Reply, leaving = false) {
     void post(`${taleRoute(reply.tale)}/stop`, { generation_id: reply.id, user_stopped: !leaving }, { keepalive: leaving })
       .catch(() => reply.controller.abort());
   }
+  if (!reply.accepted || leaving) reply.controller.abort();
   if (leaving) {
-    reply.controller.abort();
     if (activeReply === reply) activeReply = undefined;
   }
   refreshComposer();
@@ -421,6 +421,10 @@ function updateReplyTurn(reply: Reply) {
   } else if (nextThought) prose.before(nextThought);
   else previousThought?.remove();
   prose.replaceWith(template.content.querySelector(".prose")!);
+
+  previous.querySelector(".reply-error")?.remove();
+  const error = template.content.querySelector(".reply-error");
+  if (error) previous.querySelector(".turn-content")!.append(error);
 
   const time = template.content.querySelector(".reply-time");
   if (time && !previous.querySelector(".reply-time")) previous.querySelector(".turn-rail")!.append(time);
@@ -472,7 +476,8 @@ async function sendOrStop() {
   try {
     const response = await post(`${taleRoute(tale)}/generate`,
       { generation_id: reply.id, content: text, title: tale.title, settings }, { signal: reply.controller.signal });
-    if (!response.ok) throw new Error(`Reply request returned HTTP ${response.status}.`);
+    if (!response.ok) throw await apiError(response);
+    let finished = false;
     await readReply(response, event => {
       if (event.type === "accepted") {
         Object.assign(tale, event.tale, { draft: false });
@@ -482,6 +487,7 @@ async function sendOrStop() {
         if (state.tale === tale && activeReply === reply) keepReadingPosition(renderMessages);
         if (reply.stopping && !reply.controller.signal.aborted) stopReply(reply);
       } else if (event.type === "done") {
+        finished = true;
         Object.assign(reply.assistant, event.message);
       } else if (event.type === "thinking") {
         reply.assistant.thinking += event.text;
@@ -491,7 +497,12 @@ async function sendOrStop() {
       }
       renderReply(reply);
     });
-  } catch {
+    if (!finished) throw new Error("The connection closed before the reply finished.");
+  } catch (error) {
+    if (!reply.stopping && !reply.controller.signal.aborted) {
+      if (reply.accepted) reply.assistant.error = error instanceof Error ? error.message : "The connection closed.";
+      else showToast(error);
+    }
     if (!reply.accepted) {
       tale.messages = tale.messages.filter(message => message.id !== -1);
       if (!drafts.has(tale.id)) drafts.set(tale.id, originalDraft);

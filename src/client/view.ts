@@ -192,6 +192,7 @@ export function messageTurn(message: Message, world: World) {
       </header>
       ${message.thinking ? thinkingView(message, thinking) : ""}
       <div class="prose"></div>
+      ${message.status === "error" && message.error ? `<p class="inline-error reply-error">${escapeHtml(message.error)}</p>` : ""}
     </div>
   </article>`;
 }
