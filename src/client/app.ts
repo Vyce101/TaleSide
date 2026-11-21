@@ -676,10 +676,9 @@ document.addEventListener("click", event => {
     || event.target.closest(".toolbar button, dialog[open], #toasts")) return;
   if (state.panel && drawers[state.panel].contains(event.target)) return;
   if (state.history && event.target.closest('#tale-history, [data-action="toggle-history"]')) return;
-  event.preventDefault();
-  event.stopPropagation();
-  if (state.history) setHistory(false, true);
-  else showPanel(null);
+  const clickedControl = event.target.closest("button, a[href], input, select, textarea, label, summary, [tabindex], [contenteditable=true]");
+  if (state.history) setHistory(false, !clickedControl);
+  else showPanel(null, !clickedControl);
 }, { capture: true });
 narrow.addEventListener("change", () => {
   const focusInWorkspace = workspace.contains(document.activeElement);
