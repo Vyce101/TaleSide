@@ -204,7 +204,8 @@ test("appending books uses completed passages while the new book waits, and dele
   await app.generate(world.id, tale, "Waiting on new books", { ...saved, chat_key_ids: [second] });
   await app.call(base + "/retrieval-key", { key_ids: [] });
   const missing = await app.send(`${base}/tales/${tale}/generate`, { content: "Next", generation_id: id(), settings: { ...saved, chat_key_ids: [second] } });
-  equal(missing.status, 409);
+  equal(missing.status, 200);
+  equal(JSON.parse((await missing.text()).trim()).type, "saved");
 });
 
 

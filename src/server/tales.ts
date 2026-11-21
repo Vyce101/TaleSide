@@ -227,7 +227,13 @@ export class Tales {
     const openings: string[] = title === undefined ? []
       : (world.openings === null ? [FIRST_MESSAGE] : JSON.parse(world.openings)).filter((text: string) => text.trim());
     const opening = openings.length ? whole(input.opening ?? 0, 0, "Choose a saved First Message.", openings.length - 1) : 0;
-    if (missingKeys) throw new RequestError("A chat or retrieval key is missing.", 409);
+    if (missingKeys) {
+      if (content === undefined) throw new RequestError("A chat or retrieval key is missing.", 409);
+      const persona = this.personas.resolve(worldId, existing ? this.personaSelection(id) : personaSelection);
+      this.saveMessage(id, worldId, title, content, undefined, persona, openings, opening);
+      emit({ type: "saved", tale: this.detail(worldId, id) });
+      return Promise.resolve();
+    }
     const active: Active = { id: generationId, worldId, controller: new AbortController(), stopped: false, done: Promise.resolve() };
     this.active.set(id, active);
     active.done = this.generate(id, active, { content, title, personaSelection, history, rewrite, openings, opening,
@@ -236,7 +242,7 @@ export class Tales {
     return active.done;
   }
 
-  private saveMessage(id: string, worldId: string, title: string | undefined, content: string, model: string,
+  private saveMessage(id: string, worldId: string, title: string | undefined, content: string, model: string | undefined,
     persona: Persona, openings: string[], opening: number) {
     return transaction(this.db, () => {
       if (title !== undefined) {
@@ -257,7 +263,7 @@ export class Tales {
       `, id, content, persona.name, persona.artwork);
       const message = this.publicMessage(get<MessageRow>(this.db,
         `SELECT ${messageFields} FROM tale_messages WHERE id = ?`, user.lastInsertRowid)!);
-      return { user: message, assistant: this.insertReply(id, model) };
+      return { user: message, assistant: model ? this.insertReply(id, model) : undefined };
     });
   }
 
@@ -324,7 +330,7 @@ export class Tales {
       } else {
         const saved = this.saveMessage(id, worldId, title, content!, settings.model, persona, openings, opening);
         user = saved.user;
-        assistant = saved.assistant;
+        assistant = saved.assistant!;
       }
       active.message = assistant;
       emit({ type: "accepted", tale: this.detail(worldId, id), user, assistant });

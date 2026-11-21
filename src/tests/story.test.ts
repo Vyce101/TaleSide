@@ -148,3 +148,17 @@ test("prompt roles and built-in toggles affect Gemini input while Personas prese
   equal((await app.send("/api/chat-profiles/delete", { id: state.selected })).status, 400);
 });
 
+test("sending without keys saves only the user turn", async t => {
+  const app = await fixture(t);
+  const key = await app.addKey("Gemini");
+  const world = await app.newWorld({ name: "Story", openings: [""], key_ids: [key] }, [["Book.txt", "Passage"]]);
+  await until(() => app.world(world.id), value => value.status === "ready");
+  const tale = id();
+  const route = `/api/worlds/${world.id}/tales/${tale}`;
+  const settings = (await app.profiles()).defaults;
+  const response = await app.send(route + "/generate", { generation_id: id(), settings, title: "Tale", content: "Hello" });
+  const saved = JSON.parse((await response.text()).trim());
+  equal(saved.type, "saved");
+  deepEqual(saved.tale.messages.map((message: { role: string; content: string }) => [message.role, message.content]),
+    [["user", "Hello"]]);
+});
