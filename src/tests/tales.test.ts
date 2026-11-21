@@ -133,7 +133,9 @@ test("a lower chat input limit counts the full request and leaves the complete h
   await until(() => app.world(world.id), value => value.status === "ready");
   await app.generate(world.id, tale, "Earlier line", settings);
   const events = await app.generate(world.id, tale, "Latest line", { ...settings, input_limit: 10000, output_limit: 3000 });
-  match(JSON.stringify(counted), /Book text.*Earlier line.*signature.*Latest line.*"maxOutputTokens":3000/);
+  match(JSON.stringify(counted), /Earlier line.*signature.*Latest line/);
+  match(JSON.stringify(counted), /"maxOutputTokens":3000/);
+  match(JSON.stringify(counted), /Book text/);
   equal(chats, 1);
   match(events.at(-1).error, /input token limit/);
   const saved = await app.call<Tale>(`/api/worlds/${world.id}/tales/${tale}`);

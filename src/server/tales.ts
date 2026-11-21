@@ -1,6 +1,6 @@
-import { FIRST_MESSAGE } from "../shared/story-defaults.js";
+import { FIRST_MESSAGE, WORLD_DESCRIPTION } from "../shared/story-defaults.js";
 import { Personas } from "./personas.js";
-import type { ChatSettings, GenerationEvent, Message, Persona, Swipe, Tale, TaleSummary } from "../shared/types.js";
+import type { ChatSettings, GenerationEvent, Message, Persona, PromptCounts, Swipe, Tale, TaleSummary } from "../shared/types.js";
 import { all, get, run, selectedKeys, transaction } from "./database.js";
 import { CHAT_MODEL, InputTooLarge, tokenBody, type GeminiClient, type Part } from "./gemini.js";
 import { Profiles } from "./profiles.js";
@@ -56,8 +56,11 @@ export class Tales {
     const messages = this.rows(id).map(message => this.publicMessage(message));
     const running = this.active.get(id)?.message;
     if (running?.status === "generating" && messages.at(-1)?.id === running.id) messages[messages.length - 1] = { ...running };
-    const persona = this.personas.resolve(worldId, this.personaSelection(id));
-    return { ...summary(row), messages, persona_id: persona.id };
+    const saved = get<{ persona_id: string | null; prompt_counts: string | null }>(this.db,
+      "SELECT persona_id, prompt_counts FROM tales WHERE id = ?", id)!;
+    const persona = this.personas.resolve(worldId, saved.persona_id);
+    return { ...summary(row), messages, persona_id: persona.id,
+      prompt_counts: saved.prompt_counts ? JSON.parse(saved.prompt_counts) : undefined };
   }
 
   private personaSelection(id: string) {
@@ -199,8 +202,10 @@ export class Tales {
     if (!this.worlds.canPlay(world)) throw new RequestError("Waiting for the first indexed passage.", 409);
     const generationId = identifier(input.generation_id);
     const settings = this.profiles.validate(input.settings);
-    const retrievalKeys = this.worlds.keys.validate(selectedKeys(this.db, "world_retrieval_keys", worldId));
-    if (!retrievalKeys.length || !settings.chat_key_ids.length) throw new RequestError("A chat or retrieval key is missing.", 409);
+    const usePassages = settings.prompts.some(block => block.kind === "retrieved_passages" && block.enabled);
+    const retrievalKeys = usePassages ? this.worlds.keys.validate(selectedKeys(this.db, "world_retrieval_keys", worldId)) : [];
+    const missingKeys = (usePassages && !retrievalKeys.length) || !settings.chat_key_ids.length;
+    if (missingKeys) throw new RequestError("A chat or retrieval key is missing.", 409);
     const existing = get<{ world_id: string }>(this.db, "SELECT world_id FROM tales WHERE id = ?", id);
     if (existing && existing.world_id !== worldId) throw new RequestError("This Tale could not be found.", 404);
     const title = existing ? undefined : requiredText(input.title, "Enter a Tale title up to 100 characters.", 100);
@@ -211,7 +216,7 @@ export class Tales {
     const opening = openings.length ? whole(input.opening ?? 0, 0, "Choose a saved First Message.", openings.length - 1) : 0;
     const active: Active = { id: generationId, worldId, controller: new AbortController(), stopped: false, done: Promise.resolve() };
     this.active.set(id, active);
-    active.done = this.generate(id, active, { content, title, personaSelection, openings, opening }, settings, retrievalKeys, emit)
+    active.done = this.generate(id, active, { content, title, personaSelection, openings, opening, description: world.description ?? WORLD_DESCRIPTION }, settings, retrievalKeys, emit)
       .finally(() => this.active.delete(id));
     return active.done;
   }
@@ -271,15 +276,16 @@ export class Tales {
 
   private async generate(id: string, active: Active, input: {
     content: string; title?: string; personaSelection?: string;
-    openings: string[]; opening: number;
+    description: string; openings: string[]; opening: number;
   }, settings: ChatSettings, retrievalKeys: string[], emit: Emit) {
-    const { content, title, openings, opening } = input;
+    const { content, title, openings, opening, description } = input;
     const signal = active.controller.signal;
     const worldId = active.worldId;
     const started = performance.now();
     const snapshot = await openRetrieval(this.databasePath, worldId, signal);
     const signedParts: Part[] = [];
     let failure: string | undefined;
+    let promptCounts: PromptCounts | undefined;
     try {
       const { world } = snapshot;
       const current = this.worlds.require(worldId);
@@ -287,7 +293,7 @@ export class Tales {
         throw new RequestError("This World changed. Send the message again.", 409);
       }
       this.worlds.keys.validate(settings.chat_key_ids);
-      this.worlds.keys.validate(retrievalKeys);
+      if (retrievalKeys.length) this.worlds.keys.validate(retrievalKeys);
       const persona = this.personas.resolve(worldId, title === undefined ? this.personaSelection(id) : input.personaSelection);
       const { user, assistant } = this.saveMessage(id, worldId, title, content, settings.model, persona, openings, opening);
       active.message = assistant;
@@ -295,16 +301,20 @@ export class Tales {
       const history: HistoryEntry[] = this.rows(id).filter(row => row.content);
       const retrievalHistory = this.rows(id).filter(row => row.content && !row.opening);
       const keys = this.worlds.keys;
-      const query = await retrievalVector(world, retrievalHistory.slice(-settings.messages_to_embed),
+      const query = retrievalKeys.length ? await retrievalVector(world, retrievalHistory.slice(-settings.messages_to_embed),
         text => keys.retry("retrieval", retrievalKeys, signal, key => this.provider.count(world.model, key, tokenBody(text), signal)),
-        text => keys.retry("retrieval", retrievalKeys, signal, key => this.provider.embed(world.model, world.dimensions, key, text, signal)));
-      const payload = await snapshot.build(query, history, settings);
+        text => keys.retry("retrieval", retrievalKeys, signal, key => this.provider.embed(world.model, world.dimensions, key, text, signal))) : [];
+      const { payload, prompt_counts } = await snapshot.build(query, history, settings, { description, persona: {
+        name: persona.name, description: persona.description,
+      } });
       snapshot.close();
       if (settings.input_limit < CHAT_MODEL.context_limit) {
         const full = { generateContentRequest: { model: `models/${settings.model}`, ...payload } };
         const tokens = await keys.retry("chat", settings.chat_key_ids, signal, key => this.provider.count(settings.model, key, full, signal));
         if (tokens > settings.input_limit) throw new InputTooLarge();
       }
+      run(this.db, "UPDATE tales SET prompt_counts = ? WHERE id = ?", JSON.stringify(prompt_counts), id);
+      promptCounts = prompt_counts;
       for await (const part of this.chatWithRetry(settings, payload, signal)) {
         signal.throwIfAborted();
         if (typeof part.text === "string" && part.text) {
@@ -350,7 +360,7 @@ export class Tales {
           assistant.status = "error";
           failure = assistant.error = "The reply could not be saved.";
         }
-        emit({ type: "done", message: assistant, error: failure });
+        emit({ type: "done", message: assistant, error: failure, prompt_counts: promptCounts });
       }
     }
   }

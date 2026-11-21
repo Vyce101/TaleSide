@@ -54,11 +54,11 @@ def retrieve(request):
         send({"world": dict(world)})
         query = read()
         settings = query["settings"]
-        excerpts = passages(database, world, query["vector"], settings, Event())
+        excerpts = passages(database, world, query["vector"], settings, Event()) if query["vector"] else []
         for message in query["history"]:
             if message.get("signed_parts"):
                 message["signed_parts"] = json.loads(message["signed_parts"])
-        send({"payload": chat_request(world, books, excerpts, query["history"], settings)})
+        send(chat_request(world, books, excerpts, query["history"], settings, query["context"]))
 
 
 def main():

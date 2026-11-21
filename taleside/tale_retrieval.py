@@ -69,35 +69,76 @@ def wrapped(text, pair):
     return "\n".join(part for part in (pair[0], text, pair[1]) if part)
 
 
-def chat_request(world, books, excerpts, messages, settings):
+def chat_request(world, books, excerpts, messages, settings, context):
     wrappers = settings["wrappers"]
     info = [f"Name = {world['name']}", f"Chunk Size = {world['max_chunk_size']} Characters",
             f"Books = {len(books)}"]
     info.extend(f"Book {book['number']} - {book['name']}" for book in books)
-    system = "\n\n".join((wrapped("\n".join(info), wrappers["world_info"]),
-                          wrapped("\n\n".join(excerpts), wrappers["retrieved_passages"])))
-    prefix, suffix = wrappers["chat_history"]
+    persona = context["persona"]
+    blocks = {
+        "world_description": context["description"] if context["description"].strip() else "",
+        "world_info": "\n".join(info),
+        "persona": f"Name = {persona['name']}\nDescription = {persona['description']}",
+        "retrieved_passages": "\n\n".join(excerpts),
+    }
+    system = []
     contents = []
-    for index, message in enumerate(messages):
-        text = message["content"]
-        if message["role"] == "user":
-            text = wrapped(text, (prefix if index == 0 else "", suffix if index == len(messages) - 1 else ""))
-            parts = [{"text": text}]
-            role = "user"
-        else:
-            role = "model"
-            parts = [{"text": text}]
-            if settings["thought_signatures"] and message["model"] == settings["model"] and message["signed_parts"]:
-                parts = message["signed_parts"]
-        if contents and contents[-1]["role"] == role:
+    counts = {}
+
+    def append(role, parts):
+        counts[block_id] += sum(len(part.get("text") or "") for part in parts)
+        if role == "system" and not contents:
+            system.extend(parts)
+        elif contents and contents[-1]["role"] == role:
             contents[-1]["parts"].extend(parts)
         else:
             contents.append({"role": role, "parts": parts})
-    return {
-        "systemInstruction": {"parts": [{"text": system}]},
+
+    def text_part(text):
+        return {"text": text}
+
+    def history(history_role):
+        prefix, suffix = wrappers["chat_history"]
+        grouped = []
+        for index, message in enumerate(messages):
+            role = "user" if message["role"] == "user" else "model"
+            if history_role == "multi-role" and settings["thought_signatures"] and message["model"] == settings["model"] and message["signed_parts"]:
+                parts = list(message["signed_parts"])
+            else:
+                parts = [text_part(message["content"])]
+            if index == 0 and prefix:
+                parts.insert(0, text_part(prefix))
+            if index == len(messages) - 1 and suffix:
+                parts.append(text_part(suffix))
+            if history_role == "multi-role":
+                append(role, parts)
+            else:
+                grouped.extend(parts)
+        if grouped:
+            append(history_role, grouped)
+
+    for block in settings["prompts"]:
+        block_id = block["id"]
+        counts[block_id] = 0
+        kind = block["kind"]
+        if kind == "chat_history":
+            if block["enabled"]:
+                history(block.get("role") or "multi-role")
+            else:
+                append("user", [text_part(next(message["content"] for message in reversed(messages) if message["role"] == "user"))])
+        elif block["enabled"]:
+            if kind == "custom":
+                if block["text"].strip():
+                    append(block["role"], [text_part(block["text"])])
+            elif kind != "world_description" or blocks[kind]:
+                append(block.get("role") or "system", [text_part(wrapped(blocks[kind], wrappers[kind]))])
+    payload = {
         "contents": contents,
         "generationConfig": {
             "maxOutputTokens": settings["output_limit"],
             "thinkingConfig": {"thinkingLevel": settings["thinking_level"], "includeThoughts": True},
         },
     }
+    if system:
+        payload["systemInstruction"] = {"parts": system}
+    return {"payload": payload, "prompt_counts": {"total": sum(counts.values()), "blocks": counts}}

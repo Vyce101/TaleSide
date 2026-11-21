@@ -38,10 +38,11 @@ export type TaleSummary = { id: string; world_id: string; title: string; pinned:
   last_activity_at: number | null; message_count: number; content: string };
 export type SearchSpan = { text: string; highlighted: boolean };
 export type TaleSearchResult = TaleSummary & { match?: SearchSpan[] };
-export type Tale = TaleSummary & { persona_id?: string | null; messages: Message[] };
+export type PromptCounts = { total: number; blocks: Record<string, number> };
+export type Tale = TaleSummary & { persona_id?: string | null; prompt_counts?: PromptCounts; messages: Message[] };
 export type GenerationEvent = { type: "accepted"; tale: Tale; user: Message; assistant: Message }
   | { type: "reply"; text: string }
   | { type: "thinking"; text: string; thinking_ms: number }
-  | { type: "done"; message: Message; error?: string };
+  | { type: "done"; message: Message; error?: string; prompt_counts?: PromptCounts };
 export type WorldSettings = { name: string; model: string; key_ids: string[];
   max_chunk_size: number };

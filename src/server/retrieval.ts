@@ -1,4 +1,4 @@
-import type { ChatSettings } from "../shared/types.js";
+import type { ChatSettings, PromptCounts } from "../shared/types.js";
 import { InputTooLarge, LEGACY_EMBEDDING } from "./gemini.js";
 import { pythonWorker } from "./python.js";
 import type { WorldRow } from "./worlds.js";
@@ -23,10 +23,9 @@ export async function openRetrieval(database: string, worldId: string, signal: A
     const { world } = await worker.receive<{ world: WorldRow }>();
     return {
       world,
-      async build(vector: number[], history: HistoryEntry[], settings: ChatSettings) {
-        await worker.send({ vector, history, settings });
-        const { payload } = await worker.receive<{ payload: object }>();
-        return payload;
+      async build(vector: number[], history: HistoryEntry[], settings: ChatSettings, context: { description: string; persona: { name: string; description: string } }) {
+        await worker.send({ vector, history, settings, context });
+        return worker.receive<{ payload: object; prompt_counts: PromptCounts }>();
       },
       close: worker.close,
     };
