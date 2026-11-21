@@ -31,6 +31,7 @@ const iconPaths = {
   search: '<circle cx="10" cy="10" r="6"/><path d="m15 15 5 5"/>',
   star: '<path d="m12 3 3 6 7 .9-5 4.6 1 6.5-6-3.2L6 21l1-6.5-5-4.6L9 9Z"/>',
   globe: '<circle cx="12" cy="12" r="9"/><ellipse cx="12" cy="12" rx="4" ry="9"/><path d="M3 12h18"/>',
+  drag: '<path d="M7 6h10M7 12h10M7 18h10"/>',
   duplicate: '<path d="M8 5H5v16h12v-3M9 3h10v13H9zM11 9h6m-3-3v6"/>',
 } satisfies Record<string, string>;
 

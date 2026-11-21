@@ -15,6 +15,8 @@ export function renderPrompts(blocks: PromptBlock[], locked: boolean) {
       const name = editable ? block.name : BUILTIN_PROMPTS[block.kind];
       const disabled = locked ? "disabled" : "";
       return `<li class="prompt-row" data-prompt="${escapeHtml(block.id)}">
+        <button type="button" class="icon-button prompt-handle" aria-label="Move ${escapeHtml(name)}"
+          aria-description="Drag or use the up and down arrow keys" ${disabled}>${icon("drag")}</button>
         <strong class="prompt-name">${escapeHtml(name)}</strong>
         ${iconButton("edit-prompt", "rename", editable ? "Edit prompt" : "Edit role", disabled)}
         ${editable ? iconButton("delete-prompt", "delete", "Delete prompt", disabled) : "<span></span>"}
@@ -59,6 +61,13 @@ export function renderPrompts(blocks: PromptBlock[], locked: boolean) {
     (builtin ? role : name).focus();
   };
   const indexOf = (row: HTMLElement) => blocks.findIndex(block => block.id === row.dataset.prompt);
+  const move = (row: HTMLElement, index: number) => {
+    const from = indexOf(row);
+    if (index === from || index < 0 || index >= blocks.length) return;
+    const target = list.children[index];
+    list.insertBefore(row, index > from ? target.nextSibling : target);
+    blocks.splice(index, 0, blocks.splice(from, 1)[0]);
+  };
 
   element<HTMLButtonElement>("add-prompt").onclick = () => edit();
   element<HTMLButtonElement>("cancel-prompt").onclick = () => dialog.close();
@@ -78,6 +87,53 @@ export function renderPrompts(blocks: PromptBlock[], locked: boolean) {
     const input = event.target as HTMLInputElement;
     const row = input.closest<HTMLElement>(".prompt-row");
     if (!locked && row) blocks[indexOf(row)].enabled = input.checked;
+  };
+  list.onkeydown = event => {
+    const handle = (event.target as HTMLElement).closest<HTMLButtonElement>(".prompt-handle");
+    const row = handle?.closest<HTMLElement>(".prompt-row");
+    if (locked || !row || !["ArrowUp", "ArrowDown"].includes(event.key)) return;
+    event.preventDefault();
+    move(row, indexOf(row) + (event.key === "ArrowUp" ? -1 : 1));
+    handle!.focus();
+  };
+
+  let drag: { id: number; row: HTMLElement; offset: number } | undefined;
+  list.onpointerdown = event => {
+    if (locked || event.button !== 0) return;
+    const handle = (event.target as Element).closest<HTMLButtonElement>(".prompt-handle");
+    const row = handle?.closest<HTMLElement>(".prompt-row");
+    if (!row) return;
+    drag = { id: event.pointerId, row, offset: event.clientY - row.getBoundingClientRect().top };
+    row.classList.add("prompt-dragged");
+    list.setPointerCapture(event.pointerId);
+  };
+  list.onpointermove = event => {
+    if (!drag || drag.id !== event.pointerId) return;
+    const { row, offset } = drag;
+    const drawer = list.closest(".panel-content");
+    const bounds = drawer?.getBoundingClientRect();
+    if (drawer && bounds) {
+      if (event.clientY < bounds.top + 30) drawer.scrollTop -= 14;
+      if (event.clientY > bounds.bottom - 30) drawer.scrollTop += 14;
+    }
+    const center = event.clientY - offset + row.offsetHeight / 2;
+    const peers = [...list.children].filter(child => child !== row);
+    const index = peers.findIndex(peer => {
+      const bounds = peer.getBoundingClientRect();
+      return center < bounds.top + bounds.height / 2;
+    });
+    move(row, index < 0 ? peers.length : index);
+    const top = row.getBoundingClientRect().top - Number(row.dataset.delta ?? 0);
+    const delta = event.clientY - offset - top;
+    row.style.translate = `0 ${delta}px`;
+    row.dataset.delta = String(delta);
+  };
+  list.onlostpointercapture = () => {
+    if (!drag) return;
+    drag.row.classList.remove("prompt-dragged");
+    drag.row.style.translate = "";
+    delete drag.row.dataset.delta;
+    drag = undefined;
   };
   paint();
 }
