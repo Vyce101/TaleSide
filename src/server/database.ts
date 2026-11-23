@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { backup, DatabaseSync, type SQLInputValue } from "node:sqlite";
 import { installTaleSearch } from "./tale-search.js";
+import { graphSchema } from "./graph-schema.js";
 
 const booksSchema = `
 CREATE TABLE IF NOT EXISTS books (
@@ -23,7 +24,7 @@ export const selections = {
   chat_profile_keys: ["chat_profiles", "TEXT", "chat_key_id"],
   tale_chat_keys: ["tale_settings", "INTEGER", "chat_key_id"],
 } as const;
-export type Selection = keyof typeof selections;
+export type Selection = keyof typeof selections | "world_extraction_keys";
 
 const schema = `
 CREATE TABLE IF NOT EXISTS provider_keys (
@@ -172,7 +173,7 @@ function migrateLegacy(db: DatabaseSync, version: number) {
 
 }
 
-const DATABASE_VERSION = 5;
+const DATABASE_VERSION = 6;
 
 export async function openDatabase(path: string, onBackup?: () => void) {
   const existing = path !== ":memory:" && existsSync(path);
@@ -185,7 +186,7 @@ export async function openDatabase(path: string, onBackup?: () => void) {
       const stamp = new Date().toISOString().replaceAll(":", "-");
       await backup(db, `${path}.before-node-${stamp}.bak`);
     }
-    db.exec("PRAGMA journal_mode = WAL");
+    db.exec("PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL");
     transaction(db, () => {
       if (version < 2) migrateLegacy(db, version);
       if (version < 3) {
@@ -219,6 +220,7 @@ export async function openDatabase(path: string, onBackup?: () => void) {
         ALTER TABLE tales ADD COLUMN prompt_counts TEXT;
         PRAGMA user_version = 5;
       `);
+      if (version < 6) db.exec(`${graphSchema} PRAGMA user_version = 6;`);
       db.exec(`
         UPDATE worlds SET status = 'paused' WHERE status IN ('creating', 'pausing');
         UPDATE tale_messages SET status = 'error' WHERE status = 'generating';

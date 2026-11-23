@@ -79,6 +79,15 @@ test("a version 2 database keeps existing Tales and builds their search index", 
       DROP TRIGGER search_title_insert; DROP TRIGGER search_title_update; DROP TRIGGER search_title_delete;
       DROP TRIGGER search_world_insert; DROP TRIGGER search_world_update; DROP TRIGGER search_world_delete;
       DROP TRIGGER search_message_insert; DROP TRIGGER search_message_update; DROP TRIGGER search_message_delete;
+      DROP TABLE graph_passes;
+      DROP TABLE graph_chunks;
+      DROP TABLE graph_records;
+      DROP TABLE graph_generations;
+      DROP TABLE world_extraction_keys;
+      ALTER TABLE worlds DROP COLUMN graph_settings;
+      ALTER TABLE worlds DROP COLUMN graph_published;
+      ALTER TABLE worlds DROP COLUMN graph_base;
+      ALTER TABLE worlds DROP COLUMN graph_building;
       DROP TABLE tale_swipes;
       DROP TABLE persona_defaults;
       DROP TABLE personas;
