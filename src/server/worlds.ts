@@ -177,9 +177,10 @@ export class Worlds {
     transaction(this.db, () => {
       const { next } = get<{ next: number }>(this.db, "SELECT coalesce(max(number), 0) + 1 AS next FROM books WHERE world_id = ?", id)!;
       this.storeBooks(id, world.index_number, next, prepared, world.status !== "unindexed");
-      run(this.db, "UPDATE worlds SET book_revision = book_revision + 1, status = ?, error = NULL WHERE id = ?",
+      run(this.db, "UPDATE worlds SET book_revision = book_revision + 1, graph_building = NULL, status = ?, error = NULL WHERE id = ?",
         world.status === "unindexed" ? "unindexed" : "paused", id);
     });
+    this.graphIndexes.collect();
     return this.detail(id);
   }
 
@@ -198,6 +199,7 @@ export class Worlds {
         if (!Array.isArray(order) || order.length !== ids.length || new Set(order).size !== ids.length || order.some(book => !ids.includes(book))) {
           throw new RequestError("Provide every saved book in the new order.");
         }
+        if (order.every((book, index) => book === ids[index])) return;
         this.renumber(id, order);
       } else {
         const book = identifier(input.book_id);
@@ -211,8 +213,16 @@ export class Worlds {
           run(this.db, "UPDATE worlds SET status = ?, error = CASE WHEN ? IN ('ready', 'unindexed') THEN NULL ELSE error END WHERE id = ?", state, state, id);
         }
       }
+      if (world.graph_settings && action !== "rename-book") {
+        run(this.db, `
+          UPDATE worlds SET graph_published = NULL, graph_building = NULL, error = NULL,
+            status = CASE WHEN status = 'unindexed' THEN status ELSE 'paused' END,
+            graph_base = CASE WHEN status = 'unindexed' THEN NULL ELSE graph_base END WHERE id = ?
+        `, id);
+      }
       run(this.db, "UPDATE worlds SET book_revision = book_revision + 1 WHERE id = ?", id);
     });
+    this.graphIndexes.collect();
     return this.detail(id);
   }
 
@@ -287,19 +297,22 @@ export class Worlds {
       run(this.db, "DELETE FROM chunks WHERE book_id IN (SELECT id FROM books WHERE world_id = ?)", id);
       run(this.db, `
         UPDATE worlds SET status = 'unindexed', index_number = index_number + 1, error = NULL,
-          book_revision = book_revision + 1 WHERE id = ?
+          graph_published = NULL, graph_base = NULL, graph_building = NULL, book_revision = book_revision + 1 WHERE id = ?
       `, id);
     });
+    this.graphIndexes.collect();
     return this.detail(id);
   }
 
   discard(id: string) {
     this.require(id);
+    const generations = all<{ id: number }>(this.db, "SELECT id FROM graph_generations WHERE world_id = ?", id);
     transaction(this.db, () => {
       run(this.db, "DELETE FROM persona_defaults WHERE scope = ?", id);
       run(this.db, "DELETE FROM worlds WHERE id = ?", id);
     });
     if (this.active?.worldId === id) this.active.controller.abort();
+    this.graphIndexes.discard(generations.map(generation => generation.id));
   }
 
   pause(id: string) {
