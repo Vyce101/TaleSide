@@ -3,7 +3,8 @@ import { existsSync } from "node:fs";
 
 const [major, minor, patch] = process.versions.node.split(".").map(Number);
 const compiler = "node_modules/typescript/bin/tsc";
-const packages = [compiler, "node_modules/@types/node/package.json", "node_modules/undici-types/package.json"];
+const packages = [compiler, "node_modules/@types/node/package.json", "node_modules/undici-types/package.json",
+  "node_modules/usearch/package.json"];
 
 if (major !== 24 || minor < 11 || (minor === 11 && patch < 1)) {
   console.error("Install Node.js 24 LTS (24.11.1 or later), then start TaleSide again.");

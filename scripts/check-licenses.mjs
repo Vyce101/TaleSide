@@ -6,10 +6,11 @@ const allowed = new Set(["MIT", "Apache-2.0", "BSD-2-Clause", "BSD-3-Clause", "I
 for (const [path, entry] of Object.entries(lock.packages)) {
   if (!path) continue;
   const metadata = JSON.parse(readFileSync(new URL(`../${path}/package.json`, import.meta.url), "utf8"));
-  if (metadata.version !== entry.version || !allowed.has(metadata.license)) {
+  const license = metadata.license === "Apache 2.0" ? "Apache-2.0" : metadata.license;
+  if (metadata.version !== entry.version || !allowed.has(license)) {
     console.error(`${path}: review ${metadata.version} (${metadata.license ?? "unknown license"})`);
     process.exitCode = 1;
   } else {
-    console.log(`${path} ${metadata.version} ${metadata.license}`);
+    console.log(`${path} ${metadata.version} ${license}`);
   }
 }
