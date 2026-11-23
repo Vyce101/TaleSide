@@ -1,11 +1,12 @@
 import { FIRST_MESSAGE, WORLD_DESCRIPTION } from "../shared/story-defaults.js";
 import type { DatabaseSync } from "node:sqlite";
 import { setImmediate as yieldToServer } from "node:timers/promises";
-import type { Book, World, WorldSettings } from "../shared/types.js";
+import type { Book, GraphSettings, World, WorldSettings } from "../shared/types.js";
 import { DEFAULT_CHUNK_SIZE, decode, normalizeLines, prepareBooks, type BookInput, type PreparedBook } from "./books.js";
 import { all, get, run, saveSelection, selectedKeys, transaction } from "./database.js";
 import { EMBEDDING_MODEL, EMBEDDING_MODELS, encodeVector, tokenBody, type GeminiClient } from "./gemini.js";
-import { GraphJobs, readGraphSettings, type GraphWorldFields } from "./graph-jobs.js";
+import { GraphJobs, GraphRequestFailed, readGraphSettings, type GraphWorldFields } from "./graph-jobs.js";
+import { MAX_GRAPH_ATTEMPTS } from "./graph-extraction.js";
 import type { GraphIndexes } from "./graph-indexes.js";
 import { ProviderKeys } from "./keys.js";
 import { identifier, makeId, RequestError, requiredText, whole } from "./validation.js";
@@ -14,7 +15,8 @@ export type WorldRow = Pick<World, "id" | "name" | "status" | "model" | "dimensi
   | "max_chunk_size" | "book_revision" | "error"> & GraphWorldFields & { index_number: number; description: string | null; openings: string | null };
 type StoredBook = BookInput & { id: string; number: number; working: string; encoding: string; bom_size: number };
 export type Artwork = { content_type: string; image: Uint8Array };
-type IndexJob = { worldId: string; bookNumber: number; controller: AbortController };
+type IndexJob = { worldId: string; passageBook: number | null; extractionBook: number | null; controller: AbortController };
+type Passage = { id: string; book_number: number; number: number; start: number; tokens: number; name: string; text: string };
 
 const worldColumns = `id, name, status, model, dimensions, max_token_limit, max_chunk_size, book_revision, index_number,
   error, description, openings, graph_settings, graph_published, graph_base, graph_building`;
@@ -63,7 +65,7 @@ export class Worlds {
       extraction_key_ids: selectedKeys(this.db, "world_extraction_keys", row.id),
       description: description ?? WORLD_DESCRIPTION, openings: openings ? JSON.parse(openings) : [FIRST_MESSAGE],
       artwork: image ? `/api/worlds/${row.id}/artwork?v=${image.version}` : null,
-      active_book: this.active?.worldId === row.id ? this.active.bookNumber : null,
+      active_book: this.active?.worldId === row.id ? this.active.passageBook ?? this.active.extractionBook : null,
       can_play: this.canPlay(row),
       progress: row.status === "ready" ? 100 : Math.min(99.99, embedded_chunks * 100 / (total_chunks || 1)),
       embedding_key_ids: selectedKeys(this.db, "world_embedding_keys", row.id),
@@ -315,7 +317,7 @@ export class Worlds {
   }
 
   private missingChunk(world: WorldRow) {
-    return get<{ id: string; book_number: number; number: number; start: number; tokens: number; name: string; text: string }>(this.db, `
+    return get<Passage>(this.db, `
       SELECT b.id, b.number AS book_number, c.number, c.start, c.tokens, b.name,
         substr(b.working, c.start + 1, c.embed_end - c.start) AS text
       FROM chunks c JOIN books b ON b.id = c.book_id
@@ -333,7 +335,7 @@ export class Worlds {
       const world = get<WorldRow>(this.db, `SELECT ${worldColumns} FROM worlds WHERE status = 'creating' ORDER BY rowid LIMIT 1`);
       if (!world) { this.indexCooldown.clear(); return; }
       try {
-        await this.embedNext(world);
+        await this.indexWorld(world);
       } catch (error) {
         if (!this.closing) {
           const message = error instanceof Error ? error.message : "Could not index this World.";
@@ -347,26 +349,80 @@ export class Worlds {
     }
   }
 
-  private async embedNext(world: WorldRow) {
+  private async indexWorld(world: WorldRow) {
     const spec = EMBEDDING_MODELS.find(model => model.id === world.model);
     if (!spec || world.dimensions < 128 || world.dimensions > spec.dimensions) throw new Error("The saved embedding model or dimensions are unavailable.");
-    const chunk = this.missingChunk(world);
-    if (!chunk) {
+    const job: IndexJob = { worldId: world.id, passageBook: null, extractionBook: null, controller: new AbortController() };
+    this.active = job;
+    const { signal } = job.controller;
+    const settings: GraphSettings | null = world.graph_settings ? JSON.parse(world.graph_settings) : null;
+    let failure: unknown;
+    let failed = false;
+    const working = () => !signal.aborted && !failed
+      && get<{ status: string }>(this.db, "SELECT status FROM worlds WHERE id = ?", world.id)?.status === "creating";
+    const captureFailure = (error: unknown) => {
+      if (!failed) failure = error;
+      failed = true;
+    };
+
+    const [, extractionFailure] = await Promise.all([
+      this.embedPassages(world, job, working).catch(captureFailure),
+      settings && world.graph_building === null ? this.extractChunks(world, settings, job, working).catch(captureFailure) : undefined,
+    ]);
+    if (failed) throw failure;
+    if (working()) {
+      if (extractionFailure) throw extractionFailure;
       this.verify(world);
-      run(this.db, "UPDATE worlds SET status = 'ready' WHERE id = ?", world.id);
-      return;
+      if (settings) await this.finishGraph(world, settings, signal, working);
+      else run(this.db, "UPDATE worlds SET status = 'ready' WHERE id = ?", world.id);
     }
-    const controller = new AbortController();
-    this.active = { worldId: world.id, bookNumber: chunk.book_number, controller };
+    run(this.db, "UPDATE worlds SET status = 'paused' WHERE id = ? AND status = 'pausing'", world.id);
+  }
+
+  private async embedPassages(world: WorldRow, job: IndexJob, working: () => boolean) {
+    while (working()) {
+      const chunk = this.missingChunk(world);
+      if (!chunk) break;
+      job.passageBook = chunk.book_number;
+      await this.embedPassage(world, chunk, job.controller.signal, working);
+      await yieldToServer();
+    }
+    job.passageBook = null;
+  }
+
+  private async extractChunks(world: WorldRow, settings: GraphSettings, job: IndexJob, working: () => boolean) {
+    let after = { book: 0, number: 0 };
+    let skipped = 0;
+    let lastError = "";
+    while (working()) {
+      const chunk = this.graph.nextChunk(world, settings, after);
+      if (!chunk) break;
+      job.extractionBook = chunk.book;
+      try {
+        if (await this.graph.extract(world, settings, chunk, job.controller.signal, working)) after = chunk;
+      } catch (error) {
+        if (!(error instanceof GraphRequestFailed)) throw error;
+        after = chunk;
+        skipped++;
+        lastError = `Book ${chunk.book}, chunk ${chunk.number}. ${error.message}`;
+      }
+      await yieldToServer();
+    }
+    job.extractionBook = null;
+    if (skipped) {
+      return new Error(`Could not extract ${skipped} ${skipped === 1 ? "chunk" : "chunks"} after ${MAX_GRAPH_ATTEMPTS} attempts each. Last failure in ${lastError}`);
+    }
+  }
+
+  private async embedPassage(world: WorldRow, chunk: Passage, signal: AbortSignal, working: () => boolean) {
     const keys = selectedKeys(this.db, "world_embedding_keys", world.id);
-    const signal = controller.signal;
     const prefix = `title: ${chunk.name} | text: `;
     const text = Array.from(chunk.text);
     if (this.cooldownWorld !== world.id) {
       this.indexCooldown.clear();
       this.cooldownWorld = world.id;
     }
-    const indexing = { cooldown: this.indexCooldown, paused: () => this.require(world.id).status === "pausing" };
+    const indexing = { cooldown: this.indexCooldown, paused: () => !working() };
     const count = (part: string) => this.keys.retry("embedding", keys, signal,
       key => this.provider.count(world.model, key, tokenBody(prefix + part), signal), indexing);
     const tokens = chunk.tokens || await count(chunk.text);
@@ -388,11 +444,25 @@ export class Worlds {
       return encodeVector(values, world.dimensions);
     }, indexing);
     signal.throwIfAborted();
-    transaction(this.db, () => {
-      run(this.db, "UPDATE chunks SET vector = ?, tokens = ?, embed_end = ? WHERE book_id = ? AND index_number = ? AND number = ?",
-        vector, tokens, chunk.start + length, chunk.id, world.index_number, chunk.number);
-      run(this.db, "UPDATE worlds SET status = 'paused' WHERE id = ? AND status = 'pausing'", world.id);
-    });
+    run(this.db, "UPDATE chunks SET vector = ?, tokens = ?, embed_end = ? WHERE book_id = ? AND index_number = ? AND number = ?",
+      vector, tokens, chunk.start + length, chunk.id, world.index_number, chunk.number);
+  }
+
+  private async finishGraph(world: WorldRow, settings: GraphSettings, signal: AbortSignal, working: () => boolean) {
+    const generation = world.graph_building ?? this.graph.prepare(world);
+    await this.graph.summarize(world, settings, generation, signal, working);
+    while (working()) {
+      if (await this.graph.finishNext(world, generation, signal, working)) {
+        signal.throwIfAborted();
+        run(this.db, `
+          UPDATE worlds SET graph_published = graph_building, graph_base = graph_building, graph_building = NULL,
+            status = 'ready' WHERE id = ?
+        `, world.id);
+        this.graphIndexes.collect();
+        return;
+      }
+      await yieldToServer();
+    }
   }
 
   private verify(world: WorldRow) {
