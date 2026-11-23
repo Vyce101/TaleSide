@@ -1,12 +1,15 @@
 import type { DatabaseSync } from "node:sqlite";
+import { setImmediate as yieldToServer } from "node:timers/promises";
 import { CHAT_MODELS } from "../shared/models.js";
 import type { GraphSettings, World } from "../shared/types.js";
 import { all, get, run, selectedKeys, transaction } from "./database.js";
-import type { GeminiClient } from "./gemini.js";
+import { encodeVector, type GeminiClient } from "./gemini.js";
 import {
-  extractionPrompt, graphRequest, MAX_GRAPH_ATTEMPTS,
-  newRecords, parseExtraction, type Extraction,
+  consolidationPrompt, extractionPrompt, graphRequest, MAX_GRAPH_ATTEMPTS,
+  newRecords, parseConsolidation, parseExtraction, type Extraction,
 } from "./graph-extraction.js";
+import { resolveGraph } from "./graph-resolution.js";
+import type { GraphIndexes } from "./graph-indexes.js";
 import type { ProviderKeys } from "./keys.js";
 import { fields, RequestError, whole } from "./validation.js";
 
@@ -14,6 +17,7 @@ export type GraphWorldFields = { graph_settings: string | null; graph_published:
   graph_base: number | null; graph_building: number | null };
 type IndexedWorld = Pick<World, "id" | "model" | "dimensions" | "status"> & GraphWorldFields & { index_number: number };
 type Chunk = { book_id: string; book: number; number: number; text: string; preceding: string };
+type Summary = { id: number; name: string; type: string | null; input: string };
 
 export class GraphRequestFailed extends Error {}
 
@@ -34,8 +38,19 @@ export function readGraphSettings(value: unknown, chunkSize: number, required: b
   };
 }
 
+export function graphRecordTitle(name: string, type: string | null) {
+  return type ? `${name} (${type})` : name;
+}
+
+function renderedLength(record: Pick<Summary, "name" | "type">, description: string) {
+  return Array.from(graphRecordTitle(record.name, record.type) + "\n" + description).length;
+}
+
 export class GraphJobs {
-  constructor(private db: DatabaseSync, private keys: ProviderKeys, private provider: GeminiClient) {}
+  private embeddingCooldown = new Map<string, number>();
+
+  constructor(private db: DatabaseSync, private keys: ProviderKeys, private provider: GeminiClient,
+    private indexes: GraphIndexes) {}
 
   nextChunk(world: IndexedWorld, settings: GraphSettings, after: Pick<Chunk, "book" | "number">) {
     return get<Chunk>(this.db, `
@@ -97,4 +112,81 @@ export class GraphJobs {
     return complete;
   }
 
+  prepare(world: IndexedWorld) {
+    const rows = this.db.prepare(`
+      SELECT b.number AS book, p.chunk_number AS chunk, p.records FROM graph_passes p
+      JOIN books b ON b.id = p.book_id
+      WHERE b.world_id = ? AND p.index_number = ? ORDER BY b.number, p.chunk_number, p.pass
+    `).iterate(world.id, world.index_number) as Iterable<{ book: number; chunk: number; records: string }>;
+    const graph = resolveGraph(rows);
+    return transaction(this.db, () => {
+      const generation = Number(run(this.db, "INSERT INTO graph_generations (world_id, dimensions) VALUES (?, ?)",
+        world.id, world.dimensions).lastInsertRowid);
+      const reused = this.db.prepare(`
+        SELECT description, characters, vector FROM graph_records WHERE generation = ? AND identity = ? AND fingerprint = ?
+      `);
+      const insert = this.db.prepare(`
+        INSERT INTO graph_records (generation, identity, name, type, source, target, strength, fingerprint, input,
+          description, characters, vector) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+      const ids = new Map<string, number>();
+      for (const record of graph) {
+        const previous = world.graph_base === null ? undefined : reused.get(world.graph_base, record.identity, record.fingerprint);
+        const description = previous?.description as string | undefined ?? (record.descriptions === 1 ? record.input : null);
+        const type = record.type ?? null;
+        const characters = description === null ? null : renderedLength({ name: record.name, type }, description);
+        const { lastInsertRowid } = insert.run(generation, record.identity, record.name, type,
+          record.source ? ids.get(record.source)! : null, record.target ? ids.get(record.target)! : null,
+          record.strength ?? null, record.fingerprint, record.input, description, characters, previous?.vector ?? null);
+        ids.set(record.identity, Number(lastInsertRowid));
+      }
+      run(this.db, "UPDATE worlds SET graph_building = ? WHERE id = ?", generation, world.id);
+      return generation;
+    });
+  }
+
+  async summarize(world: IndexedWorld, settings: GraphSettings, generation: number, signal: AbortSignal, working: () => boolean) {
+    let after = 0;
+    let skipped = 0;
+    let lastError = "";
+    while (working()) {
+      const summary = get<Summary>(this.db, `
+        SELECT id, name, type, input FROM graph_records
+        WHERE generation = ? AND vector IS NULL AND description IS NULL AND id > ? ORDER BY id LIMIT 1
+      `, generation, after);
+      if (!summary) break;
+      after = summary.id;
+      const prompt = consolidationPrompt(summary.type ?? "relationship", summary.name, summary.input);
+      try {
+        const description = await this.request(world, settings, prompt, signal, working, text => parseConsolidation(text, summary.input));
+        run(this.db, "UPDATE graph_records SET description = ?, characters = ? WHERE id = ?",
+          description, renderedLength(summary, description), summary.id);
+      } catch (error) {
+        if (!(error instanceof GraphRequestFailed)) throw error;
+        skipped++;
+        lastError = `${summary.name}. ${error.message}`;
+      }
+      await yieldToServer();
+    }
+    if (skipped && working()) {
+      throw new Error(`Could not summarize ${skipped} graph ${skipped === 1 ? "record" : "records"} after ${MAX_GRAPH_ATTEMPTS} attempts each. Last failure for ${lastError}`);
+    }
+  }
+
+  async finishNext(world: IndexedWorld, generation: number, signal: AbortSignal, working: () => boolean) {
+    const draft = get<{ id: number; name: string; description: string }>(this.db, `
+      SELECT id, name, description FROM graph_records WHERE generation = ? AND vector IS NULL ORDER BY id LIMIT 1
+    `, generation);
+    if (!draft) {
+      await this.indexes.build(generation, signal);
+      return true;
+    }
+    const keys = selectedKeys(this.db, "world_embedding_keys", world.id);
+    const vector = await this.keys.retry("embedding", keys, signal, async key => {
+      const values = await this.provider.embed(world.model, world.dimensions, key, `title: ${draft.name} | text: ${draft.description}`, signal);
+      return encodeVector(values, world.dimensions);
+    }, { cooldown: this.embeddingCooldown, paused: () => !working() });
+    run(this.db, "UPDATE graph_records SET vector = ? WHERE id = ?", vector, draft.id);
+    return false;
+  }
 }
