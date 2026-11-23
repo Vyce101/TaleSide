@@ -352,10 +352,11 @@ export class Worlds {
       length = minimum;
     }
     signal.throwIfAborted();
-    const values = await this.keys.retry("embedding", keys, signal, key => this.provider.embed(world.model, world.dimensions, key,
-      prefix + text.slice(0, length).join(""), signal), indexing);
+    const vector = await this.keys.retry("embedding", keys, signal, async key => {
+      const values = await this.provider.embed(world.model, world.dimensions, key, prefix + text.slice(0, length).join(""), signal);
+      return encodeVector(values, world.dimensions);
+    }, indexing);
     signal.throwIfAborted();
-    const vector = encodeVector(values, world.dimensions);
     transaction(this.db, () => {
       run(this.db, "UPDATE chunks SET vector = ?, tokens = ?, embed_end = ? WHERE book_id = ? AND index_number = ? AND number = ?",
         vector, tokens, chunk.start + length, chunk.id, world.index_number, chunk.number);

@@ -42,6 +42,7 @@ export type PromptCounts = { total: number; blocks: Record<string, number> };
 export type Tale = TaleSummary & { persona_id?: string | null; prompt_counts?: PromptCounts; messages: Message[] };
 export type GenerationEvent = { type: "accepted"; tale: Tale; user?: Message; assistant: Message }
   | { type: "saved"; tale: Tale }
+  | { type: "retry" }
   | { type: "reply"; text: string }
   | { type: "thinking"; text: string; thinking_ms: number }
   | { type: "done"; message: Message; error?: string; prompt_counts?: PromptCounts };

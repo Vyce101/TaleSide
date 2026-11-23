@@ -68,16 +68,16 @@ export class ProviderKeys {
       const id = ordered.find(candidate => (cooldown?.get(candidate) ?? 0) <= performance.now()) ?? ordered[0];
       attempted.add(id);
       this.rotation.set(selection, (ids.indexOf(id) + 1) % ids.length);
-      yield { id, key: this.secret(this.require(id)), last: attempted.size === ids.length };
+      yield { id, readKey: () => this.secret(this.require(id)), last: attempted.size === ids.length };
     }
   }
 
   async retry<T>(purpose: Purpose, ids: string[], signal: AbortSignal, request: (key: string) => Promise<T>,
     indexing?: { cooldown: Map<string, number>; paused: () => boolean }) {
     const failed: string[] = [];
-    for (const { id, key, last } of this.attempts(purpose, ids, signal, indexing?.cooldown)) {
+    for (const { id, readKey, last } of this.attempts(purpose, ids, signal, indexing?.cooldown)) {
       try {
-        const response = await request(key);
+        const response = await request(readKey());
         signal.throwIfAborted();
         if (indexing) {
           indexing.cooldown.delete(id);

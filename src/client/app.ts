@@ -755,6 +755,10 @@ async function sendOrStop(rewrite?: { message: Message; mode: "regenerate" | "sw
           tale.prompt_counts = event.prompt_counts;
           if (state.tale === tale) refreshPromptCounts(tale.prompt_counts);
         }
+      } else if (event.type === "retry") {
+        reply.assistant.content = "";
+        reply.assistant.thinking = "";
+        reply.assistant.thinking_ms = null;
       } else if (event.type === "thinking") {
         reply.assistant.thinking += event.text;
         reply.assistant.thinking_ms = event.thinking_ms;

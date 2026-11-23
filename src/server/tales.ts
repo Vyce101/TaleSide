@@ -276,25 +276,28 @@ export class Tales {
     return this.publicMessage(get<MessageRow>(this.db, `SELECT ${messageFields} FROM tale_messages WHERE id = ?`, created.lastInsertRowid)!);
   }
 
-  private async *chatWithRetry(settings: ChatSettings, payload: object, signal: AbortSignal) {
-    for (const { key, last } of this.worlds.keys.attempts("chat", settings.chat_key_ids, signal)) {
+  private async *chatWithRetry(settings: ChatSettings, payload: object, signal: AbortSignal, resetReply: () => void) {
+    let streamed = false;
+    for (const { readKey, last } of this.worlds.keys.attempts("chat", settings.chat_key_ids, signal)) {
       let started = false;
       const pending: Part[] = [];
       try {
-        for await (const part of this.provider.chat(settings.model, key, payload, signal)) {
+        for await (const part of this.provider.chat(settings.model, readKey(), payload, signal)) {
           signal.throwIfAborted();
           if (!started && !part.text) { pending.push(part); continue; }
           if (!started) {
             started = true;
+            if (streamed) resetReply();
+            streamed = true;
             yield* pending;
           }
           yield part;
         }
         signal.throwIfAborted();
-        if (!started) yield* pending;
+        if (!started) throw new Error("Gemini returned no reply.");
         return;
       } catch (error) {
-        if (last || started || signal.aborted) throw error;
+        if (last || signal.aborted) throw error;
       }
     }
   }
@@ -361,7 +364,14 @@ export class Tales {
       }
       run(this.db, "UPDATE tales SET prompt_counts = ? WHERE id = ?", JSON.stringify(prompt_counts), id);
       promptCounts = prompt_counts;
-      for await (const part of this.chatWithRetry(settings, payload, signal)) {
+      const resetReply = () => {
+        assistant.content = "";
+        assistant.thinking = "";
+        assistant.thinking_ms = null;
+        signedParts.length = 0;
+        emit({ type: "retry" });
+      };
+      for await (const part of this.chatWithRetry(settings, payload, signal, resetReply)) {
         signal.throwIfAborted();
         if (typeof part.text === "string" && part.text) {
           if (part.thought) {
