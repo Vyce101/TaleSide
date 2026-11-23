@@ -12,7 +12,7 @@ const wrappers = Object.fromEntries(wrapperNames.map(name => [name, [`<${name}>`
 const [defaultModel] = CHAT_MODELS;
 const defaults: ChatSettings = {
   model: defaultModel.id, chat_key_ids: [], thinking_level: defaultModel.default_thinking, thought_signatures: defaultModel.replay_thinking,
-  input_limit: defaultModel.context_limit, output_limit: defaultModel.max_output, retrieved_chunks: 10,
+  input_limit: defaultModel.context_limit, output_limit: defaultModel.max_output, chunk_budget: 20000,
   minimum_similarity: 0.15, chunk_overlap: 400, messages_to_embed: 2, wrappers, prompts: DEFAULT_PROMPTS,
 };
 
@@ -48,6 +48,7 @@ export class Profiles {
       output_limit: Math.min(locked ? model.max_output : stored.output_limit ?? model.max_output, model.max_output),
       wrappers: locked ? wrappers : { ...wrappers, ...stored.wrappers },
     };
+    if (Object.hasOwn(settings, "retrieved_chunks")) Reflect.deleteProperty(settings, "retrieved_chunks");
     return { id: row.id, name: locked ? "Default" : row.name, locked,
       settings: { ...settings, chat_key_ids: selectedKeys(this.db, "chat_profile_keys", row.id) } };
   }
@@ -96,7 +97,7 @@ export class Profiles {
       thought_signatures: input.thought_signatures,
       input_limit: whole(input.input_limit, 256, "Enter an input limit within the model range.", model.context_limit),
       output_limit: whole(input.output_limit, 256, "Enter an output limit within the model range.", model.max_output),
-      retrieved_chunks: whole(input.retrieved_chunks, 1, "Enter at least one retrieved chunk."),
+      chunk_budget: whole(input.chunk_budget ?? defaults.chunk_budget, 1, "Enter a positive Chunk RAG character budget."),
       minimum_similarity: input.minimum_similarity,
       chunk_overlap: whole(input.chunk_overlap, 0, "Enter a nonnegative chunk overlap."),
       messages_to_embed: whole(input.messages_to_embed, 1, "Enter at least one message to embed."),

@@ -67,9 +67,31 @@ test("retrieval includes the full chunk even when indexing embedded only a prefi
   const world = await app.newWorld({ name: "Passages", key_ids: [key], max_chunk_size: 6 },
     [["Book.txt", "abcdefghi"]]);
   await until(() => app.world(world.id), value => value.status === "ready");
-  const settings = { ...(await app.profiles()).defaults, chat_key_ids: [key], retrieved_chunks: 1, chunk_overlap: 2 };
+  const settings = { ...(await app.profiles()).defaults, chat_key_ids: [key], chunk_budget: 5, chunk_overlap: 2 };
   await app.generate(world.id, id(), "Find the matching passage.", settings);
   match(JSON.stringify(payload), /<retrieved_passages>\\nefghi\\n<\/retrieved_passages>/);
+});
+
+test("the passage budget checks lower-ranked chunks after skipping a chunk that does not fit", async t => {
+  let payload: object | undefined;
+  const app = await fixture(t, {
+    ...fakeProvider,
+    async embed(_model, dimensions, _key, text) {
+      const secondary = text.startsWith("title: Two") ? 0.3 : text.startsWith("title: Three") ? 0.5 : 0;
+      return Array.from({ length: dimensions }, (_, index) => index === 0 ? 1 : index === 1 ? secondary : 0);
+    },
+    async *chat(model, key, body, signal) {
+      payload = body;
+      yield* fakeProvider.chat(model, key, body, signal);
+    },
+  });
+  const key = await app.addKey("Gemini");
+  const world = await app.newWorld({ name: "Budget", key_ids: [key] },
+    [["One.txt", "Best note"], ["Two.txt", "An oversized passage."], ["Three.txt", "Short"]]);
+  await until(() => app.world(world.id), value => value.status === "ready");
+  const settings = { ...(await app.profiles()).defaults, chat_key_ids: [key], chunk_budget: 16 };
+  await app.generate(world.id, id(), "Find the match.", settings);
+  match(JSON.stringify(payload), /<retrieved_passages>\\nBest note\\n\\nShort\\n<\/retrieved_passages>/);
 });
 
 test("deleting indexing preserves Tales and uses the first new passage without the old index", async t => {
@@ -189,7 +211,7 @@ test("appending books uses completed passages while the new book waits, and dele
   const world = await until(() => app.world(launched.id), value => value.status === "ready");
   await app.call(base + "/add-books", upload({ book_revision: world.book_revision }, [["Next.txt", "Next story"]]));
   const profiles = await app.profiles();
-  const saved = { ...profiles.defaults, chat_key_ids: [first, second], retrieved_chunks: 17 };
+  const saved = { ...profiles.defaults, chat_key_ids: [first, second], chunk_budget: 17000 };
   await app.call("/api/chat-profiles/create", { name: "My preset", settings: saved });
   const keys = await app.keys();
   equal(keys.keys[0].worlds[0].name, world.name);
@@ -199,7 +221,7 @@ test("appending books uses completed passages while the new book waits, and dele
   deepEqual((await app.world(world.id)).retrieval_key_ids, [second]);
   deepEqual((await app.world(world.id)).embedding_key_ids, [second]);
   deepEqual((await app.profiles()).profiles.find(profile => profile.name === "My preset")!.settings.chat_key_ids, [second]);
-  equal((await app.profiles()).profiles.find(profile => profile.name === "My preset")!.settings.retrieved_chunks, 17);
+  equal((await app.profiles()).profiles.find(profile => profile.name === "My preset")!.settings.chunk_budget, 17000);
   const tale = id();
   await app.generate(world.id, tale, "Waiting on new books", { ...saved, chat_key_ids: [second] });
   await app.call(base + "/retrieval-key", { key_ids: [] });

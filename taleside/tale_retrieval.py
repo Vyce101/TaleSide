@@ -1,6 +1,5 @@
 """Read the saved World vectors and assemble the Gemini conversation request."""
 
-from heapq import nlargest
 from math import sqrt
 from struct import Struct
 
@@ -23,9 +22,11 @@ def passages(db, world, query, settings, cancelled):
     vector_format = Struct(f"<{dimensions}f")
     query_length = sqrt(sum(value * value for value in query))
     chunks = db.execute("""
-        SELECT b.number AS book_number, c.book_id, c.number, c.start, c.end, c.vector
+        SELECT b.number AS book_number, c.book_id, c.number, c.start, c.end, c.vector,
+            prior.start AS prior_start
         FROM chunks c JOIN books b ON b.id = c.book_id
-        WHERE b.world_id = ? AND c.index_number = ? AND c.vector IS NOT NULL ORDER BY b.number, c.number
+        LEFT JOIN chunks prior ON prior.book_id = c.book_id AND prior.index_number = c.index_number AND prior.number = c.number - 1
+        WHERE b.world_id = ? AND c.index_number = ? AND c.vector IS NOT NULL
     """, (world["id"], world["index_number"]))
 
     def matches():
@@ -38,30 +39,32 @@ def passages(db, world, query, settings, cancelled):
                 continue
             similarity = sum(left * right for left, right in zip(vector, query)) / (length * query_length)
             if similarity >= settings["minimum_similarity"]:
-                yield similarity, chunk
+                start = chunk["start"]
+                overlap_start = start
+                if chunk["prior_start"] is not None:
+                    overlap_start = max(chunk["prior_start"], start - settings["chunk_overlap"])
+                yield similarity, (chunk["book_number"], chunk["number"], chunk["book_id"], start, chunk["end"], overlap_start)
 
-    selected = nlargest(settings["retrieved_chunks"], matches(), key=lambda match: match[0])
-    ordered = sorted((chunk for _, chunk in selected), key=lambda chunk: (chunk["book_number"], chunk["start"]))
+    ranked = sorted(matches(), key=lambda match: (-match[0], match[1][0], match[1][1]))
+    selected = {}
+    remaining = settings["chunk_budget"]
+    for _, (book, number, book_id, start, end, overlap_start) in ranked:
+        excerpt_start = start if (book, number - 1) in selected else overlap_start
+        next_chunk = selected.get((book, number + 1))
+        saved_overlap = end - next_chunk[2] if next_chunk else 0
+        cost = end - excerpt_start - saved_overlap + (2 if selected else 0)
+        if cost > remaining:
+            continue
+        selected[(book, number)] = (book_id, start, overlap_start, end)
+        remaining -= cost
+
     excerpts = []
-    covered_end = 0
-    previous_book = None
-    for chunk in ordered:
-        book = chunk["book_number"]
-        if book != previous_book:
-            covered_end = 0
-            previous_book = book
-        start = chunk["start"]
-        if settings["chunk_overlap"] and chunk["number"] > 1:
-            prior = db.execute("""
-                SELECT start FROM chunks WHERE book_id = ? AND index_number = ? AND number = ?
-            """, (chunk["book_id"], world["index_number"], chunk["number"] - 1)).fetchone()
-            if prior:
-                start = max(prior["start"], start - settings["chunk_overlap"], covered_end)
+    for (book, number), (book_id, start, overlap_start, end) in sorted(selected.items()):
+        excerpt_start = start if (book, number - 1) in selected else overlap_start
         text, = db.execute("""
             SELECT substr(working, ?, ?) FROM books WHERE id = ?
-        """, (start + 1, chunk["end"] - start, chunk["book_id"])).fetchone()
+        """, (excerpt_start + 1, end - excerpt_start, book_id)).fetchone()
         excerpts.append(text)
-        covered_end = chunk["end"]
     return excerpts
 
 
