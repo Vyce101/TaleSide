@@ -72,17 +72,20 @@ def wrapped(text, pair):
     return "\n".join(part for part in (pair[0], text, pair[1]) if part)
 
 
-def chat_request(world, books, excerpts, messages, settings, context, gemma):
+def chat_request(world, books, excerpts, messages, settings, context, graph, gemma):
     wrappers = settings["wrappers"]
     info = [f"Name = {world['name']}", f"Chunk Size = {world['max_chunk_size']} Characters",
             f"Books = {len(books)}"]
     info.extend(f"Book {book['number']} - {book['name']}" for book in books)
+    if graph is not None:
+        info.extend([f"Entities = {graph['entities']}", f"Relationships = {graph['relationships']}"])
+    retrieved = "\n\n".join(excerpts + (graph["notes"] if graph is not None else []))
     persona = context["persona"]
     blocks = {
         "world_description": context["description"] if context["description"].strip() else "",
         "world_info": "\n".join(info),
         "persona": f"Name = {persona['name']}\nDescription = {persona['description']}",
-        "retrieved_passages": "\n\n".join(excerpts),
+        "retrieved_passages": retrieved,
     }
     system = []
     contents = []
@@ -137,7 +140,10 @@ def chat_request(world, books, excerpts, messages, settings, context, gemma):
                 if block["text"].strip():
                     append(block["role"], [text_part(block["text"])])
             elif kind != "world_description" or blocks[kind]:
-                append(block.get("role") or "system", [text_part(wrapped(blocks[kind], wrappers[kind]))])
+                text = wrapped(blocks[kind], wrappers[kind])
+                if kind == "retrieved_passages" and graph is not None:
+                    text = "B1:C1 means Book 1, Chunk 1.\n" + text
+                append(block.get("role") or "system", [text_part(text)])
     payload = {
         "contents": contents,
         "generationConfig": {

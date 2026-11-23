@@ -59,7 +59,7 @@ def retrieve(request):
             if message.get("signed_parts"):
                 message["signed_parts"] = json.loads(message["signed_parts"])
         send(chat_request(world, books, excerpts, query["history"], settings, query["context"],
-                          query["gemma"]))
+                          query.get("graph"), query["gemma"]))
 
 
 def main():

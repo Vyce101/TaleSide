@@ -30,7 +30,7 @@ const retrievalGroups: Record<string, Omit<Slider, "value">[]> = {
     { id: "graph-edges", setting: "graph_edges", label: "Max relationships per entity", min: 1, range: 20, limit: 150 },
   ],
 };
-const wrappers = [["World Description", "world_description"], ["World Info", "world_info"], ["Persona", "persona"], ["Retrieved Passages", "retrieved_passages"], ["Chat History", "chat_history"]] as const;
+const wrappers = [["World Description", "world_description"], ["World Info", "world_info"], ["Persona", "persona"], ["Retrieved Context", "retrieved_passages"], ["Chat History", "chat_history"]] as const;
 let profiles: ProfileSettings;
 let working: ChatSettings;
 const modelChoices = new Map<string, Pick<ChatSettings, "thinking_level" | "thought_signatures" | "input_limit" | "output_limit">>();

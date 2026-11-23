@@ -12,7 +12,7 @@ export const BUILTIN_PROMPTS: Record<BuiltinPrompt, string> = {
   world_description: "World Description",
   world_info: "World Info",
   persona: "Persona",
-  retrieved_passages: "Retrieved Passages",
+  retrieved_passages: "Retrieved Context",
   chat_history: "Chat History",
 };
 

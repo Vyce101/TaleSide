@@ -1,5 +1,6 @@
 import type { ChatSettings, PromptCounts } from "../shared/types.js";
 import { GEMMA, GEMMA_SAMPLING } from "../shared/models.js";
+import type { GraphContext } from "./graph-worker.js";
 import { InputTooLarge, LEGACY_EMBEDDING } from "./gemini.js";
 import { pythonWorker } from "./python.js";
 import type { WorldRow } from "./worlds.js";
@@ -25,9 +26,9 @@ export async function openRetrieval(database: string, worldId: string, signal: A
     return {
       world,
       async build(vector: number[], history: HistoryEntry[], settings: ChatSettings,
-        context: { description: string; persona: { name: string; description: string } }) {
+        context: { description: string; persona: { name: string; description: string } }, graph?: GraphContext) {
         const gemma = settings.model === GEMMA;
-        await worker.send({ vector, history, settings, context, gemma });
+        await worker.send({ vector, history, settings, context, graph, gemma });
         const result = await worker.receive<{ payload: { generationConfig: object }; prompt_counts: PromptCounts }>();
         if (gemma) Object.assign(result.payload.generationConfig, GEMMA_SAMPLING);
         return result;

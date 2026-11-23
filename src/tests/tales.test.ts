@@ -69,7 +69,7 @@ test("retrieval includes the full chunk even when indexing embedded only a prefi
   await until(() => app.world(world.id), value => value.status === "ready");
   const settings = { ...(await app.profiles()).defaults, chat_key_ids: [key], chunk_budget: 5, chunk_overlap: 2 };
   await app.generate(world.id, id(), "Find the matching passage.", settings);
-  match(JSON.stringify(payload), /<retrieved_passages>\\nefghi\\n<\/retrieved_passages>/);
+  match(JSON.stringify(payload), /<retrieved_context>\\nefghi\\n<\/retrieved_context>/);
 });
 
 test("the passage budget checks lower-ranked chunks after skipping a chunk that does not fit", async t => {
@@ -91,7 +91,7 @@ test("the passage budget checks lower-ranked chunks after skipping a chunk that 
   await until(() => app.world(world.id), value => value.status === "ready");
   const settings = { ...(await app.profiles()).defaults, chat_key_ids: [key], chunk_budget: 16 };
   await app.generate(world.id, id(), "Find the match.", settings);
-  match(JSON.stringify(payload), /<retrieved_passages>\\nBest note\\n\\nShort\\n<\/retrieved_passages>/);
+  match(JSON.stringify(payload), /<retrieved_context>\\nBest note\\n\\nShort\\n<\/retrieved_context>/);
 });
 
 test("deleting indexing preserves Tales and uses the first new passage without the old index", async t => {

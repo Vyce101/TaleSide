@@ -312,6 +312,7 @@ export class Tales {
     const worldId = active.worldId;
     const started = performance.now();
     const snapshot = await openRetrieval(this.databasePath, worldId, signal);
+    let graph: ReturnType<typeof this.worlds.graphIndexes.capture>;
     const signedParts: Part[] = [];
     let failure: string | undefined;
     let promptCounts: PromptCounts | undefined;
@@ -322,7 +323,10 @@ export class Tales {
         throw new RequestError("This World changed. Send the message again.", 409);
       }
       this.worlds.keys.validate(settings.chat_key_ids);
-      if (retrievalKeys.length) this.worlds.keys.validate(retrievalKeys);
+      if (retrievalKeys.length) {
+        this.worlds.keys.validate(retrievalKeys);
+        graph = this.worlds.graphIndexes.capture(current.graph_published);
+      }
       const persona = this.personas.resolve(worldId, title === undefined ? this.personaSelection(id) : input.personaSelection);
       let user: Message | undefined;
       let assistant: Message;
@@ -354,9 +358,15 @@ export class Tales {
       const query = retrievalKeys.length ? await retrievalVector(world, retrievalHistory.slice(-settings.messages_to_embed),
         text => keys.retry("retrieval", retrievalKeys, signal, key => this.provider.count(world.model, key, tokenBody(text), signal)),
         text => keys.retry("retrieval", retrievalKeys, signal, key => this.provider.embed(world.model, world.dimensions, key, text, signal))) : [];
+      const graphContext = graph && query.length ? await graph.search({
+        vector: query, text: retrievalHistory.filter(message => message.role === "user").at(-1)?.content ?? "",
+        graph_budget: settings.graph_budget, graph_matches: settings.graph_matches,
+        graph_hops: settings.graph_hops, graph_edges: settings.graph_edges,
+      }, signal) : undefined;
+      graph?.close();
       const { payload, prompt_counts } = await snapshot.build(query, history, settings, { description, persona: {
         name: persona.name, description: persona.description,
-      } });
+      } }, graphContext);
       snapshot.close();
       if (settings.input_limit < CHAT_MODELS.find(model => model.id === settings.model)!.context_limit) {
         const full = { generateContentRequest: { model: `models/${settings.model}`, ...payload } };
@@ -401,6 +411,7 @@ export class Tales {
       active.message.status = active.stopped ? "stopped" : "error";
       if (!signal.aborted) failure = error instanceof Error ? error.message : "The reply could not finish.";
     } finally {
+      graph?.close();
       snapshot.close();
       const assistant = active.message;
       if (assistant) {

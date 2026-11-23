@@ -8,7 +8,10 @@ import { fields, identifier, makeId, RequestError, requiredText, whole } from ".
 
 const DEFAULT_ID = "00000000000000000000000000000000";
 const wrapperNames = Object.keys(BUILTIN_PROMPTS) as BuiltinPrompt[];
-const wrappers = Object.fromEntries(wrapperNames.map(name => [name, [`<${name}>`, `</${name}>`]])) as Wrappers;
+const wrappers = Object.fromEntries(wrapperNames.map(name => {
+  const tag = name === "retrieved_passages" ? "retrieved_context" : name;
+  return [name, [`<${tag}>`, `</${tag}>`]];
+})) as Wrappers;
 const [defaultModel] = CHAT_MODELS;
 const defaults: ChatSettings = {
   model: defaultModel.id, chat_key_ids: [], thinking_level: defaultModel.default_thinking, thought_signatures: defaultModel.replay_thinking,
@@ -49,6 +52,10 @@ export class Profiles {
       output_limit: Math.min(locked ? model.max_output : stored.output_limit ?? model.max_output, model.max_output),
       wrappers: locked ? wrappers : { ...wrappers, ...stored.wrappers },
     };
+    const [open, close] = settings.wrappers.retrieved_passages;
+    if (open === "<retrieved_passages>" && close === "</retrieved_passages>") {
+      settings.wrappers.retrieved_passages = wrappers.retrieved_passages;
+    }
     if (Object.hasOwn(settings, "retrieved_chunks")) Reflect.deleteProperty(settings, "retrieved_chunks");
     return { id: row.id, name: locked ? "Default" : row.name, locked,
       settings: { ...settings, chat_key_ids: selectedKeys(this.db, "chat_profile_keys", row.id) } };
