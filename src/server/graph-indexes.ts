@@ -3,7 +3,8 @@ import { existsSync, readdirSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import { MessageChannel, Worker } from "node:worker_threads";
-import { all, run } from "./database.js";
+import { all, get, run } from "./database.js";
+import type { GraphContext, GraphQuery } from "./graph-worker.js";
 
 export function graphPaths(directory: string, id: number) {
   return {
@@ -15,7 +16,10 @@ export function graphPaths(directory: string, id: number) {
 
 export class GraphIndexes {
   private directory: string;
+  private readers = new Map<number, Worker>();
+  private leases = new Map<number, number>();
   private builds = new Map<number, { promise: Promise<void>; controller: AbortController }>();
+  private latest?: number;
 
   constructor(private db: DatabaseSync, private database: string) {
     this.directory = database + ".graph";
@@ -77,10 +81,51 @@ export class GraphIndexes {
     finally { abort[Symbol.dispose](); }
   }
 
+  capture(id: number | null) {
+    if (id === null) return;
+    this.latest = id;
+    this.leases.set(id, (this.leases.get(id) ?? 0) + 1);
+    this.evict();
+    let closed = false;
+    return {
+      search: async (query: GraphQuery, signal: AbortSignal) => {
+        await this.build(id, signal);
+        signal.throwIfAborted();
+        let worker = this.readers.get(id);
+        if (!worker) {
+          worker = this.worker(id);
+          this.readers.set(id, worker);
+          worker.once("error", () => {});
+          worker.once("exit", () => { if (this.readers.get(id) === worker) this.readers.delete(id); });
+        }
+        return this.request<GraphContext>(worker, { operation: "search", query }, signal);
+      },
+      close: () => {
+        if (closed) return;
+        closed = true;
+        const count = this.leases.get(id)! - 1;
+        if (count) this.leases.set(id, count);
+        else this.leases.delete(id);
+        this.collect();
+      },
+    };
+  }
+
   private remove(id: number, temp = false) {
     for (const file of Object.values(graphPaths(this.directory, id))) {
       try { unlinkSync(temp ? file + ".tmp" : file); }
       catch { /* Windows may still be releasing a mapped file. Startup also removes orphaned files. */ }
+    }
+  }
+
+  private evict() {
+    for (const [id, worker] of this.readers) {
+      if (this.leases.has(id)) continue;
+      if (id === this.latest && get(this.db, "SELECT 1 FROM worlds WHERE graph_published = ?", id)) continue;
+      this.readers.delete(id);
+      void worker.terminate().then(() => {
+        if (!this.leases.has(id) && !get(this.db, "SELECT 1 FROM graph_generations WHERE id = ?", id)) this.remove(id);
+      }).catch(() => {});
     }
   }
 
@@ -90,25 +135,36 @@ export class GraphIndexes {
         SELECT 1 FROM worlds w WHERE w.id = g.world_id AND (w.graph_base = g.id OR w.graph_building = g.id OR w.graph_published = g.id)
       )
     `)) {
-      if (this.builds.has(id)) continue;
+      if (this.leases.has(id) || this.builds.has(id)) continue;
       run(this.db, "DELETE FROM graph_generations WHERE id = ?", id);
-      this.remove(id);
+      if (!this.readers.has(id)) this.remove(id);
     }
+    this.evict();
   }
 
   discard(ids: number[]) {
     for (const id of ids) {
-      const build = this.builds.get(id);
-      build?.controller.abort();
-      void (build?.promise ?? Promise.resolve()).catch(() => {}).then(() => {
-        this.remove(id);
-        this.remove(id, true);
-      });
+      const worker = this.readers.get(id);
+      if (worker) {
+        this.readers.delete(id);
+        void worker.terminate().then(() => this.remove(id)).catch(() => {});
+      } else {
+        const build = this.builds.get(id);
+        build?.controller.abort();
+        void (build?.promise ?? Promise.resolve()).catch(() => {}).then(() => {
+          this.remove(id);
+          this.remove(id, true);
+        });
+      }
     }
   }
 
   async close() {
     for (const build of this.builds.values()) build.controller.abort();
-    await Promise.allSettled([...this.builds.values()].map(build => build.promise));
+    await Promise.allSettled([
+      ...[...this.readers.values()].map(worker => worker.terminate()),
+      ...[...this.builds.values()].map(build => build.promise),
+    ]);
+    this.readers.clear();
   }
 }
