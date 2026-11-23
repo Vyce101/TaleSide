@@ -7,7 +7,7 @@ import { EMBEDDING_MODEL, EMBEDDING_MODELS } from "./gemini.js";
 import { identifier, makeId, RequestError, requiredText } from "./validation.js";
 
 type Key = { id: string; nickname: string; suffix: string | null; protected_secret: Uint8Array };
-type Purpose = "embedding" | "retrieval" | "chat";
+type Purpose = "embedding" | "retrieval" | "chat" | "extraction";
 const INDEX_KEY_COOLDOWN_MS = 30_000;
 
 type Protector = (operation: "Protect" | "Unprotect", input: Uint8Array) => Buffer;
