@@ -708,6 +708,12 @@ dialog label input { display: block; margin-top: 5px; }
 .index-lock { display: inline-flex; align-items: center; gap: 4px; float: inline-end; color: #afbaaa; font-size: 12px; }
 .index-lock svg { width: 13px; height: 13px; }
 .index-settings fieldset { margin: 0; padding: 8px; min-width: 0; border: 0; }
+.index-settings fieldset { margin-block-start: 5px; }
+.index-settings legend { color: var(--muted); font-size: 13px; font-weight: 650; }
+.setting-with-hint { display: flex; align-items: center; gap: 6px; margin: 10px 0 5px; }
+.panel-content .setting-with-hint label { margin: 0; }
+.setting-hint { display: inline-grid; place-items: center; width: 16px; height: 16px; flex: none; border: 1px solid var(--line);
+  border-radius: 50%; color: var(--muted); font-size: 11px; cursor: help; }
 .world-progress-body { padding: 8px; }
 #world-progress-total { color: var(--muted); font-size: 12px; }
 #world-progress-books { list-style: none; margin: 6px 0 0; padding: 0; }

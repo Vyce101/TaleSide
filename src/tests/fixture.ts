@@ -5,6 +5,7 @@ import { join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { setTimeout as pause } from "node:timers/promises";
 import type { TestContext } from "node:test";
+import { FLASH_LITE } from "../shared/models.js";
 import type { ChatSettings, KeySettings, ProfileSettings, World } from "../shared/types.js";
 import type { GeminiClient } from "../server/gemini.js";
 import { createApplication, listen } from "../server/http.js";
@@ -43,9 +44,18 @@ export async function databasePath(t: TestContext) {
   return join(directory, "worlds.sqlite3");
 }
 
-export async function fixture(t: TestContext, provider: GeminiClient = fakeProvider, path?: string) {
+export async function fixture(t: TestContext, provider: GeminiClient = fakeProvider, path?: string,
+  options: { graphResponses?: "provider" } = {}) {
   const database = path ?? await databasePath(t);
-  const app = await createApplication(database, { provider, protect: (_operation, input) => Buffer.from(input) });
+  const testProvider: GeminiClient = options.graphResponses === "provider" ? provider : {
+    ...provider,
+    async *chat(model, key, body, signal) {
+      const request = body as { generationConfig?: { thinkingConfig?: { includeThoughts?: boolean } } };
+      if (request.generationConfig?.thinkingConfig?.includeThoughts === false) yield { text: "<|COMPLETE|>" };
+      else yield* provider.chat(model, key, body, signal);
+    },
+  };
+  const app = await createApplication(database, { provider: testProvider, protect: (_operation, input) => Buffer.from(input) });
   const { origin, server } = await listen(0);
   server.on("request", (request, response) => app.handle(request, response, origin));
   let closing: Promise<void> | undefined;
@@ -79,8 +89,9 @@ export async function fixture(t: TestContext, provider: GeminiClient = fakeProvi
   const addKey = (nickname: string, secret = `fixture-placeholder-${nickname.replaceAll(" ", "-")}`) => call<{ id: string }>(
     "/api/provider-keys", { nickname, secret }).then(key => key.id);
 
-  async function newWorld(settings: object, books: [string, string][], worldId = id()) {
-    return call<World>(`/api/worlds/${worldId}/create`, upload(settings, books));
+  async function newWorld(settings: { key_ids?: string[] } & Record<string, unknown>, books: [string, string][], worldId = id()) {
+    const graph = { model: FLASH_LITE, thinking_level: "MINIMAL", gleaning_passes: 0 };
+    return call<World>(`/api/worlds/${worldId}/create`, upload({ graph, extraction_key_ids: settings.key_ids ?? [], ...settings }, books));
   }
 
   async function generate(worldId: string, taleId: string, content: string, settings: ChatSettings, generationId = id()) {

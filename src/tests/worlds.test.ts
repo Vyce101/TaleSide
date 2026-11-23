@@ -18,7 +18,7 @@ test("a name-only World stays editable and removing its last book keeps the Worl
   equal(withBook.total_chunks, 0);
   const rejected = await app.send(base + "/start-index", { book_revision: withBook.book_revision, key_ids: [] });
   equal(rejected.status, 409);
-  await app.call<World>(base + "/start-index", { book_revision: withBook.book_revision, key_ids: [key], max_chunk_size: 20 });
+  await app.call<World>(base + "/start-index", { book_revision: withBook.book_revision, key_ids: [key], extraction_key_ids: [key], max_chunk_size: 20 });
   const ready = await until(() => app.world(empty.id), world => world.status === "ready");
   const removed = await app.call<World>(base + "/remove-book", { book_revision: ready.book_revision, book_id: ready.books[0].id });
   equal(removed.status, "unindexed");

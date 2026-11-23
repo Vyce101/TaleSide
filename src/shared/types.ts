@@ -8,7 +8,8 @@ export type World = {
   max_chunk_size: number; book_revision: number; artwork: string | null;
   progress: number; error: string | null; total_chunks: number; embedded_chunks: number; active_book: number | null; can_play: boolean;
   description: string; openings: string[];
-  embedding_key_ids: string[]; retrieval_key_ids: string[]; books: Book[];
+  embedding_key_ids: string[]; retrieval_key_ids: string[]; extraction_key_ids: string[]; books: Book[];
+  graph: GraphSettings | null;
 };
 export type EmbeddingModel = { id: string; dimensions: number; max_token_limit: number };
 export type KeySummary = { id: string; nickname: string; suffix: string | null; worlds: { id: string; name: string }[] };
@@ -51,4 +52,4 @@ export type GenerationEvent = { type: "accepted"; tale: Tale; user?: Message; as
   | { type: "thinking"; text: string; thinking_ms: number }
   | { type: "done"; message: Message; error?: string; prompt_counts?: PromptCounts };
 export type WorldSettings = { name: string; model: string; key_ids: string[];
-  max_chunk_size: number };
+  max_chunk_size: number; graph: GraphSettings; extraction_key_ids: string[] };

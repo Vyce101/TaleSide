@@ -32,13 +32,36 @@ export function editorMarkup(world: World | undefined, indexingOpen: boolean | u
     </div>
     <details class="index-settings" ${indexingOpen ? "open" : ""}>
       <summary>Indexing<span id="index-lock" class="index-lock" hidden>${icon("lock")}Locked</span></summary>
-      <fieldset >
+      <fieldset>
+        <legend>General</legend>
         <label for="world-model">Embedding model</label>
         <select id="world-model" name="model"></select>
         <label for="world-key-toggle">Embedding key</label>
         <div id="world-key"></div>
+      </fieldset>
+      <fieldset>
+        <legend>Chunk RAG</legend>
         <label for="world-chunk-size">Chunk size (characters)</label>
         <input type="number" id="world-chunk-size" name="chunkSize" value="${chunkSize}" min="1" required>
+      </fieldset>
+      <fieldset>
+        <legend>Graph RAG</legend>
+        <label for="world-extraction-model">Extraction model</label>
+        <select id="world-extraction-model"></select>
+        <label for="world-extraction-thinking">Extraction thinking level</label>
+        <select id="world-extraction-thinking"></select>
+        <label for="world-extraction-key-toggle">Extraction keys</label>
+        <div id="world-extraction-key"></div>
+        <div class="setting-with-hint">
+          <label for="world-preceding-context">Context from the previous chunk (characters)</label>
+          ${settingHint("How previous-chunk context helps", "Includes the end of the previous chunk so the model can identify speakers and resolve references. It only extracts facts from the current chunk.")}
+        </div>
+        <input type="number" id="world-preceding-context" value="${world?.graph?.preceding_context ?? Math.round(chunkSize / 10)}" min="0">
+        <div class="setting-with-hint">
+          <label for="world-gleaning-passes">Max gleaning passes</label>
+          ${settingHint("What gleaning passes do", "Sets how many times the model can check a chunk for missed entities and relationships. It stops when it finds nothing new. Set to 0 to skip the extra checks.")}
+        </div>
+        <input type="number" id="world-gleaning-passes" value="${world?.graph?.gleaning_passes ?? 3}" min="0">
       </fieldset>
     </details>
     <details id="world-progress" class="index-settings" ${world ? "" : "hidden"}>
@@ -101,6 +124,10 @@ export function renderBooks(books: EditableBook[], world: World | undefined) {
   for (const row of rows.values()) row.remove();
 }
 
+function settingHint(label: string, hint: string) {
+  return `<span class="setting-hint" tabindex="0" aria-label="${label}" aria-description="${hint}" data-tooltip="${hint}">?</span>`;
+}
+
 export function renderWorldProgress(world?: World) {
   if (!world || !element<HTMLDetailsElement>("world-progress").open) return;
   const count = (done: number, total: number) => `${done.toLocaleString()} of ${total.toLocaleString()} chunks indexed`;
@@ -115,7 +142,9 @@ export function renderWorldProgress(world?: World) {
 
 export function renderIndex(world: World | undefined, books: EditableBook[], busy: boolean) {
   const status = world?.status;
-  const [glyph, label] = status === "creating" || status === "pausing" ? ["pause", "Pause indexing"] as const
+  const needsExtractionSettings = world && status !== "unindexed" && !world.graph;
+  const [glyph, label] = processing(world) ? ["pause", "Pause indexing"] as const
+    : needsExtractionSettings ? ["play", "Start indexing"] as const
     : status === "paused" || status === "failed" ? ["play", "Resume indexing"] as const
     : world ? ["play", "Start indexing"] as const : ["check", "Create World"] as const;
   const action = element<HTMLButtonElement>("world-index-action");
@@ -124,7 +153,7 @@ export function renderIndex(world: World | undefined, books: EditableBook[], bus
   discard.hidden = !world;
   discard.disabled = busy;
   action.type = status && status !== "unindexed" ? "button" : "submit";
-  action.hidden = status === "ready";
+  action.hidden = status === "ready" && !needsExtractionSettings;
   action.disabled = busy || status === "pausing" || (status === "unindexed" && !books.length);
   clear.hidden = !world || status === "unindexed";
   clear.disabled = busy || processing(world);
@@ -137,7 +166,11 @@ export function renderIndex(world: World | undefined, books: EditableBook[], bus
   const locked = world && status !== "unindexed";
   element("index-lock").hidden = !locked;
   element<HTMLSelectElement>("world-model").disabled = Boolean(locked || busy);
-  element<HTMLInputElement>("world-chunk-size").readOnly = Boolean(locked || busy);
+  element<HTMLInputElement>("world-chunk-size").disabled = Boolean(locked || busy);
+  const graphLocked = Boolean(locked && world?.graph);
+  for (const id of ["world-extraction-model", "world-extraction-thinking", "world-preceding-context", "world-gleaning-passes"]) {
+    element<HTMLInputElement | HTMLSelectElement>(id).disabled = graphLocked || Boolean(busy || processing(world));
+  }
   element("book-upload").hidden = processing(world);
   element<HTMLButtonElement>("add-world-books").disabled = busy;
   element<HTMLInputElement>("world-books-input").disabled = processing(world) || busy;

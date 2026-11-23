@@ -9,6 +9,7 @@ import { openDatabase } from "./database.js";
 import { gemini, type GeminiClient } from "./gemini.js";
 import { ProviderKeys, dpapi } from "./keys.js";
 import { Profiles } from "./profiles.js";
+import { GraphIndexes } from "./graph-indexes.js";
 import { Tales } from "./tales.js";
 import { fields, identifier, RequestError, requiredText } from "./validation.js";
 import { Worlds, type Artwork } from "./worlds.js";
@@ -117,7 +118,8 @@ export async function createApplication(databasePath: string, options: Options =
   try {
     const provider = options.provider ?? gemini;
     const keys = new ProviderKeys(db, options.protect);
-    const worlds = new Worlds(db, keys, provider);
+    const graphIndexes = new GraphIndexes(db, databasePath);
+    const worlds = new Worlds(db, keys, provider, graphIndexes);
     const profiles = new Profiles(db, keys);
     const personas = new Personas(db);
     const tales = new Tales(worlds, profiles, provider, databasePath, personas);
@@ -244,6 +246,7 @@ export async function createApplication(databasePath: string, options: Options =
             case "start-index": return json(response, await worlds.saveSettings(id, input, true));
             case "index-settings": return json(response, await worlds.saveSettings(id, input, false));
             case "clear-index": return json(response, worlds.clearIndex(id));
+            case "extraction-key": worlds.setKeys(id, "extraction", input.key_ids); break;
             case "book-order":
             case "rename-book":
             case "remove-book": return json(response, worlds.editBooks(id, action, input));
@@ -302,6 +305,7 @@ export async function createApplication(databasePath: string, options: Options =
         closing = true;
         await Promise.all([worlds.close(), tales.close()]);
         await Promise.allSettled(inFlight);
+        await graphIndexes.close();
         db.close();
       },
     };

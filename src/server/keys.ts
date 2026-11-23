@@ -96,12 +96,14 @@ export class ProviderKeys {
     return all<{ id: string; name: string; busy: number }>(this.db, `
       SELECT w.id, w.name, (w.status IN ('creating', 'pausing') AND EXISTS (
         SELECT 1 FROM world_embedding_keys WHERE owner_id = w.id AND key_id = ?
+        UNION ALL SELECT 1 FROM world_extraction_keys WHERE owner_id = w.id AND key_id = ?
       )) AS busy
       FROM worlds w WHERE w.status <> 'draft' AND (
         EXISTS (SELECT 1 FROM world_embedding_keys WHERE owner_id = w.id AND key_id = ?)
         OR EXISTS (SELECT 1 FROM world_retrieval_keys WHERE owner_id = w.id AND key_id = ?)
+        OR EXISTS (SELECT 1 FROM world_extraction_keys WHERE owner_id = w.id AND key_id = ?)
       ) ORDER BY w.rowid
-    `, id, id, id);
+    `, id, id, id, id, id);
   }
 
   impact(id: string): KeyImpact {

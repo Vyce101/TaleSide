@@ -1,4 +1,5 @@
 import { FIRST_MESSAGE, WORLD_DESCRIPTION } from "../shared/story-defaults.js";
+import { CHAT_MODELS } from "../shared/models.js";
 import type { World, WorldSettings } from "../shared/types.js";
 import { enterWorld, navigate, previewDialog, state, showPanel, updateWorld } from "./app.js";
 import { keySettings, newId, removeWorld, request, worldRoute, worlds } from "./data.js";
@@ -9,7 +10,8 @@ import { renderKeyPicker } from "./key-picker.js";
 import { avatar, iconButton, searchInput, worldRows } from "./view.js";
 import { editorMarkup, processing, renderBooks, renderIndex, renderWorldProgress, upload, type EditableBook } from "./world-form.js";
 
-type Editor = { description: string; openings: string[]; id: string; world?: World; books: EditableBook[]; keyIds: string[]; artwork?: File;
+type Editor = { description: string; openings: string[]; id: string; world?: World; books: EditableBook[]; keyIds: string[];
+  extractionKeyIds: string[]; artwork?: File;
   pendingPortrait?: string; dirty: boolean; busy: boolean; settingsSave?: Promise<void> };
 
 let editor: Editor | undefined;
@@ -95,7 +97,7 @@ export function openWorldEditor(world?: World) {
   closeWorldEditor();
   const form: Editor = {
     id: world?.id ?? newId(), world, books: world?.books ?? [], keyIds: world?.embedding_key_ids ?? keySettings.defaults.key_ids,
-    dirty: false, busy: false, description: world?.description ?? WORLD_DESCRIPTION, openings: [...(world?.openings ?? [FIRST_MESSAGE])],
+    extractionKeyIds: world?.extraction_key_ids ?? [], dirty: false, busy: false, description: world?.description ?? WORLD_DESCRIPTION, openings: [...(world?.openings ?? [FIRST_MESSAGE])],
   };
   editor = form;
   element("panel-title").textContent = world?.name ?? "New World";
@@ -106,6 +108,7 @@ export function openWorldEditor(world?: World) {
   model.replaceChildren(...keySettings.models.map(item => new Option(item.id, item.id)));
   if (![...model.options].some(option => option.value === selected)) model.add(new Option(selected, selected));
   model.value = selected;
+  bindGraphSettings(form);
 
   const name = element<HTMLInputElement>("world-name-input");
   name.addEventListener("input", () => markDirty(form));
@@ -127,7 +130,11 @@ export function openWorldEditor(world?: World) {
   element("world-index-action").addEventListener("click", () => {
     const status = form.world?.status;
     if (status === "creating") void act(form, "pause");
-    if (status === "paused" || status === "failed") void act(form, "resume");
+    if (status === "paused" || status === "failed") {
+      if (form.world?.graph) void act(form, "resume");
+      else void saveWorld(form);
+    }
+    if (status === "ready" && !form.world?.graph) void saveWorld(form);
   });
   element("world-progress").addEventListener("toggle", () => { if (editor === form) renderWorldProgress(form.world); });
   element("world-editor").addEventListener("submit", event => {
@@ -175,6 +182,35 @@ export function openWorldEditor(world?: World) {
   updateWorldEditorKeys();
   element("panel-content").scrollTop = 0;
   (world ? element("world-list-button") : name).focus({ preventScroll: true });
+}
+
+function bindGraphSettings(form: Editor) {
+  const model = element<HTMLSelectElement>("world-extraction-model");
+  const thinking = element<HTMLSelectElement>("world-extraction-thinking");
+  const overlap = element<HTMLInputElement>("world-preceding-context");
+  const chunk = element<HTMLInputElement>("world-chunk-size");
+  let defaultOverlap = !form.world?.graph || form.world.graph.preceding_context === Math.round(chunk.valueAsNumber / 10);
+  const chooseThinking = (selected = "") => {
+    const spec = CHAT_MODELS.find(item => item.id === model.value);
+    const levels = spec?.thinking_levels ?? [];
+    thinking.replaceChildren(new Option("Choose a thinking level", ""), ...levels.map(level =>
+      new Option(level === "XHIGH" ? "Extra high" : level[0] + level.slice(1).toLowerCase(), level)));
+    thinking.value = selected;
+  };
+  model.replaceChildren(new Option("Choose an extraction model", ""), ...CHAT_MODELS.map(item => new Option(item.label, item.id)));
+  model.value = form.world?.graph?.model ?? "";
+  chooseThinking(form.world?.graph?.thinking_level);
+  model.addEventListener("change", () => chooseThinking());
+  overlap.addEventListener("input", () => { defaultOverlap = false; });
+  chunk.addEventListener("input", () => {
+    if (defaultOverlap && Number.isFinite(chunk.valueAsNumber)) overlap.value = String(Math.round(chunk.valueAsNumber / 10));
+  });
+  for (const control of [model, thinking, overlap, element("world-gleaning-passes")]) {
+    control.addEventListener("change", () => {
+      markDirty(form);
+      if (form.world?.status === "unindexed") saveIndexSettings(form);
+    });
+  }
 }
 
 function bindWorldStory(form: Editor) {
@@ -268,6 +304,13 @@ export function updateWorldEditorKeys() {
       void act(form, "embedding-key", { key_ids: ids }).finally(() => { picker.inert = false; });
     }
   }, processing(form.world) || form.busy);
+  form.extractionKeyIds = form.extractionKeyIds.filter(id => available.has(id));
+  renderKeyPicker("world-extraction-key", form.extractionKeyIds, ids => {
+    form.extractionKeyIds = ids;
+    markDirty(form);
+    if (form.world?.status === "unindexed") saveIndexSettings(form);
+    else if (form.world?.graph) void act(form, "extraction-key", { key_ids: ids });
+  }, processing(form.world) || form.busy);
 }
 
 function readSettings(form: Editor): WorldSettings {
@@ -276,12 +319,31 @@ function readSettings(form: Editor): WorldSettings {
     model: element<HTMLSelectElement>("world-model").value,
     key_ids: form.keyIds,
     max_chunk_size: element<HTMLInputElement>("world-chunk-size").valueAsNumber,
+    graph: {
+      model: element<HTMLSelectElement>("world-extraction-model").value,
+      thinking_level: element<HTMLSelectElement>("world-extraction-thinking").value,
+      preceding_context: element<HTMLInputElement>("world-preceding-context").valueAsNumber,
+      gleaning_passes: element<HTMLInputElement>("world-gleaning-passes").valueAsNumber,
+    },
+    extraction_key_ids: form.extractionKeyIds,
   };
+}
+
+function checkGraphSettings(settings: WorldSettings) {
+  let error = "";
+  if (!settings.graph.model) error = "Choose an extraction model.";
+  else if (!settings.graph.thinking_level) error = "Choose an extraction thinking level.";
+  else if (!settings.extraction_key_ids.length) error = "Choose at least one extraction key.";
+  if (!error) return true;
+  element("world-extraction-model").closest("details")!.open = true;
+  showError("world-error", error);
+  return false;
 }
 
 function saveIndexSettings(form: Editor) {
   const settings = readSettings(form);
-  if (!Number.isSafeInteger(settings.max_chunk_size) || settings.max_chunk_size < 1) return;
+  if (!Number.isSafeInteger(settings.max_chunk_size) || settings.max_chunk_size < 1
+    || ![settings.graph.preceding_context, settings.graph.gleaning_passes].every(value => Number.isSafeInteger(value) && value >= 0)) return;
   form.settingsSave = (form.settingsSave ?? Promise.resolve()).then(async () => {
     if (form.world?.status !== "unindexed") return;
     try {
@@ -291,13 +353,14 @@ function saveIndexSettings(form: Editor) {
 }
 
 async function saveWorld(form: Editor) {
-  if (form.busy || (form.world && form.world.status !== "unindexed")) return;
+  if (form.busy || processing(form.world) || (form.world?.graph && form.world.status !== "unindexed")) return;
   const settings = readSettings(form);
   if ((form.world || form.books.length) && !settings.key_ids.length) {
     showError("world-error", "Choose at least one saved Google AI Studio key before indexing.");
     element("world-model").closest("details")!.open = true;
     return;
   }
+  if ((form.world || form.books.length) && !checkGraphSettings(settings)) return;
   await form.settingsSave;
   if (editor !== form) return;
   if (form.world) {
@@ -353,8 +416,9 @@ export function syncWorldPanel() {
       element<HTMLSelectElement>("world-model").replaceChildren(...keySettings.models.map(model => new Option(model.id, model.id)));
     }
     if (JSON.stringify(previous.embedding_key_ids) !== JSON.stringify(world.embedding_key_ids)
-      || processing(previous) !== processing(world)) {
+      || JSON.stringify(previous.extraction_key_ids) !== JSON.stringify(world.extraction_key_ids) || processing(previous) !== processing(world)) {
       editor.keyIds = world.embedding_key_ids;
+      if (world.graph) editor.extractionKeyIds = world.extraction_key_ids;
       if (!editor.busy) updateWorldEditorKeys();
     }
     if (previous.status !== world.status || previous.error !== world.error || previous.progress !== world.progress || previous.active_book !== world.active_book

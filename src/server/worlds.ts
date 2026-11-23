@@ -5,16 +5,19 @@ import type { Book, World, WorldSettings } from "../shared/types.js";
 import { DEFAULT_CHUNK_SIZE, decode, normalizeLines, prepareBooks, type BookInput, type PreparedBook } from "./books.js";
 import { all, get, run, saveSelection, selectedKeys, transaction } from "./database.js";
 import { EMBEDDING_MODEL, EMBEDDING_MODELS, encodeVector, tokenBody, type GeminiClient } from "./gemini.js";
+import { GraphJobs, readGraphSettings, type GraphWorldFields } from "./graph-jobs.js";
+import type { GraphIndexes } from "./graph-indexes.js";
 import { ProviderKeys } from "./keys.js";
 import { identifier, makeId, RequestError, requiredText, whole } from "./validation.js";
 
 export type WorldRow = Pick<World, "id" | "name" | "status" | "model" | "dimensions" | "max_token_limit"
-  | "max_chunk_size" | "book_revision" | "error"> & { index_number: number; description: string | null; openings: string | null };
+  | "max_chunk_size" | "book_revision" | "error"> & GraphWorldFields & { index_number: number; description: string | null; openings: string | null };
 type StoredBook = BookInput & { id: string; number: number; working: string; encoding: string; bom_size: number };
 export type Artwork = { content_type: string; image: Uint8Array };
 type IndexJob = { worldId: string; bookNumber: number; controller: AbortController };
 
-const worldColumns = "id, name, status, model, dimensions, max_token_limit, max_chunk_size, book_revision, index_number, error, description, openings";
+const worldColumns = `id, name, status, model, dimensions, max_token_limit, max_chunk_size, book_revision, index_number,
+  error, description, openings, graph_settings, graph_published, graph_base, graph_building`;
 const activeStatuses = new Set(["creating", "pausing"]);
 const TITLE_LIMIT = 100;
 
@@ -25,7 +28,11 @@ export class Worlds {
   private indexCooldown = new Map<string, number>();
   private cooldownWorld?: string;
 
-  constructor(readonly db: DatabaseSync, readonly keys: ProviderKeys, private provider: GeminiClient) {}
+  private graph: GraphJobs;
+
+  constructor(readonly db: DatabaseSync, readonly keys: ProviderKeys, private provider: GeminiClient, readonly graphIndexes: GraphIndexes) {
+    this.graph = new GraphJobs(db, keys, provider, graphIndexes);
+  }
 
   require(id: string) {
     const world = get<WorldRow>(this.db, `SELECT ${worldColumns} FROM worlds WHERE id = ? AND status <> 'draft'`, id);
@@ -41,7 +48,7 @@ export class Worlds {
   }
 
   private summary(row: WorldRow): World {
-    const { index_number, description, openings, ...world } = row;
+    const { index_number, description, openings, graph_settings, graph_published, graph_base, graph_building, ...world } = row;
     const books = all<Book>(this.db, `
       SELECT b.id, b.number, b.name, b.filename, count(c.number) AS total_chunks, count(c.vector) AS embedded_chunks
       FROM books b LEFT JOIN chunks c ON c.book_id = b.id AND c.index_number = ?
@@ -52,6 +59,8 @@ export class Worlds {
     const image = get<{ version: string }>(this.db, "SELECT version FROM world_artwork WHERE world_id = ?", row.id);
     return {
       ...world, books, total_chunks, embedded_chunks,
+      graph: graph_settings === null ? null : JSON.parse(graph_settings),
+      extraction_key_ids: selectedKeys(this.db, "world_extraction_keys", row.id),
       description: description ?? WORLD_DESCRIPTION, openings: openings ? JSON.parse(openings) : [FIRST_MESSAGE],
       artwork: image ? `/api/worlds/${row.id}/artwork?v=${image.version}` : null,
       active_book: this.active?.worldId === row.id ? this.active.bookNumber : null,
@@ -75,10 +84,13 @@ export class Worlds {
     if (model !== EMBEDDING_MODEL) {
       throw new RequestError("Choose an available embedding model.");
     }
+    const max_chunk_size = whole(input.max_chunk_size ?? DEFAULT_CHUNK_SIZE, 1, "Enter a positive whole chunk size.");
+    const key_ids = this.keys.validate(input.key_ids ?? [], requireKeys);
+    const graph = readGraphSettings(input.graph, max_chunk_size, requireKeys);
     return {
       name: requiredText(input.name, "Enter a World name up to 100 characters.", TITLE_LIMIT),
-      model, key_ids: this.keys.validate(input.key_ids ?? [], requireKeys),
-      max_chunk_size: whole(input.max_chunk_size ?? DEFAULT_CHUNK_SIZE, 1, "Enter a positive whole chunk size."),
+      model, key_ids, max_chunk_size, graph,
+      extraction_key_ids: this.keys.validate(input.extraction_key_ids ?? [], requireKeys),
     };
   }
 
@@ -111,12 +123,14 @@ export class Worlds {
     const prepared = await prepareBooks(books, settings.max_chunk_size);
     if (get(this.db, "SELECT 1 FROM worlds WHERE id = ? AND status <> 'draft'", id)) return this.detail(id);
     this.keys.validate(settings.key_ids, !!books.length);
+    this.keys.validate(settings.extraction_key_ids, !!books.length);
     transaction(this.db, () => {
       run(this.db, `
-        INSERT INTO worlds (id, name, status, model, dimensions, max_token_limit, max_chunk_size, description, openings)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO worlds (id, name, status, model, dimensions, max_token_limit, max_chunk_size, description, openings, graph_settings)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `, id, settings.name, books.length ? "creating" : "unindexed", settings.model, spec.dimensions,
-      spec.max_token_limit, settings.max_chunk_size, story.description, story.openings);
+      spec.max_token_limit, settings.max_chunk_size, story.description, story.openings, JSON.stringify(settings.graph));
+      saveSelection(this.db, "world_extraction_keys", id, settings.extraction_key_ids);
       saveSelection(this.db, "world_embedding_keys", id, settings.key_ids);
       saveSelection(this.db, "world_retrieval_keys", id, settings.key_ids);
       if (books.length) this.keys.remember(settings.model, settings.key_ids);
@@ -215,32 +229,47 @@ export class Worlds {
     `, id, artwork.content_type, artwork.image, makeId());
   }
 
-  setKeys(id: string, kind: "embedding" | "retrieval", selection: unknown) {
-    if (kind === "embedding") this.editable(id);
-    else this.require(id);
+  setKeys(id: string, kind: "embedding" | "extraction" | "retrieval", selection: unknown) {
+    const world = kind === "retrieval" ? this.require(id) : this.editable(id);
+    if (kind === "extraction" && !world.graph_settings) throw new RequestError("Set up Graph RAG first.", 409);
     const ids = this.keys.validate(selection);
     transaction(this.db, () => {
-      saveSelection(this.db, kind === "embedding" ? "world_embedding_keys" : "world_retrieval_keys", id, ids);
+      const table = kind === "embedding" ? "world_embedding_keys" : kind === "retrieval" ? "world_retrieval_keys" : "world_extraction_keys";
+      saveSelection(this.db, table, id, ids);
     });
   }
 
   async saveSettings(id: string, input: Record<string, unknown>, start: boolean) {
     const world = this.editable(id, this.requireRevision(input.book_revision));
-    if (world.status !== "unindexed") throw new RequestError("Delete indexing to change these settings.", 409);
-    const settings = this.settings({ ...input, name: world.name }, start);
+    if (world.status !== "unindexed") {
+      if (!start || world.graph_settings) throw new RequestError("Delete indexing to change these settings.", 409);
+      const graph = readGraphSettings(input.graph, world.max_chunk_size, true);
+      const keys = this.keys.validate(input.extraction_key_ids, true);
+      transaction(this.db, () => {
+        run(this.db, "UPDATE worlds SET graph_settings = ?, status = 'creating', error = NULL, book_revision = book_revision + 1 WHERE id = ?",
+          JSON.stringify(graph), id);
+        saveSelection(this.db, "world_extraction_keys", id, keys);
+      });
+      this.wake();
+      return this.detail(id);
+    }
+    const graph = world.graph_settings === null ? undefined : JSON.parse(world.graph_settings);
+    const settings = this.settings({ graph, extraction_key_ids: selectedKeys(this.db, "world_extraction_keys", id), ...input, name: world.name }, start);
     const model = EMBEDDING_MODELS.find(item => item.id === settings.model)!;
     const books = start ? all<StoredBook>(this.db, "SELECT * FROM books WHERE world_id = ? ORDER BY number", id) : [];
     if (start && !books.length) throw new RequestError("Add a book before starting indexing.");
     const prepared = await prepareBooks(books, settings.max_chunk_size);
     this.editable(id, input.book_revision);
     this.keys.validate(settings.key_ids, start);
+    this.keys.validate(settings.extraction_key_ids, start);
     transaction(this.db, () => {
       run(this.db, `
         UPDATE worlds SET model = ?, dimensions = ?, max_token_limit = ?, max_chunk_size = ?,
-          status = ?, error = NULL, book_revision = book_revision + 1 WHERE id = ?
+          status = ?, error = NULL, graph_settings = ?, book_revision = book_revision + 1 WHERE id = ?
       `, model.id, model.dimensions, model.max_token_limit, settings.max_chunk_size,
-      start ? "creating" : "unindexed", id);
+      start ? "creating" : "unindexed", JSON.stringify(settings.graph), id);
       saveSelection(this.db, "world_embedding_keys", id, settings.key_ids);
+      saveSelection(this.db, "world_extraction_keys", id, settings.extraction_key_ids);
       if (start) {
         books.forEach((book, number) => this.storeChunks(book.id, world.index_number, prepared[number]));
         this.keys.remember(model.id, settings.key_ids);
@@ -277,8 +306,10 @@ export class Worlds {
   }
 
   resume(id: string) {
-    if (!["paused", "failed"].includes(this.require(id).status)) throw new RequestError("This World has already changed state.", 409);
+    const world = this.require(id);
+    if (!["paused", "failed"].includes(world.status)) throw new RequestError("This World has already changed state.", 409);
     this.keys.validate(selectedKeys(this.db, "world_embedding_keys", id), true);
+    if (world.graph_settings) this.keys.validate(selectedKeys(this.db, "world_extraction_keys", id), true);
     run(this.db, "UPDATE worlds SET status = 'creating', error = NULL WHERE id = ?", id);
     this.wake();
   }
