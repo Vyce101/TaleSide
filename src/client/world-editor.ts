@@ -16,6 +16,7 @@ let editor: Editor | undefined;
 
 export function restoreWorldPanel() {
   if (editor) element("panel-title").textContent = editor.world?.name ?? "New World";
+  else if (state.world) openWorldEditor(state.world);
   else showWorldList();
 }
 
@@ -396,7 +397,7 @@ export function handleWorldAction(action: string | undefined, id: string | undef
     leaveWorldSetup(() => {
       closeWorldEditor();
       showWorldList();
-      element("world-panel").querySelector<HTMLButtonElement>('[data-action="create-world"]')?.focus();
+      element("world-search").focus();
     });
     return;
   }
