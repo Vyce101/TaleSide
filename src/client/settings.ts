@@ -1,4 +1,5 @@
 import { renderPrompts } from "./prompts.js";
+import { GEMMA } from "../shared/models.js";
 import type { ChatSettings, KeyImpact, KeySummary, ProfileSettings, World, Wrappers } from "../shared/types.js";
 import { updateWorld, syncWorlds, previewDialog, refreshComposer, state } from "./app.js";
 import { keySettings, loadKeys, loadWorlds, request, worldRoute } from "./data.js";
@@ -21,6 +22,7 @@ const retrievalControls: Omit<Slider, "value">[] = [
 const wrappers = [["World Description", "world_description"], ["World Info", "world_info"], ["Persona", "persona"], ["Retrieved Passages", "retrieved_passages"], ["Chat History", "chat_history"]] as const;
 let profiles: ProfileSettings;
 let working: ChatSettings;
+const modelChoices = new Map<string, Pick<ChatSettings, "thinking_level" | "thought_signatures" | "input_limit" | "output_limit">>();
 let keyEditor: { action: "add" | "rename" | "replace"; key?: KeySummary } | undefined;
 let showKeyUse = false;
 let profilePending = false;
@@ -102,22 +104,36 @@ function renderChatKey() {
   renderKeyPicker("chat-key", working.chat_key_ids, ids => { working.chat_key_ids = ids; refreshComposer(); });
 }
 
-function loadWorkingProfile() {
-  working = structuredClone(profiles.profiles.find(profile => profile.id === profiles.selected)?.settings ?? profiles.defaults);
-  const model = profiles.models.find(model => model.id === working.model) ?? profiles.models[0];
-  const modelSelect = element<HTMLSelectElement>("chat-model");
-  modelSelect.replaceChildren(...profiles.models.map(item => new Option(item.id, item.id)));
-  modelSelect.value = model.id;
+function renderModelSettings() {
+  const model = profiles.models.find(model => model.id === working.model)!;
   const sliders: Slider[] = [
-    { id: "input-limit", setting: "input_limit", label: "Input limit", unit: "tokens", value: profiles.defaults.input_limit, min: 256,
+    { id: "input-limit", setting: "input_limit", label: "Input limit", unit: "tokens", value: model.context_limit, min: 256,
       range: model.context_limit, limit: model.context_limit },
-    { id: "output-limit", setting: "output_limit", label: "Output limit", unit: "tokens", value: profiles.defaults.output_limit, min: 256,
+    { id: "output-limit", setting: "output_limit", label: "Output limit", unit: "tokens", value: model.max_output, min: 256,
       range: model.max_output, limit: model.max_output },
   ];
   renderSliders("model-limits", sliders);
-  renderSliders("retrieval-controls", retrievalControls.map(control => ({ ...control, value: profiles.defaults[control.setting] })));
-  element<HTMLSelectElement>("thinking-level").value = working.thinking_level;
+  if (profiles.profiles.find(profile => profile.id === profiles.selected)?.locked) {
+    for (const input of element("model-limits").querySelectorAll<HTMLInputElement>("input")) input.disabled = true;
+  }
+  const thinking = element<HTMLSelectElement>("thinking-level");
+  thinking.replaceChildren(...model.thinking_levels.map(level => new Option(level === "XHIGH" ? "Extra high"
+    : level[0] + level.slice(1).toLowerCase(), level)));
+  thinking.value = working.thinking_level;
   element<HTMLInputElement>("send-thinking").checked = working.thought_signatures;
+  element("send-thinking-note").textContent = model.id === GEMMA
+    ? "Send Gemma’s displayed thinking with follow-up requests. Google recommends leaving this off."
+    : "Send the model’s thinking signature back with follow-up requests.";
+}
+
+function loadWorkingProfile() {
+  working = structuredClone(profiles.profiles.find(profile => profile.id === profiles.selected)?.settings ?? profiles.defaults);
+  modelChoices.clear();
+  const modelSelect = element<HTMLSelectElement>("chat-model");
+  modelSelect.replaceChildren(...profiles.models.map(item => new Option(item.label, item.id)));
+  modelSelect.value = working.model;
+  renderModelSettings();
+  renderSliders("retrieval-controls", retrievalControls.map(control => ({ ...control, value: profiles.defaults[control.setting] })));
   renderWrappers();
   const locked = !!profiles.profiles.find(profile => profile.id === profiles.selected)?.locked;
   for (const id of ["wrapper-controls", "retrieval-controls", "model-limits"]) {
@@ -289,6 +305,18 @@ export async function initializeSettings() {
   for (const button of element("profile-actions").querySelectorAll<HTMLButtonElement>("button")) {
     button.addEventListener("click", () => handleProfileAction(button.dataset.profileAction!));
   }
+  element<HTMLSelectElement>("chat-model").addEventListener("change", event => {
+    const id = (event.target as HTMLSelectElement).value;
+    const model = profiles.models.find(item => item.id === id);
+    if (!model || id === working.model) return;
+    const { thinking_level, thought_signatures, input_limit, output_limit } = working;
+    modelChoices.set(working.model, { thinking_level, thought_signatures, input_limit, output_limit });
+    Object.assign(working, modelChoices.get(id) ?? {
+      thinking_level: model.default_thinking, thought_signatures: model.replay_thinking,
+      input_limit: model.context_limit, output_limit: model.max_output,
+    }, { model: id });
+    renderModelSettings();
+  });
   const thinking = element<HTMLSelectElement>("thinking-level");
   thinking.addEventListener("change", () => { working.thinking_level = thinking.value; });
   const signature = element<HTMLInputElement>("send-thinking");

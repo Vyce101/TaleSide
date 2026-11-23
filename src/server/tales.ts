@@ -2,7 +2,8 @@ import { FIRST_MESSAGE, WORLD_DESCRIPTION } from "../shared/story-defaults.js";
 import { Personas } from "./personas.js";
 import type { ChatSettings, GenerationEvent, Message, Persona, PromptCounts, Swipe, Tale, TaleSummary } from "../shared/types.js";
 import { all, get, run, selectedKeys, transaction } from "./database.js";
-import { CHAT_MODEL, InputTooLarge, tokenBody, type GeminiClient, type Part } from "./gemini.js";
+import { CHAT_MODELS, GEMMA } from "../shared/models.js";
+import { InputTooLarge, tokenBody, type GeminiClient, type Part } from "./gemini.js";
 import { Profiles } from "./profiles.js";
 import { openRetrieval, retrievalVector, type HistoryEntry } from "./retrieval.js";
 import { identifier, makeId, RequestError, requiredText, whole } from "./validation.js";
@@ -357,7 +358,7 @@ export class Tales {
         name: persona.name, description: persona.description,
       } });
       snapshot.close();
-      if (settings.input_limit < CHAT_MODEL.context_limit) {
+      if (settings.input_limit < CHAT_MODELS.find(model => model.id === settings.model)!.context_limit) {
         const full = { generateContentRequest: { model: `models/${settings.model}`, ...payload } };
         const tokens = await keys.retry("chat", settings.chat_key_ids, signal, key => this.provider.count(settings.model, key, full, signal));
         if (tokens > settings.input_limit) throw new InputTooLarge();
@@ -383,7 +384,7 @@ export class Tales {
             emit({ type: "reply", text: part.text });
           }
         }
-        if (!part.thought && settings.thought_signatures && typeof part.text === "string") {
+        if (!part.thought && settings.model !== GEMMA && settings.thought_signatures && typeof part.text === "string") {
           if (typeof part.thoughtSignature === "string" && part.thoughtSignature) {
             signedParts.push({ text: part.text, thoughtSignature: part.thoughtSignature });
           } else if (part.text) {

@@ -1,4 +1,4 @@
-import type { ChatModel, EmbeddingModel } from "../shared/types.js";
+import type { EmbeddingModel } from "../shared/types.js";
 import { RequestError } from "./validation.js";
 
 export const EMBEDDING_MODEL = "gemini-embedding-2";
@@ -7,10 +7,6 @@ export const EMBEDDING_MODELS: EmbeddingModel[] = [
   { id: EMBEDDING_MODEL, dimensions: 3072, max_token_limit: 8192 },
   { id: LEGACY_EMBEDDING, dimensions: 3072, max_token_limit: 2040 },
 ];
-export const CHAT_MODEL: ChatModel = {
-  id: "gemini-4-hydrogen", context_limit: 1048576, max_output: 65536,
-  thinking_levels: ["LOW", "MEDIUM", "HIGH", "XHIGH"],
-};
 export const INPUT_LIMIT_ERROR = "The full request exceeds the input token limit.";
 
 export class InputTooLarge extends Error {

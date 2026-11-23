@@ -2,16 +2,17 @@ import { BUILTIN_PROMPTS, DEFAULT_PROMPTS } from "../shared/story-defaults.js";
 import type { DatabaseSync } from "node:sqlite";
 import type { BuiltinPrompt, ChatSettings, Profile, ProfileSettings, PromptBlock, Wrappers } from "../shared/types.js";
 import { all, get, run, saveSelection, selectedKeys, transaction } from "./database.js";
-import { CHAT_MODEL } from "./gemini.js";
+import { CHAT_MODELS } from "../shared/models.js";
 import { ProviderKeys } from "./keys.js";
 import { fields, identifier, makeId, RequestError, requiredText, whole } from "./validation.js";
 
 const DEFAULT_ID = "00000000000000000000000000000000";
 const wrapperNames = Object.keys(BUILTIN_PROMPTS) as BuiltinPrompt[];
 const wrappers = Object.fromEntries(wrapperNames.map(name => [name, [`<${name}>`, `</${name}>`]])) as Wrappers;
+const [defaultModel] = CHAT_MODELS;
 const defaults: ChatSettings = {
-  model: CHAT_MODEL.id, chat_key_ids: [], thinking_level: "HIGH", thought_signatures: true,
-  input_limit: CHAT_MODEL.context_limit, output_limit: CHAT_MODEL.max_output, retrieved_chunks: 10,
+  model: defaultModel.id, chat_key_ids: [], thinking_level: defaultModel.default_thinking, thought_signatures: defaultModel.replay_thinking,
+  input_limit: defaultModel.context_limit, output_limit: defaultModel.max_output, retrieved_chunks: 10,
   minimum_similarity: 0.15, chunk_overlap: 400, messages_to_embed: 2, wrappers, prompts: DEFAULT_PROMPTS,
 };
 
@@ -38,10 +39,15 @@ export class Profiles {
   private read(row: ProfileRow): Profile {
     const stored = JSON.parse(row.configuration) as Partial<ChatSettings>;
     const locked = row.id === DEFAULT_ID;
-    const settings = locked ? {
-      ...defaults, model: stored.model ?? defaults.model, thinking_level: stored.thinking_level ?? defaults.thinking_level,
-      thought_signatures: stored.thought_signatures ?? defaults.thought_signatures,
-    } : { ...defaults, ...stored, wrappers: { ...wrappers, ...stored.wrappers } };
+    const model = CHAT_MODELS.find(model => model.id === stored.model) ?? defaultModel;
+    const settings: ChatSettings = {
+      ...defaults, ...(!locked ? stored : {}), model: model.id,
+      thinking_level: stored.thinking_level && model.thinking_levels.includes(stored.thinking_level) ? stored.thinking_level : model.default_thinking,
+      thought_signatures: stored.thought_signatures ?? model.replay_thinking,
+      input_limit: Math.min(locked ? model.context_limit : stored.input_limit ?? model.context_limit, model.context_limit),
+      output_limit: Math.min(locked ? model.max_output : stored.output_limit ?? model.max_output, model.max_output),
+      wrappers: locked ? wrappers : { ...wrappers, ...stored.wrappers },
+    };
     return { id: row.id, name: locked ? "Default" : row.name, locked,
       settings: { ...settings, chat_key_ids: selectedKeys(this.db, "chat_profile_keys", row.id) } };
   }
@@ -63,13 +69,14 @@ export class Profiles {
     const available = all<ProfileRow>(this.db, "SELECT id, name, configuration FROM chat_profiles ORDER BY id <> ?, rowid", DEFAULT_ID);
     const saved = get<SettingsRow>(this.db, "SELECT configuration, profile_id FROM tale_settings WHERE id = 1");
     return { selected: available.some(profile => profile.id === saved?.profile_id) ? saved!.profile_id! : available[0].id,
-      profiles: available.map(row => this.read(row)), models: [CHAT_MODEL], defaults };
+      profiles: available.map(row => this.read(row)), models: CHAT_MODELS, defaults };
   }
 
   validate(value: unknown): ChatSettings {
     const input = fields(value);
-    if (input.model !== CHAT_MODEL.id) throw new RequestError("Choose an available chat model.");
-    if (typeof input.thinking_level !== "string" || !CHAT_MODEL.thinking_levels.includes(input.thinking_level)) {
+    const model = CHAT_MODELS.find(model => model.id === input.model);
+    if (!model) throw new RequestError("Choose an available chat model.");
+    if (typeof input.thinking_level !== "string" || !model.thinking_levels.includes(input.thinking_level)) {
       throw new RequestError("Choose a supported thinking level.");
     }
     if (typeof input.thought_signatures !== "boolean") throw new RequestError("Choose whether to send thinking.");
@@ -85,10 +92,10 @@ export class Profiles {
       validated[name] = [pair[0], pair[1]];
     }
     return {
-      model: input.model, chat_key_ids: this.keys.validate(input.chat_key_ids), thinking_level: input.thinking_level,
+      model: model.id, chat_key_ids: this.keys.validate(input.chat_key_ids), thinking_level: input.thinking_level,
       thought_signatures: input.thought_signatures,
-      input_limit: whole(input.input_limit, 256, "Enter an input limit within the model range.", CHAT_MODEL.context_limit),
-      output_limit: whole(input.output_limit, 256, "Enter an output limit within the model range.", CHAT_MODEL.max_output),
+      input_limit: whole(input.input_limit, 256, "Enter an input limit within the model range.", model.context_limit),
+      output_limit: whole(input.output_limit, 256, "Enter an output limit within the model range.", model.max_output),
       retrieved_chunks: whole(input.retrieved_chunks, 1, "Enter at least one retrieved chunk."),
       minimum_similarity: input.minimum_similarity,
       chunk_overlap: whole(input.chunk_overlap, 0, "Enter a nonnegative chunk overlap."),
@@ -124,8 +131,10 @@ export class Profiles {
           run(this.db, "UPDATE chat_profiles SET name = ? WHERE id = ?", name, id);
         } else {
           const submitted = fields(input.settings);
+          const model = CHAT_MODELS.find(model => model.id === submitted.model);
           const { chat_key_ids, ...settings } = this.validate(id === DEFAULT_ID ? {
-            ...defaults, chat_key_ids: submitted.chat_key_ids, model: submitted.model,
+            ...defaults, input_limit: model?.context_limit, output_limit: model?.max_output,
+            chat_key_ids: submitted.chat_key_ids, model: submitted.model,
             thinking_level: submitted.thinking_level, thought_signatures: submitted.thought_signatures,
           } : submitted);
           run(this.db, `

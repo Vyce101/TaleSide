@@ -71,14 +71,9 @@
             <div id="model-limits"></div>
             <div class="reasoning-settings">
               <label for="thinking-level">Thinking level</label>
-              <select id="thinking-level">
-                <option value="LOW">Low</option>
-                <option value="MEDIUM">Medium</option>
-                <option value="HIGH" selected>High</option>
-                <option value="XHIGH">Extra high</option>
-              </select>
+              <select id="thinking-level"></select>
               <label class="thinking-toggle"><input id="send-thinking" type="checkbox" checked> Send thinking back</label>
-              <small>Send the model’s thinking signature back with follow-up requests.</small>
+              <small id="send-thinking-note"></small>
             </div>
           </details>
           <details id="tale-section-retrieval" class="settings-section" open>

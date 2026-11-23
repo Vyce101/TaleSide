@@ -69,7 +69,7 @@ def wrapped(text, pair):
     return "\n".join(part for part in (pair[0], text, pair[1]) if part)
 
 
-def chat_request(world, books, excerpts, messages, settings, context):
+def chat_request(world, books, excerpts, messages, settings, context, gemma):
     wrappers = settings["wrappers"]
     info = [f"Name = {world['name']}", f"Chunk Size = {world['max_chunk_size']} Characters",
             f"Books = {len(books)}"]
@@ -102,7 +102,10 @@ def chat_request(world, books, excerpts, messages, settings, context):
         grouped = []
         for index, message in enumerate(messages):
             role = "user" if message["role"] == "user" else "model"
-            if history_role == "multi-role" and settings["thought_signatures"] and message["model"] == settings["model"] and message["signed_parts"]:
+            replay = history_role == "multi-role" and role == "model" and settings["thought_signatures"] and message["model"] == settings["model"]
+            if replay and gemma and message.get("thinking"):
+                parts = [{"text": message["thinking"], "thought": True}, text_part(message["content"])]
+            elif replay and not gemma and message["signed_parts"]:
                 parts = list(message["signed_parts"])
             else:
                 parts = [text_part(message["content"])]

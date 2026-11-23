@@ -26,7 +26,8 @@ export type ChatSettings = {
 };
 export type Profile = { locked?: boolean; id: string; name: string; settings: ChatSettings };
 export type ProfileSettings = { selected: string; profiles: Profile[]; models: ChatModel[]; defaults: ChatSettings };
-export type ChatModel = { id: string; context_limit: number; max_output: number; thinking_levels: string[] };
+export type ChatModel = { id: string; label: string; context_limit: number; max_output: number;
+  thinking_levels: string[]; default_thinking: string; replay_thinking: boolean };
 export type TurnStatus = "complete" | "generating" | "stopped" | "error";
 export type Swipe = {
   content: string; thinking: string; model: string | null; status: TurnStatus;
