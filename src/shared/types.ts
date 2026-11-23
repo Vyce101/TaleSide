@@ -1,3 +1,6 @@
+export type GraphSettings = {
+  model: string; thinking_level: string; preceding_context: number; gleaning_passes: number;
+};
 export type WorldStatus = "unindexed" | "creating" | "pausing" | "paused" | "failed" | "ready";
 export type Book = { id: string; number: number; name: string; filename: string; total_chunks: number; embedded_chunks: number };
 export type World = {
