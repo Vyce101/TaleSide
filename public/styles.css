@@ -715,7 +715,10 @@ dialog label input { display: block; margin-top: 5px; }
 .setting-hint { display: inline-grid; place-items: center; width: 16px; height: 16px; flex: none; border: 1px solid var(--line);
   border-radius: 50%; color: var(--muted); font-size: 11px; cursor: help; }
 .world-progress-body { padding: 8px; }
-#world-progress-total { color: var(--muted); font-size: 12px; }
+#world-progress-total, .world-graph-progress { color: var(--muted); font-size: 12px; }
+.world-graph-progress { display: grid; grid-template-columns: 1fr auto; gap: 5px 10px; margin: 12px 0 0; padding-top: 8px;
+  border-top: 1px solid var(--soft-line); }
+.world-graph-progress dd { margin: 0; font-variant-numeric: tabular-nums; }
 #world-progress-books { list-style: none; margin: 6px 0 0; padding: 0; }
 #world-progress-books li { display: grid; gap: 3px; padding-top: 6px; overflow-wrap: anywhere; }
 .world-progress-body progress { width: 100%; }

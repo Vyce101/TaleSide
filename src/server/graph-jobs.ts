@@ -1,7 +1,7 @@
 import type { DatabaseSync } from "node:sqlite";
 import { setImmediate as yieldToServer } from "node:timers/promises";
 import { CHAT_MODELS } from "../shared/models.js";
-import type { GraphSettings, World } from "../shared/types.js";
+import type { GraphProgress, GraphSettings, World } from "../shared/types.js";
 import { all, get, run, selectedKeys, transaction } from "./database.js";
 import { encodeVector, type GeminiClient } from "./gemini.js";
 import {
@@ -51,6 +51,17 @@ export class GraphJobs {
 
   constructor(private db: DatabaseSync, private keys: ProviderKeys, private provider: GeminiClient,
     private indexes: GraphIndexes) {}
+
+  recordCounts(world: IndexedWorld): GraphProgress | null {
+    const generation = world.status === "ready" ? world.graph_published : world.graph_building;
+    if (generation === null) return null;
+    const { combined } = get<{ combined: number }>(this.db, "SELECT count(*) AS combined FROM graph_records WHERE generation = ?", generation)!;
+    const { summaries, embeddings } = get<{ summaries: number; embeddings: number }>(this.db, `
+      SELECT count(*) FILTER (WHERE description IS NULL) AS summaries, count(*) AS embeddings
+      FROM graph_records WHERE generation = ? AND vector IS NULL
+    `, generation)!;
+    return { combined, summarized: combined - summaries, embedded: combined - embeddings };
+  }
 
   nextChunk(world: IndexedWorld, settings: GraphSettings, after: Pick<Chunk, "book" | "number">) {
     return get<Chunk>(this.db, `

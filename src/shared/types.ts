@@ -1,15 +1,16 @@
 export type GraphSettings = {
   model: string; thinking_level: string; preceding_context: number; gleaning_passes: number;
 };
+export type GraphProgress = { combined: number; summarized: number; embedded: number };
 export type WorldStatus = "unindexed" | "creating" | "pausing" | "paused" | "failed" | "ready";
-export type Book = { id: string; number: number; name: string; filename: string; total_chunks: number; embedded_chunks: number };
+export type Book = { id: string; number: number; name: string; filename: string; total_chunks: number; embedded_chunks: number; extracted_chunks: number };
 export type World = {
   id: string; name: string; status: WorldStatus; model: string; dimensions: number; max_token_limit: number;
   max_chunk_size: number; book_revision: number; artwork: string | null;
   progress: number; error: string | null; total_chunks: number; embedded_chunks: number; active_book: number | null; can_play: boolean;
   description: string; openings: string[];
   embedding_key_ids: string[]; retrieval_key_ids: string[]; extraction_key_ids: string[]; books: Book[];
-  graph: GraphSettings | null;
+  graph: GraphSettings | null; graph_progress: GraphProgress | null;
 };
 export type EmbeddingModel = { id: string; dimensions: number; max_token_limit: number };
 export type KeySummary = { id: string; nickname: string; suffix: string | null; worlds: { id: string; name: string }[] };

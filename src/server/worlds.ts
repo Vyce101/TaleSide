@@ -1,7 +1,7 @@
 import { FIRST_MESSAGE, WORLD_DESCRIPTION } from "../shared/story-defaults.js";
 import type { DatabaseSync } from "node:sqlite";
 import { setImmediate as yieldToServer } from "node:timers/promises";
-import type { Book, GraphSettings, World, WorldSettings } from "../shared/types.js";
+import type { Book, GraphProgress, GraphSettings, World, WorldSettings } from "../shared/types.js";
 import { DEFAULT_CHUNK_SIZE, decode, normalizeLines, prepareBooks, type BookInput, type PreparedBook } from "./books.js";
 import { all, get, run, saveSelection, selectedKeys, transaction } from "./database.js";
 import { EMBEDDING_MODEL, EMBEDDING_MODELS, encodeVector, tokenBody, type GeminiClient } from "./gemini.js";
@@ -22,6 +22,24 @@ const worldColumns = `id, name, status, model, dimensions, max_token_limit, max_
   error, description, openings, graph_settings, graph_published, graph_base, graph_building`;
 const activeStatuses = new Set(["creating", "pausing"]);
 const TITLE_LIMIT = 100;
+
+// These weights measure completed work. The last percentage point is earned when the index is published.
+const worldProgressWeights = { passages: 20, extraction: 50, combination: 1, summaries: 20, graphEmbeddings: 8 };
+
+function indexingProgress(world: WorldRow, total: number, embedded: number, extracted: number, records: GraphProgress | null) {
+  if (world.status === "ready") return 100;
+  if (!total) return 0;
+  const passages = embedded / total;
+  if (!world.graph_settings) return Math.min(99, 100 * passages);
+
+  const weights = worldProgressWeights;
+  const chunkProgress = weights.passages * passages + weights.extraction * (extracted / total);
+  if (!records) return chunkProgress;
+
+  const summaryFraction = records.combined ? records.summarized / records.combined : 1;
+  const embeddingFraction = records.combined ? records.embedded / records.combined : 1;
+  return chunkProgress + weights.combination + weights.summaries * summaryFraction + weights.graphEmbeddings * embeddingFraction;
+}
 
 export class Worlds {
   private running: Promise<void> | undefined;
@@ -52,22 +70,27 @@ export class Worlds {
   private summary(row: WorldRow): World {
     const { index_number, description, openings, graph_settings, graph_published, graph_base, graph_building, ...world } = row;
     const books = all<Book>(this.db, `
-      SELECT b.id, b.number, b.name, b.filename, count(c.number) AS total_chunks, count(c.vector) AS embedded_chunks
+      SELECT b.id, b.number, b.name, b.filename, count(c.number) AS total_chunks, count(c.vector) AS embedded_chunks,
+        count(*) FILTER (WHERE g.complete = 1) AS extracted_chunks
       FROM books b LEFT JOIN chunks c ON c.book_id = b.id AND c.index_number = ?
+      LEFT JOIN graph_chunks g ON g.book_id = c.book_id AND g.index_number = c.index_number AND g.chunk_number = c.number
       WHERE b.world_id = ? GROUP BY b.id ORDER BY b.number
     `, index_number, row.id);
     const total_chunks = books.reduce((count, book) => count + book.total_chunks, 0);
     const embedded_chunks = books.reduce((count, book) => count + book.embedded_chunks, 0);
+    const extractedChunks = books.reduce((count, book) => count + book.extracted_chunks, 0);
+    const graph_progress = this.graph.recordCounts(row);
     const image = get<{ version: string }>(this.db, "SELECT version FROM world_artwork WHERE world_id = ?", row.id);
     return {
       ...world, books, total_chunks, embedded_chunks,
       graph: graph_settings === null ? null : JSON.parse(graph_settings),
+      graph_progress,
       extraction_key_ids: selectedKeys(this.db, "world_extraction_keys", row.id),
       description: description ?? WORLD_DESCRIPTION, openings: openings ? JSON.parse(openings) : [FIRST_MESSAGE],
       artwork: image ? `/api/worlds/${row.id}/artwork?v=${image.version}` : null,
       active_book: this.active?.worldId === row.id ? this.active.passageBook ?? this.active.extractionBook : null,
       can_play: this.canPlay(row),
-      progress: row.status === "ready" ? 100 : Math.min(99.99, embedded_chunks * 100 / (total_chunks || 1)),
+      progress: indexingProgress(row, total_chunks, embedded_chunks, extractedChunks, graph_progress),
       embedding_key_ids: selectedKeys(this.db, "world_embedding_keys", row.id),
       retrieval_key_ids: selectedKeys(this.db, "world_retrieval_keys", row.id),
     };

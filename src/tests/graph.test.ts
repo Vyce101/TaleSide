@@ -48,17 +48,26 @@ test("passage embedding and extraction advance independently and pausing finishe
     graph: { model: FLASH_LITE, thinking_level: "MINIMAL", gleaning_passes: 1 } }, [["Book.txt", "abcdefgh"]]);
   await until(() => waitingForPassage && waitingForGleaning, ready => ready);
   const incomplete = await app.world(world.id);
+  equal(incomplete.books[0].extracted_chunks, 0);
   equal(incomplete.books[0].embedded_chunks, 0);
   releasePassage();
   const searchable = await until(() => app.world(world.id), value => value.embedded_chunks === 2);
   equal(searchable.can_play, true);
+  equal(searchable.books[0].extracted_chunks, 0);
+  equal(searchable.graph_progress, null);
+  equal(searchable.progress, 20);
 
   const base = `/api/worlds/${world.id}`;
   equal((await app.call<World>(base + "/pause", {})).status, "pausing");
   releaseGleaning();
   const paused = await until(() => app.world(world.id), value => value.status === "paused");
+  equal(paused.books[0].extracted_chunks, 1);
+  equal(paused.progress, 45);
   await app.call(base + "/resume", {});
   const finished = await until(() => app.world(world.id), value => value.status === "ready");
+  equal(finished.books[0].extracted_chunks, 2);
+  equal(finished.progress, 100);
+  deepEqual(finished.graph_progress, { combined: 1, summarized: 1, embedded: 1 });
 });
 
 test("failed chunks and summaries each use three attempts, then let the remaining work finish before Resume", async t => {
@@ -107,6 +116,7 @@ test("failed chunks and summaries each use three attempts, then let the remainin
   [["Book.txt", "abcdefghijKLMNOPQRSTuvwxyz1234"]]);
   const failed = await until(() => app.world(world.id), value => value.status === "failed");
   equal(failed.can_play, true);
+  equal(failed.books[0].extracted_chunks, 2);
   equal(failed.books[0].embedded_chunks, 3);
   match(failed.error!, /Could not extract 1 chunk after 3 attempts.*Book 1, chunk 2.*<\|COMPLETE\|>/);
   deepEqual(attempts, [
@@ -126,13 +136,17 @@ test("failed chunks and summaries each use three attempts, then let the remainin
   const resume = () => app.call(`/api/worlds/${world.id}/resume`, {});
   await resume();
   const failedSummary = await until(() => app.world(world.id), value => value.status === "failed");
+  deepEqual(failedSummary.graph_progress, { combined: 2, summarized: 1, embedded: 0 });
   match(failedSummary.error!, /Could not summarize 1 graph record after 3 attempts.*FIRST CHARACTER.*<\|COMPLETE\|>/);
+  equal(failedSummary.progress, 81);
   equal(skippedSummaries, 3);
   equal(completedSummaries, 1);
   summaryReady = true;
   await resume();
   const done = await until(() => app.world(world.id), value => value.status === "ready" || value.status === "failed");
   equal(done.status, "ready", done.error ?? "");
+  equal(done.books[0].extracted_chunks, 3);
+  deepEqual(done.graph_progress, { combined: 2, summarized: 2, embedded: 2 });
   deepEqual(attempts.map(attempt => attempt.step), ["first", "second", "second", "second", "third", "second"]);
   equal(skippedSummaries, 4);
   equal(completedSummaries, 1);

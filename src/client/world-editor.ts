@@ -164,7 +164,7 @@ export function openWorldEditor(world?: World) {
     input.value = "";
     const books = incoming.filter(file => /\.(txt|md|markdown|html?|epub)$/i.test(file.name) && file.size).map(file => ({
       id: newId(), number: 0, name: file.name.replace(/\.[^.]+$/, "").slice(0, 100), filename: file.name, file,
-      total_chunks: 0, embedded_chunks: 0,
+      total_chunks: 0, embedded_chunks: 0, extracted_chunks: 0,
     }));
     if (books.length) {
       if (form.world) await act(form, "add-books", upload({ book_revision: form.world.book_revision }, books));
@@ -422,7 +422,10 @@ export function syncWorldPanel() {
       if (!editor.busy) updateWorldEditorKeys();
     }
     if (previous.status !== world.status || previous.error !== world.error || previous.progress !== world.progress || previous.active_book !== world.active_book
-      || previous.book_revision !== world.book_revision) refreshEditor(editor);
+      || previous.book_revision !== world.book_revision || JSON.stringify(previous.graph_progress) !== JSON.stringify(world.graph_progress)
+      || previous.books.some((book, index) => book.extracted_chunks !== world.books[index]?.extracted_chunks)) {
+      refreshEditor(editor);
+    }
   } else if (!editor && state.panel === "worlds") {
     if (document.getElementById("world-list")) updateWorldRows();
     else showWorldList();

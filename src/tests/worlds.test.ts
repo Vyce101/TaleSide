@@ -119,7 +119,7 @@ test("creation is idempotent and local API refuses cross-origin state changes", 
 });
 
 
-test("a large index reports progress after the first chunk even below one percent", async t => {
+test("a large index reports progress below one percent after one chunk is embedded and extracted", async t => {
   let release!: () => void;
   const gate = new Promise<void>(resolve => { release = resolve; });
   let sent = 0;
@@ -129,8 +129,12 @@ test("a large index reports progress after the first chunk even below one percen
       if (++sent === 1) await gate;
       return fakeProvider.embed(model, dimensions, key, text, signal);
     },
+    async *chat() {
+      await gate;
+      yield { text: "<|COMPLETE|>" };
+    },
   };
-  const app = await fixture(t, provider);
+  const app = await fixture(t, provider, undefined, { graphResponses: "provider" });
   const key = await app.addKey("Index");
   const world = await app.newWorld({ name: "Small chunks", key_ids: [key], max_chunk_size: 100 },
     [["Long.txt", "word ".repeat(4000)]]);
@@ -140,6 +144,7 @@ test("a large index reports progress after the first chunk even below one percen
   } finally { release(); }
   const paused = await until(() => app.world(world.id), value => value.status === "paused");
   equal(paused.embedded_chunks, 1);
+  equal(paused.books[0].extracted_chunks, 1);
   ok(paused.total_chunks >= 200);
   ok(paused.progress > 0 && paused.progress < 1);
 });
