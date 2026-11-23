@@ -26,7 +26,8 @@ export type Persona = { id: string; name: string; nickname: string; description:
 export type PersonasView = { personas: Persona[]; global: string | null; world: string | null };
 export type ChatSettings = {
   model: string; chat_key_ids: string[]; thinking_level: string; thought_signatures: boolean;
-  input_limit: number; output_limit: number; chunk_budget: number; minimum_similarity: number;
+  input_limit: number; output_limit: number; chunk_budget: number; graph_budget: number; minimum_similarity: number;
+  graph_matches: number; graph_hops: number; graph_edges: number;
   chunk_overlap: number; messages_to_embed: number; wrappers: Wrappers; prompts: PromptBlock[];
 };
 export type Profile = { locked?: boolean; id: string; name: string; settings: ChatSettings };

@@ -10,15 +10,26 @@ import { renderKeyPicker } from "./key-picker.js";
 import { escapeHtml, icon, type Icon } from "./view.js";
 import { updateWorldEditorKeys } from "./world-editor.js";
 
-type NumericSetting = "input_limit" | "output_limit" | "chunk_budget" | "minimum_similarity" | "chunk_overlap" | "messages_to_embed";
+type NumericSetting = "input_limit" | "output_limit" | "chunk_budget" | "graph_budget" | "graph_matches" | "graph_hops" | "graph_edges"
+  | "minimum_similarity" | "chunk_overlap" | "messages_to_embed";
 type Slider = { id: string; setting: NumericSetting; label: string; value: number; min: number; range: number; limit?: number; step?: number; unit?: string };
 
-const retrievalControls: Omit<Slider, "value">[] = [
-  { id: "chunk-budget", setting: "chunk_budget", label: "Max Chunk RAG budget", min: 1, range: 80000, unit: "characters" },
-  { id: "minimum-similarity", setting: "minimum_similarity", label: "Minimum similarity", min: 0, range: 1, limit: 1, step: 0.01 },
-  { id: "chunk-overlap", setting: "chunk_overlap", label: "Chunk overlap", unit: "characters", min: 0, range: 1000 },
-  { id: "messages-to-embed", setting: "messages_to_embed", label: "Messages to embed", min: 1, range: 10 },
-];
+const retrievalGroups: Record<string, Omit<Slider, "value">[]> = {
+  "retrieval-general": [
+    { id: "messages-to-embed", setting: "messages_to_embed", label: "Messages to embed", min: 1, range: 10 },
+    { id: "minimum-similarity", setting: "minimum_similarity", label: "Minimum similarity", min: 0, range: 1, limit: 1, step: 0.01 },
+  ],
+  "retrieval-chunks": [
+    { id: "chunk-budget", setting: "chunk_budget", label: "Max Chunk RAG budget", min: 1, range: 80000, unit: "characters" },
+    { id: "chunk-overlap", setting: "chunk_overlap", label: "Chunk overlap", unit: "characters", min: 0, range: 1000 },
+  ],
+  "retrieval-graph": [
+    { id: "graph-budget", setting: "graph_budget", label: "Max Graph RAG budget", min: 1, range: 200000, unit: "characters" },
+    { id: "graph-matches", setting: "graph_matches", label: "Max starting entities", min: 1, range: 30 },
+    { id: "graph-hops", setting: "graph_hops", label: "Max hops", min: 0, range: 5 },
+    { id: "graph-edges", setting: "graph_edges", label: "Max relationships per entity", min: 1, range: 20, limit: 150 },
+  ],
+};
 const wrappers = [["World Description", "world_description"], ["World Info", "world_info"], ["Persona", "persona"], ["Retrieved Passages", "retrieved_passages"], ["Chat History", "chat_history"]] as const;
 let profiles: ProfileSettings;
 let working: ChatSettings;
@@ -133,7 +144,9 @@ function loadWorkingProfile() {
   modelSelect.replaceChildren(...profiles.models.map(item => new Option(item.label, item.id)));
   modelSelect.value = working.model;
   renderModelSettings();
-  renderSliders("retrieval-controls", retrievalControls.map(control => ({ ...control, value: profiles.defaults[control.setting] })));
+  for (const [group, controls] of Object.entries(retrievalGroups)) {
+    renderSliders(group, controls.map(control => ({ ...control, value: profiles.defaults[control.setting] })));
+  }
   renderWrappers();
   const locked = !!profiles.profiles.find(profile => profile.id === profiles.selected)?.locked;
   for (const id of ["wrapper-controls", "retrieval-controls", "model-limits"]) {

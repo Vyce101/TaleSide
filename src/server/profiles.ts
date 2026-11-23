@@ -12,7 +12,8 @@ const wrappers = Object.fromEntries(wrapperNames.map(name => [name, [`<${name}>`
 const [defaultModel] = CHAT_MODELS;
 const defaults: ChatSettings = {
   model: defaultModel.id, chat_key_ids: [], thinking_level: defaultModel.default_thinking, thought_signatures: defaultModel.replay_thinking,
-  input_limit: defaultModel.context_limit, output_limit: defaultModel.max_output, chunk_budget: 20000,
+  input_limit: defaultModel.context_limit, output_limit: defaultModel.max_output, chunk_budget: 20000, graph_budget: 80000,
+  graph_matches: 10, graph_hops: 1, graph_edges: 5,
   minimum_similarity: 0.15, chunk_overlap: 400, messages_to_embed: 2, wrappers, prompts: DEFAULT_PROMPTS,
 };
 
@@ -98,6 +99,10 @@ export class Profiles {
       input_limit: whole(input.input_limit, 256, "Enter an input limit within the model range.", model.context_limit),
       output_limit: whole(input.output_limit, 256, "Enter an output limit within the model range.", model.max_output),
       chunk_budget: whole(input.chunk_budget ?? defaults.chunk_budget, 1, "Enter a positive Chunk RAG character budget."),
+      graph_budget: whole(input.graph_budget ?? defaults.graph_budget, 1, "Enter a positive Graph RAG character budget."),
+      graph_matches: whole(input.graph_matches ?? defaults.graph_matches, 1, "Enter at least one first graph match."),
+      graph_hops: whole(input.graph_hops ?? defaults.graph_hops, 0, "Enter a nonnegative number of graph hops."),
+      graph_edges: whole(input.graph_edges ?? defaults.graph_edges, 1, "Enter between 1 and 150 edges per entity.", 150),
       minimum_similarity: input.minimum_similarity,
       chunk_overlap: whole(input.chunk_overlap, 0, "Enter a nonnegative chunk overlap."),
       messages_to_embed: whole(input.messages_to_embed, 1, "Enter at least one message to embed."),

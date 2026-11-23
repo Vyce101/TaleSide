@@ -709,7 +709,9 @@ dialog label input { display: block; margin-top: 5px; }
 .index-lock svg { width: 13px; height: 13px; }
 .index-settings fieldset { margin: 0; padding: 8px; min-width: 0; border: 0; }
 .index-settings fieldset { margin-block-start: 5px; }
-.index-settings legend { color: var(--muted); font-size: 13px; font-weight: 650; }
+.index-settings legend, .settings-group h3 { color: var(--muted); font-size: 13px; font-weight: 650; }
+.settings-group h3 { margin: 0; }
+.settings-group + .settings-group { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--soft-line); }
 .setting-with-hint { display: flex; align-items: center; gap: 6px; margin: 10px 0 5px; }
 .panel-content .setting-with-hint label { margin: 0; }
 .setting-hint { display: inline-grid; place-items: center; width: 16px; height: 16px; flex: none; border: 1px solid var(--line);
