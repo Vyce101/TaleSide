@@ -18,7 +18,7 @@ const activeStatuses = new Set(["creating", "pausing"]);
 const TITLE_LIMIT = 100;
 
 export class Worlds {
-  constructor(readonly db: DatabaseSync, readonly keys: ProviderKeys, readonly graphIndexes: GraphIndexes,
+  constructor(private db: DatabaseSync, private keys: ProviderKeys, private graphIndexes: GraphIndexes,
     private indexing: WorldIndexing) {}
 
   require(id: string) { return requireWorld(this.db, id); }

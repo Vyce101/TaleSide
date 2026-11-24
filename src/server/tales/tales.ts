@@ -1,3 +1,6 @@
+import type { DatabaseSync } from "node:sqlite";
+import type { GraphIndexes } from "../graph/indexes.js";
+import type { ProviderKeys } from "../keys.js";
 import { FIRST_MESSAGE, WORLD_DESCRIPTION } from "../../shared/story-defaults.js";
 import { Personas } from "../personas.js";
 import type { ChatSettings, GenerationEvent, Message, Persona, PromptCounts, Swipe, Tale, TaleSummary } from "../../shared/types.js";
@@ -40,10 +43,8 @@ function summary(row: TaleRow): TaleSummary { return { ...row, pinned: Boolean(r
 export class Tales {
   private active = new Map<string, Active>();
 
-  constructor(private worlds: Worlds, private profiles: Profiles, private provider: GeminiClient,
-    private databasePath: string, private personas: Personas) {}
-
-  private get db() { return this.worlds.db; }
+  constructor(private db: DatabaseSync, private worlds: Worlds, private profiles: Profiles, private keys: ProviderKeys,
+    private provider: GeminiClient, private graphIndexes: GraphIndexes, private databasePath: string, private personas: Personas) {}
 
   list() {
     return all<TaleRow>(this.db, summarySql + " ORDER BY t.pinned DESC, coalesce(t.last_activity_at, t.created_at) DESC, t.rowid DESC")
@@ -207,7 +208,7 @@ export class Tales {
     const generationId = identifier(input.generation_id);
     const settings = this.profiles.validate(input.settings);
     const usePassages = settings.prompts.some(block => block.kind === "retrieved_passages" && block.enabled);
-    const retrievalKeys = usePassages ? this.worlds.keys.validate(selectedKeys(this.db, "world_retrieval_keys", worldId)) : [];
+    const retrievalKeys = usePassages ? this.keys.validate(selectedKeys(this.db, "world_retrieval_keys", worldId)) : [];
     const missingKeys = (usePassages && !retrievalKeys.length) || !settings.chat_key_ids.length;
     const existing = get<{ world_id: string }>(this.db, "SELECT world_id FROM tales WHERE id = ?", id);
     if (existing && existing.world_id !== worldId) throw new RequestError("This Tale could not be found.", 404);
@@ -280,7 +281,7 @@ export class Tales {
 
   private async *chatWithRetry(settings: ChatSettings, payload: object, signal: AbortSignal, resetReply: () => void) {
     let streamed = false;
-    for (const { readKey, last } of this.worlds.keys.attempts("chat", settings.chat_key_ids, signal)) {
+    for (const { readKey, last } of this.keys.attempts("chat", settings.chat_key_ids, signal)) {
       let started = false;
       const pending: Part[] = [];
       try {
@@ -313,7 +314,7 @@ export class Tales {
     const worldId = active.worldId;
     const started = performance.now();
     const snapshot = await openRetrieval(this.databasePath, worldId, signal);
-    let graph: ReturnType<typeof this.worlds.graphIndexes.capture>;
+    let graph: ReturnType<typeof this.graphIndexes.capture>;
     const signedParts: Part[] = [];
     let failure: string | undefined;
     let promptCounts: PromptCounts | undefined;
@@ -323,10 +324,10 @@ export class Tales {
       if (current.index_number !== world.index_number || current.book_revision !== world.book_revision || current.name !== world.name) {
         throw new RequestError("This World changed. Send the message again.", 409);
       }
-      this.worlds.keys.validate(settings.chat_key_ids);
+      this.keys.validate(settings.chat_key_ids);
       if (retrievalKeys.length) {
-        this.worlds.keys.validate(retrievalKeys);
-        graph = this.worlds.graphIndexes.capture(current.graph_published);
+        this.keys.validate(retrievalKeys);
+        graph = this.graphIndexes.capture(current.graph_published);
       }
       const persona = this.personas.resolve(worldId, title === undefined ? this.personaSelection(id) : input.personaSelection);
       let user: Message | undefined;
@@ -355,7 +356,7 @@ export class Tales {
       const history: HistoryEntry[] = rewrite ? input.history.filter(row => row.content)
         : this.rows(id).filter(row => row.content);
       const retrievalHistory = (rewrite ? input.history : this.rows(id)).filter(row => row.content && !row.opening);
-      const keys = this.worlds.keys;
+      const keys = this.keys;
       const query = retrievalKeys.length ? await retrievalVector(world, retrievalHistory.slice(-settings.messages_to_embed),
         text => keys.retry("retrieval", retrievalKeys, signal, key => this.provider.count(world.model, key, tokenBody(text), signal)),
         text => keys.retry("retrieval", retrievalKeys, signal, key => this.provider.embed(world.model, world.dimensions, key, text, signal))) : [];
