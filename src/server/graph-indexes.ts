@@ -3,7 +3,7 @@ import { existsSync, readdirSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import { MessageChannel, Worker } from "node:worker_threads";
-import { all, get, run } from "./database.js";
+import { all, get, run } from "./sqlite.js";
 import type { GraphContext, GraphQuery } from "./graph-worker.js";
 
 export function graphPaths(directory: string, id: number) {

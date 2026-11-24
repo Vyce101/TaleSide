@@ -1,7 +1,9 @@
 import { existsSync } from "node:fs";
-import { backup, DatabaseSync, type SQLInputValue } from "node:sqlite";
+import { backup, DatabaseSync } from "node:sqlite";
 import { installTaleSearch } from "./tale-search.js";
 import { graphSchema } from "./graph-schema.js";
+import { selections } from "./key-selections.js";
+import { all, get, transaction } from "./sqlite.js";
 
 const booksSchema = `
 CREATE TABLE IF NOT EXISTS books (
@@ -16,15 +18,6 @@ CREATE TABLE IF NOT EXISTS chunks (
   embed_end INTEGER NOT NULL, vector BLOB, PRIMARY KEY (book_id, index_number, number)
 );
 `;
-
-export const selections = {
-  embedding_default_keys: ["embedding_defaults", "INTEGER", "key_id"],
-  world_embedding_keys: ["worlds", "TEXT", "key_id"],
-  world_retrieval_keys: ["worlds", "TEXT", "retrieval_key_id"],
-  chat_profile_keys: ["chat_profiles", "TEXT", "chat_key_id"],
-  tale_chat_keys: ["tale_settings", "INTEGER", "chat_key_id"],
-} as const;
-export type Selection = keyof typeof selections | "world_extraction_keys";
 
 const schema = `
 CREATE TABLE IF NOT EXISTS provider_keys (
@@ -78,41 +71,6 @@ ${Object.entries(selections).map(([table, [owner, type]]) => `
   );
 `).join("")}
 `;
-
-export function get<T>(db: DatabaseSync, sql: string, ...args: SQLInputValue[]): T | undefined {
-  return db.prepare(sql).get(...args) as T | undefined;
-}
-
-export function all<T>(db: DatabaseSync, sql: string, ...args: SQLInputValue[]): T[] {
-  return db.prepare(sql).all(...args) as T[];
-}
-
-export function run(db: DatabaseSync, sql: string, ...args: SQLInputValue[]) {
-  return db.prepare(sql).run(...args);
-}
-
-export function transaction<T>(db: DatabaseSync, work: () => T): T {
-  db.exec("BEGIN IMMEDIATE");
-  try {
-    const value = work();
-    db.exec("COMMIT");
-    return value;
-  } catch (error) {
-    db.exec("ROLLBACK");
-    throw error;
-  }
-}
-
-export function selectedKeys(db: DatabaseSync, table: Selection, owner: string | number) {
-  return all<{ key_id: string }>(db, `SELECT key_id FROM ${table} WHERE owner_id = ? ORDER BY position`, owner)
-    .map(row => row.key_id);
-}
-
-export function saveSelection(db: DatabaseSync, table: Selection, owner: string | number, keys: string[]) {
-  run(db, `DELETE FROM ${table} WHERE owner_id = ?`, owner);
-  const insert = db.prepare(`INSERT INTO ${table} (owner_id, key_id, position) VALUES (?, ?, ?)`);
-  keys.forEach((key, position) => insert.run(owner, key, position));
-}
 
 function columns(db: DatabaseSync, table: string) {
   return new Set(all<{ name: string }>(db, `PRAGMA table_info(${table})`).map(column => column.name));

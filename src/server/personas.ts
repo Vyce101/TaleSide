@@ -1,6 +1,6 @@
 import type { DatabaseSync } from "node:sqlite";
 import type { Persona, PersonasView } from "../shared/types.js";
-import { all, get, run, transaction } from "./database.js";
+import { all, get, run, transaction } from "./sqlite.js";
 import { identifier, makeId, RequestError, requiredText } from "./validation.js";
 import type { Artwork } from "./worlds.js";
 

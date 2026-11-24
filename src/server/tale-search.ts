@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 import type { SearchSpan } from "../shared/types.js";
-import { all } from "./database.js";
+import { all } from "./sqlite.js";
 
 export function installTaleSearch(db: DatabaseSync) {
   db.exec(`

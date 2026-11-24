@@ -2,7 +2,8 @@ import type { DatabaseSync } from "node:sqlite";
 import { setImmediate as yieldToServer } from "node:timers/promises";
 import { CHAT_MODELS } from "../shared/models.js";
 import type { GraphProgress, GraphSettings, World } from "../shared/types.js";
-import { all, get, run, selectedKeys, transaction } from "./database.js";
+import { selectedKeys } from "./key-selections.js";
+import { all, get, run, transaction } from "./sqlite.js";
 import { encodeVector, type GeminiClient } from "./gemini.js";
 import {
   consolidationPrompt, extractionPrompt, graphRequest, MAX_GRAPH_ATTEMPTS,

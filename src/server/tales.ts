@@ -1,7 +1,8 @@
 import { FIRST_MESSAGE, WORLD_DESCRIPTION } from "../shared/story-defaults.js";
 import { Personas } from "./personas.js";
 import type { ChatSettings, GenerationEvent, Message, Persona, PromptCounts, Swipe, Tale, TaleSummary } from "../shared/types.js";
-import { all, get, run, selectedKeys, transaction } from "./database.js";
+import { selectedKeys } from "./key-selections.js";
+import { all, get, run, transaction } from "./sqlite.js";
 import { CHAT_MODELS, GEMMA } from "../shared/models.js";
 import { InputTooLarge, tokenBody, type GeminiClient, type Part } from "./gemini.js";
 import { Profiles } from "./profiles.js";

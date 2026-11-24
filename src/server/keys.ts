@@ -2,7 +2,8 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import type { DatabaseSync } from "node:sqlite";
 import type { KeyImpact, KeySettings } from "../shared/types.js";
-import { all, get, run, saveSelection, selectedKeys, transaction } from "./database.js";
+import { saveSelection, selectedKeys } from "./key-selections.js";
+import { all, get, run, transaction } from "./sqlite.js";
 import { EMBEDDING_MODEL, EMBEDDING_MODELS } from "./gemini.js";
 import { identifier, makeId, RequestError, requiredText } from "./validation.js";
 

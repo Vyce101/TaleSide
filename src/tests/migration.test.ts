@@ -3,7 +3,8 @@ import { readdir } from "node:fs/promises";
 import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { test } from "node:test";
-import { get, openDatabase } from "../server/database.js";
+import { openDatabase } from "../server/database.js";
+import { get } from "../server/sqlite.js";
 import { dpapi, ProviderKeys } from "../server/keys.js";
 import { databasePath, fixture, id, until } from "./fixture.js";
 

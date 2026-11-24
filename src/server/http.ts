@@ -1,5 +1,5 @@
 import { Personas } from "./personas.js";
-import { get, run } from "./database.js";
+import { get, run } from "./sqlite.js";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { readFile, stat } from "node:fs/promises";
 import { resolve, sep } from "node:path";

@@ -1,7 +1,8 @@
 import { BUILTIN_PROMPTS, DEFAULT_PROMPTS } from "../shared/story-defaults.js";
 import type { DatabaseSync } from "node:sqlite";
 import type { BuiltinPrompt, ChatSettings, Profile, ProfileSettings, PromptBlock, Wrappers } from "../shared/types.js";
-import { all, get, run, saveSelection, selectedKeys, transaction } from "./database.js";
+import { saveSelection, selectedKeys } from "./key-selections.js";
+import { all, get, run, transaction } from "./sqlite.js";
 import { CHAT_MODELS } from "../shared/models.js";
 import { ProviderKeys } from "./keys.js";
 import { fields, identifier, makeId, RequestError, requiredText, whole } from "./validation.js";
