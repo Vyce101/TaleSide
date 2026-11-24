@@ -1,6 +1,4 @@
 import type { DatabaseSync } from "node:sqlite";
-import { GEMMA } from "../../shared/models.js";
-import type { Part } from "../gemini.js";
 import { FIRST_MESSAGE, WORLD_DESCRIPTION } from "../../shared/story-defaults.js";
 import type { ChatSettings, GenerationEvent, Message, Persona, PromptCounts, Swipe, Tale, TaleSummary } from "../../shared/types.js";
 import type { GeminiClient } from "../gemini.js";
@@ -13,6 +11,7 @@ import { all, get, run, transaction } from "../sqlite.js";
 import { identifier, makeId, RequestError, requiredText, whole } from "../validation.js";
 import type { Worlds } from "../worlds/worlds.js";
 import { openReplyContext } from "./reply-context.js";
+import { createReplyStream } from "./reply-stream.js";
 import { searchTales } from "./search.js";
 
 type Active = { id: string; worldId: string; controller: AbortController; stopped: boolean; message?: Message; done: Promise<void> };
@@ -280,32 +279,6 @@ export class Tales {
     return this.publicMessage(get<MessageRow>(this.db, `SELECT ${messageFields} FROM tale_messages WHERE id = ?`, created.lastInsertRowid)!);
   }
 
-  private async *chatWithRetry(settings: ChatSettings, payload: object, signal: AbortSignal, resetReply: () => void) {
-    let streamed = false;
-    for (const { readKey, last } of this.keys.attempts("chat", settings.chat_key_ids, signal)) {
-      let started = false;
-      const pending: Part[] = [];
-      try {
-        for await (const part of this.provider.chat(settings.model, readKey(), payload, signal)) {
-          signal.throwIfAborted();
-          if (!started && !part.text) { pending.push(part); continue; }
-          if (!started) {
-            started = true;
-            if (streamed) resetReply();
-            streamed = true;
-            yield* pending;
-          }
-          yield part;
-        }
-        signal.throwIfAborted();
-        if (!started) throw new Error("Gemini returned no reply.");
-        return;
-      } catch (error) {
-        if (last || signal.aborted) throw error;
-      }
-    }
-  }
-
   private async generate(id: string, active: Active, input: {
     content?: string; title?: string; personaSelection?: string; history: MessageRow[]; rewrite?: Rewrite;
     description: string; openings: string[]; opening: number;
@@ -318,7 +291,7 @@ export class Tales {
       databasePath: this.databasePath, worldId, readWorld: () => this.worlds.require(worldId), keys: this.keys,
       provider: this.provider, graphIndexes: this.graphIndexes, settings, retrievalKeys, signal,
     });
-    const signedParts: Part[] = [];
+    const stream = createReplyStream(this.keys, this.provider, settings, signal, emit);
     let failure: string | undefined;
     let promptCounts: PromptCounts | undefined;
     try {
@@ -350,36 +323,7 @@ export class Tales {
       const { payload, prompt_counts } = await context.build(history, description, { name: persona.name, description: persona.description });
       run(this.db, "UPDATE tales SET prompt_counts = ? WHERE id = ?", JSON.stringify(prompt_counts), id);
       promptCounts = prompt_counts;
-      const resetReply = () => {
-        assistant.content = "";
-        assistant.thinking = "";
-        assistant.thinking_ms = null;
-        signedParts.length = 0;
-        emit({ type: "retry" });
-      };
-      for await (const part of this.chatWithRetry(settings, payload, signal, resetReply)) {
-        signal.throwIfAborted();
-        if (typeof part.text === "string" && part.text) {
-          if (part.thought) {
-            assistant.thinking_ms = Math.round(performance.now() - started);
-            assistant.thinking += part.text;
-            emit({ type: "thinking", text: part.text, thinking_ms: assistant.thinking_ms });
-          } else {
-            assistant.content += part.text;
-            emit({ type: "reply", text: part.text });
-          }
-        }
-        if (!part.thought && settings.model !== GEMMA && settings.thought_signatures && typeof part.text === "string") {
-          if (typeof part.thoughtSignature === "string" && part.thoughtSignature) {
-            signedParts.push({ text: part.text, thoughtSignature: part.thoughtSignature });
-          } else if (part.text) {
-            const prior = signedParts.at(-1);
-            if (prior && !prior.thoughtSignature) prior.text += part.text;
-            else signedParts.push({ text: part.text });
-          }
-        }
-      }
-      signal.throwIfAborted();
+      await stream.send(payload, assistant, started);
       assistant.status = "complete";
     } catch (error) {
       if (!active.message) throw error;
@@ -393,8 +337,7 @@ export class Tales {
         assistant.elapsed_ms = Math.round(ended - started);
         assistant.error = failure ?? null;
         try {
-          const reply = swipeFrom({ ...assistant, signed_parts: signedParts.some(part => part.thoughtSignature)
-            ? JSON.stringify(signedParts) : null });
+          const reply = swipeFrom({ ...assistant, signed_parts: stream.signedParts() });
           transaction(this.db, () => {
             if (rewrite && reply.status === "stopped" && !reply.content) return;
             const swipes = rewrite ? this.swipes(rewrite.row) : [reply];
