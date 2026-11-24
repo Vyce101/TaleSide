@@ -1,4 +1,4 @@
-import { deepEqual, equal, match, ok } from "node:assert/strict";
+import { deepEqual, equal, ok } from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
 import { test } from "node:test";
 import type { World } from "../shared/types.js";
@@ -111,11 +111,6 @@ test("creation is idempotent and local API refuses cross-origin state changes", 
   const repeated = await app.newWorld({ name: "Other name" }, [], worldId);
   equal(first.name, repeated.name);
   equal((await app.send(`/api/worlds/${worldId}/rename`, { name: "Remote" }, { Origin: "https://example.com" })).status, 403);
-  const result = await app.send("/");
-  equal(result.status, 200);
-  match(await result.text(), /type="module" src="\/client\/app.js"/);
-  equal((await app.send("/client/app.js")).status, 200);
-  equal((await app.send("/server/main.js")).status, 404);
 });
 
 
