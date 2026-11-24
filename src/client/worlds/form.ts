@@ -1,6 +1,6 @@
-import type { Book, World } from "../shared/types.js";
-import { element } from "./dom.js";
-import { avatar, escapeHtml, icon, iconButton, worldIndexStatus } from "./view.js";
+import type { Book, World } from "../../shared/types.js";
+import { element } from "../dom.js";
+import { avatar, escapeHtml, icon, iconButton, worldIndexStatus } from "../view.js";
 
 export type EditableBook = Book & { file?: File };
 export const processing = (world?: World) => world?.status === "creating" || world?.status === "pausing";

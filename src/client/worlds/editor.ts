@@ -1,15 +1,15 @@
-import { previewDialog } from "./dialog.js";
-import { FIRST_MESSAGE, WORLD_DESCRIPTION } from "../shared/story-defaults.js";
-import { CHAT_MODELS } from "../shared/models.js";
-import type { World, WorldSettings } from "../shared/types.js";
-import { enterWorld, navigate, state, showPanel, updateWorld } from "./app.js";
-import { keySettings, newId, removeWorld, request, worldRoute, worlds } from "./data.js";
-import { cropArtwork } from "./artwork.js";
-import { element, showError } from "./dom.js";
-import { showDrawerError, showToast } from "./toasts.js";
-import { renderKeyPicker } from "./key-picker.js";
-import { avatar, iconButton, searchInput, worldRows } from "./view.js";
-import { editorMarkup, processing, renderBooks, renderIndex, renderWorldProgress, upload, type EditableBook } from "./world-form.js";
+import { previewDialog } from "../dialog.js";
+import { FIRST_MESSAGE, WORLD_DESCRIPTION } from "../../shared/story-defaults.js";
+import { CHAT_MODELS } from "../../shared/models.js";
+import type { World, WorldSettings } from "../../shared/types.js";
+import { enterWorld, navigate, state, showPanel, updateWorld } from "../app.js";
+import { keySettings, newId, removeWorld, request, worldRoute, worlds } from "../data.js";
+import { cropArtwork } from "../artwork.js";
+import { element, showError } from "../dom.js";
+import { showDrawerError, showToast } from "../toasts.js";
+import { renderKeyPicker } from "../key-picker.js";
+import { avatar, iconButton, searchInput, worldRows } from "../view.js";
+import { editorMarkup, processing, renderBooks, renderIndex, renderWorldProgress, upload, type EditableBook } from "./form.js";
 
 type Editor = { description: string; openings: string[]; id: string; world?: World; books: EditableBook[]; keyIds: string[];
   extractionKeyIds: string[]; artwork?: File;

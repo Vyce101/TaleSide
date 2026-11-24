@@ -9,7 +9,7 @@ import { element, showError } from "./dom.js";
 import { setSurfaceVisible, slideFrames } from "./motion.js";
 import { renderKeyPicker } from "./key-picker.js";
 import { escapeHtml, icon, type Icon } from "./view.js";
-import { updateWorldEditorKeys } from "./world-editor.js";
+import { updateWorldEditorKeys } from "./worlds/editor.js";
 
 type NumericSetting = "input_limit" | "output_limit" | "chunk_budget" | "graph_budget" | "graph_matches" | "graph_hops" | "graph_edges"
   | "minimum_similarity" | "chunk_overlap" | "messages_to_embed";

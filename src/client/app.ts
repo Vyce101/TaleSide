@@ -11,7 +11,7 @@ import { fillMessageText, formatDate, formatDuration, homeView, icon, idleView, 
 import { historyFrames, setSurfaceVisible, slideFrames } from "./motion.js";
 import { clearToast, showToast } from "./toasts.js";
 import { initializeTooltips } from "./tooltips.js";
-import { handleWorldAction, hideWorldPanel, isWorldEditorOpen, leaveWorldSetup, openWorldEditor, restoreWorldPanel, syncWorldPanel } from "./world-editor.js";
+import { handleWorldAction, hideWorldPanel, isWorldEditorOpen, leaveWorldSetup, openWorldEditor, restoreWorldPanel, syncWorldPanel } from "./worlds/editor.js";
 
 type OpenTale = Tale & { draft?: boolean };
 type Reply = { tale: OpenTale; id: string; controller: AbortController; assistant: Message; accepted: boolean; stopping: boolean; started: number; timer?: number; frame?: number };
