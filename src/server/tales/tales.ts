@@ -17,6 +17,7 @@ import { searchTales } from "./search.js";
 type Active = { id: string; worldId: string; controller: AbortController; stopped: boolean; message?: Message; done: Promise<void> };
 type TaleRow = Omit<TaleSummary, "pinned"> & { pinned: number };
 type Emit = (event: GenerationEvent) => void;
+const TALE_TITLE_LIMIT = 100;
 const messageFields = "id, role, content, thinking, model, status, elapsed_ms, thinking_ms, error, signed_parts, opening, swipe, player_name, player_artwork";
 type StoredSwipe = Swipe & { signed_parts: string | null };
 type MessageRow = StoredSwipe & Pick<Message, "id" | "role" | "player_name" | "player_artwork"> & { swipe: number; opening: number };
@@ -102,9 +103,9 @@ export class Tales {
   }
 
   private touch(worldId: string, id: string) {
-    const now = Date.now() / 1000;
-    run(this.db, "UPDATE tales SET last_activity_at = ? WHERE id = ?", now, id);
-    run(this.db, "UPDATE worlds SET last_tale_activity_at = ? WHERE id = ?", now, worldId);
+    const activityTimeSeconds = Date.now() / 1000;
+    run(this.db, "UPDATE tales SET last_activity_at = ? WHERE id = ?", activityTimeSeconds, id);
+    run(this.db, "UPDATE worlds SET last_tale_activity_at = ? WHERE id = ?", activityTimeSeconds, worldId);
   }
 
   changeMessage(worldId: string, id: string, action: string, input: Record<string, unknown>): Tale {
@@ -116,58 +117,70 @@ export class Tales {
       return this.detail(worldId, id);
     }
     const messageId = whole(input.message_id, 1, "Choose a message.");
-    const rows = this.rows(id);
-    const index = rows.findIndex(row => row.id === messageId);
-    const row = rows[index];
-    if (!row) throw new RequestError("This message could not be found.", 404);
-    const last = index === rows.length - 1;
-    const swipes = this.swipes(row);
-    if (input.swipe !== row.swipe) throw new RequestError("The selected swipe changed. Reopen the Tale and try again.", 409);
+    const messages = this.rows(id);
+    const messageIndex = messages.findIndex(message => message.id === messageId);
+    const message = messages[messageIndex];
+    if (!message) throw new RequestError("This message could not be found.", 404);
+    const isFinalMessage = messageIndex === messages.length - 1;
+    const swipes = this.swipes(message);
+    if (input.swipe !== message.swipe) throw new RequestError("The selected swipe changed. Reopen the Tale and try again.", 409);
     return transaction(this.db, () => {
       if (action === "branch") {
-        const branch = makeId();
-        const now = Date.now() / 1000;
-        run(this.db, `
-          INSERT INTO tales (id, world_id, title, automatic_title, created_at, last_activity_at, persona_id)
-          VALUES (?, ?, ?, 0, ?, ?, ?)
-        `, branch, worldId, tale.title.slice(0, 91) + " (Branch)", now, now, tale.persona_id ?? null);
-        for (const original of rows.slice(0, index + 1)) {
-          const copy = run(this.db, `
-            INSERT INTO tale_messages (tale_id, role, content, opening, player_name, player_artwork)
-            VALUES (?, ?, ?, ?, ?, ?)
-          `, branch, original.role, original.content, original.opening, original.player_name ?? null, original.player_artwork ?? null);
-          if (original.role === "assistant") {
-            const all = original.id === row.id;
-            this.writeSwipes(Number(copy.lastInsertRowid), all ? swipes : [swipeFrom(original)], all ? original.swipe : 0);
-          }
-        }
-        this.touch(worldId, branch);
-        return this.detail(worldId, branch);
+        const branchHistory = messages.slice(0, messageIndex + 1);
+        return this.branchTale(tale, branchHistory, swipes);
       }
       if (action === "edit-message") {
         const content = requiredText(input.content, "Enter a message.");
-        if (row.content.trim() !== content) {
-          if (row.role === "assistant") {
-            const swipe = swipes[row.swipe];
-            swipes[row.swipe] = { ...swipe, content, signed_parts: null };
-            this.writeSwipes(row.id, swipes, row.swipe);
-          } else run(this.db, "UPDATE tale_messages SET content = ? WHERE id = ?", content, row.id);
+        if (message.content.trim() !== content) {
+          if (message.role === "assistant") {
+            const swipe = swipes[message.swipe];
+            swipes[message.swipe] = { ...swipe, content, signed_parts: null };
+            this.writeSwipes(message.id, swipes, message.swipe);
+          } else run(this.db, "UPDATE tale_messages SET content = ? WHERE id = ?", content, message.id);
         }
-      } else if (action === "select-swipe" && last && row.role === "assistant") {
-        this.writeSwipes(row.id, swipes, whole(input.position, 0, "Choose a saved swipe.", swipes.length - 1));
+      } else if (action === "select-swipe" && isFinalMessage && message.role === "assistant") {
+        this.writeSwipes(message.id, swipes, whole(input.position, 0, "Choose a saved swipe.", swipes.length - 1));
       } else if (action === "delete-message") {
-        if (input.mode === "swipe" && last && swipes.length > 1) {
-          swipes.splice(row.swipe, 1);
-          this.writeSwipes(row.id, swipes, Math.min(row.swipe, swipes.length - 1));
-        } else if (input.mode === "rewind" && !last) {
-          run(this.db, "DELETE FROM tale_messages WHERE tale_id = ? AND id >= ?", id, row.id);
+        if (input.mode === "swipe" && isFinalMessage && swipes.length > 1) {
+          swipes.splice(message.swipe, 1);
+          this.writeSwipes(message.id, swipes, Math.min(message.swipe, swipes.length - 1));
+        } else if (input.mode === "rewind" && !isFinalMessage) {
+          run(this.db, "DELETE FROM tale_messages WHERE tale_id = ? AND id >= ?", id, message.id);
         } else if (input.mode === "message") {
-          run(this.db, "DELETE FROM tale_messages WHERE id = ?", row.id);
+          run(this.db, "DELETE FROM tale_messages WHERE id = ?", message.id);
         } else throw new RequestError("Choose what to delete.");
       } else throw new RequestError("This action is unavailable for the message.");
       this.touch(worldId, id);
       return this.detail(worldId, id);
     });
+  }
+
+  private branchTale(tale: Tale, messages: MessageRow[], branchPointSwipes: StoredSwipe[]) {
+    const branchId = makeId();
+    const createdAtSeconds = Date.now() / 1000;
+    const titleSuffix = " (Branch)";
+    const title = tale.title.slice(0, TALE_TITLE_LIMIT - titleSuffix.length) + titleSuffix;
+    run(this.db, `
+      INSERT INTO tales (id, world_id, title, automatic_title, created_at, last_activity_at, persona_id)
+      VALUES (?, ?, ?, 0, ?, ?, ?)
+    `, branchId, tale.world_id, title, createdAtSeconds, createdAtSeconds, tale.persona_id ?? null);
+
+    const branchPointId = messages.at(-1)!.id;
+    for (const message of messages) {
+      const copied = run(this.db, `
+        INSERT INTO tale_messages (tale_id, role, content, opening, player_name, player_artwork)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `, branchId, message.role, message.content, message.opening, message.player_name ?? null, message.player_artwork ?? null);
+      if (message.role !== "assistant") continue;
+
+      // The branch point keeps its alternatives. Earlier turns copy only the reply the reader saw.
+      const isBranchPoint = message.id === branchPointId;
+      const copiedSwipes = isBranchPoint ? branchPointSwipes : [swipeFrom(message)];
+      const selectedSwipe = isBranchPoint ? message.swipe : 0;
+      this.writeSwipes(Number(copied.lastInsertRowid), copiedSwipes, selectedSwipe);
+    }
+    this.touch(tale.world_id, branchId);
+    return this.detail(tale.world_id, branchId);
   }
 
   change(worldId: string, id: string, action: string, input: Record<string, unknown>) {
@@ -178,7 +191,7 @@ export class Tales {
     this.detail(worldId, id);
     if (action === "rename") {
       run(this.db, "UPDATE tales SET title = ?, automatic_title = 0 WHERE id = ?",
-        requiredText(input.title, "Enter a Tale title up to 100 characters.", 100), id);
+        requiredText(input.title, "Enter a Tale title up to 100 characters.", TALE_TITLE_LIMIT), id);
     } else if (action === "pin") {
       if (typeof input.pinned !== "boolean") throw new RequestError("Pinning requires true or false.");
       run(this.db, "UPDATE tales SET pinned = ? WHERE id = ?", Number(input.pinned), id);
@@ -188,10 +201,10 @@ export class Tales {
     }
   }
 
-  stop(worldId: string, id: string, generationId: string, stopped = false) {
+  stop(worldId: string, id: string, generationId: string, userStopped = false) {
     const active = this.active.get(id);
     if (active?.id !== generationId || active.worldId !== worldId) return;
-    active.stopped ||= stopped;
+    active.stopped ||= userStopped;
     active.controller.abort();
   }
 
@@ -212,7 +225,7 @@ export class Tales {
     const missingKeys = (usePassages && !retrievalKeys.length) || !settings.chat_key_ids.length;
     const existing = get<{ world_id: string }>(this.db, "SELECT world_id FROM tales WHERE id = ?", id);
     if (existing && existing.world_id !== worldId) throw new RequestError("This Tale could not be found.", 404);
-    const title = existing ? undefined : requiredText(input.title, "Enter a Tale title up to 100 characters.", 100);
+    const title = existing ? undefined : requiredText(input.title, "Enter a Tale title up to 100 characters.", TALE_TITLE_LIMIT);
     const history = this.rows(id);
     let rewrite: Rewrite | undefined;
     if (input.mode === "regenerate" || input.mode === "swipe") {
