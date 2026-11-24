@@ -1,7 +1,8 @@
+import { previewDialog } from "./dialog.js";
 import { FIRST_MESSAGE, WORLD_DESCRIPTION } from "../shared/story-defaults.js";
 import { CHAT_MODELS } from "../shared/models.js";
 import type { World, WorldSettings } from "../shared/types.js";
-import { enterWorld, navigate, previewDialog, state, showPanel, updateWorld } from "./app.js";
+import { enterWorld, navigate, state, showPanel, updateWorld } from "./app.js";
 import { keySettings, newId, removeWorld, request, worldRoute, worlds } from "./data.js";
 import { cropArtwork } from "./artwork.js";
 import { element, showError } from "./dom.js";

@@ -1,7 +1,8 @@
+import { previewDialog } from "./dialog.js";
 import { renderPrompts } from "./prompts.js";
 import { GEMMA } from "../shared/models.js";
 import type { ChatSettings, KeyImpact, KeySummary, ProfileSettings, World, Wrappers } from "../shared/types.js";
-import { updateWorld, syncWorlds, previewDialog, refreshComposer, state } from "./app.js";
+import { updateWorld, syncWorlds, refreshComposer, state } from "./app.js";
 import { keySettings, loadKeys, loadWorlds, request, worldRoute } from "./data.js";
 import { showDrawerError, showToast } from "./toasts.js";
 import { element, showError } from "./dom.js";

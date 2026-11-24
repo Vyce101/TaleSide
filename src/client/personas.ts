@@ -1,5 +1,6 @@
+import { previewDialog } from "./dialog.js";
 import type { Persona, PersonasView, Tale } from "../shared/types.js";
-import { previewDialog, state } from "./app.js";
+import { state } from "./app.js";
 import { cropArtwork } from "./artwork.js";
 import { request, taleRoute } from "./data.js";
 import { element, showError } from "./dom.js";

@@ -1,3 +1,4 @@
+import { initializeDialog, outside, previewDialog } from "./dialog.js";
 import { refreshPromptCounts } from "./prompts.js";
 import { currentPersona, refreshPersonas } from "./personas.js";
 import type { GenerationEvent, Message, Swipe, Tale, TaleSearchResult, TaleSummary, World } from "../shared/types.js";
@@ -6,7 +7,7 @@ import { apiError, keySettings, loadTales, loadWorlds, newId, orderedTales, post
 import { element } from "./dom.js";
 import { closeKeyEditor, currentChatSettings, initializeSettings, refreshKeys, renderKeysView, renderWorldContext } from "./settings.js";
 import { fillMessageText, formatDate, formatDuration, homeView, icon, idleView, messageRows, messageTurn, recentCollapsed, recentTaleRows, taleRows, taleView, type Icon } from "./view.js";
-import { animateSurface, historyFrames, setSurfaceVisible, slideFrames } from "./motion.js";
+import { historyFrames, setSurfaceVisible, slideFrames } from "./motion.js";
 import { clearToast, showToast } from "./toasts.js";
 import { initializeTooltips } from "./tooltips.js";
 import { handleWorldAction, hideWorldPanel, isWorldEditorOpen, leaveWorldSetup, openWorldEditor, restoreWorldPanel, syncWorldPanel } from "./world-editor.js";
@@ -396,45 +397,6 @@ function restoreRowFocus(button: HTMLButtonElement) {
       && candidate.dataset.action === action && candidate.dataset.id === id);
   (replacement ?? element("screen-title")).focus({ preventScroll: true });
 }
-
-const taleDialog = element<HTMLDialogElement>("tale-dialog");
-const taleName = element<HTMLInputElement>("tale-name");
-
-type DialogOptions = { checkbox?: string; confirmLabel?: string; title: string; detail?: string; initialName?: string; nameLabel?: string; danger?: boolean };
-
-export function previewDialog(options: DialogOptions, onConfirm: (name: string, checked: boolean) => void | Promise<void>, restoreFocus?: () => void) {
-  if (taleDialog.open || closingDialog) return;
-  const hasName = options.initialName !== undefined;
-  const confirm = element<HTMLButtonElement>("dialog-confirm");
-  element("dialog-title").textContent = options.title;
-  element("dialog-detail").textContent = options.detail ?? "";
-  element("dialog-name-label").textContent = options.nameLabel ?? "Name";
-  element("tale-name-field").hidden = !hasName;
-  taleName.disabled = !hasName;
-  taleName.required = hasName;
-  taleName.value = options.initialName ?? "";
-  taleName.setCustomValidity("");
-  confirm.textContent = options.confirmLabel ?? (options.danger ? "Delete" : "Save");
-  confirm.classList.toggle("danger-button", Boolean(options.danger));
-  const checkbox = element<HTMLInputElement>("dialog-choice");
-  element("dialog-choice-row").hidden = !options.checkbox;
-  element("dialog-choice-label").textContent = options.checkbox ?? "";
-  checkbox.checked = false;
-  taleDialog.returnValue = "";
-  taleDialog.addEventListener("close", async () => {
-    closingDialog = false;
-    if (taleDialog.returnValue === "confirm") await onConfirm(taleName.value.trim(), checkbox.checked);
-    restoreFocus?.();
-  }, { once: true });
-  taleDialog.showModal();
-  const motion = animateSurface(taleDialog, [{ opacity: 0, translate: "0 -6px" }, { opacity: 1, translate: "0 0" }]);
-  if (motion) motion.onfinish = () => motion.cancel();
-  if (hasName) {
-    taleName.focus();
-    taleName.select();
-  }
-}
-
 
 function editTale(action: "rename" | "delete", tale: TaleSummary, button: HTMLButtonElement) {
   const isRename = action === "rename";
@@ -830,49 +792,9 @@ export function syncWorlds() {
   syncWorldPanel();
 }
 
-const taleDialogForm = element<HTMLFormElement>("tale-dialog-form");
-let closingDialog = false;
-
-function closeTaleDialog(value = "cancel") {
-  if (!taleDialog.open || closingDialog) return;
-  closingDialog = true;
-  taleDialog.toggleAttribute("data-closing", true);
-  const motion = animateSurface(taleDialog, [{ opacity: 1, translate: "0 0" }, { opacity: 0, translate: "0 -6px" }]);
-  const close = () => {
-    taleDialog.close(value);
-    taleDialog.removeAttribute("data-closing");
-    motion?.cancel();
-  };
-  if (motion) motion.onfinish = close;
-  else close();
-}
-
-taleDialog.addEventListener("cancel", event => {
-  event.preventDefault();
-  closeTaleDialog();
-});
-taleDialog.addEventListener("click", event => {
-  if (event.target !== taleDialog) return;
-  if (!outside(event, taleDialog)) return;
-  closeTaleDialog();
+initializeDialog(event => {
   if (state.panel && outside(event, drawers[state.panel])) showPanel(null);
   if (state.history && outside(event, element("tale-history"))) setHistory(false, true);
-});
-
-function outside({ clientX, clientY }: MouseEvent, surface: HTMLElement) {
-  const { left, right, top, bottom } = surface.getBoundingClientRect();
-  return clientX < left || clientX > right || clientY < top || clientY > bottom;
-}
-taleName.addEventListener("input", () => taleName.setCustomValidity(""));
-element("dialog-cancel").addEventListener("click", () => closeTaleDialog());
-taleDialogForm.addEventListener("submit", event => {
-  event.preventDefault();
-  if (!taleName.disabled && !taleName.value.trim()) {
-    taleName.setCustomValidity("Enter a name.");
-    taleName.reportValidity();
-    return;
-  }
-  closeTaleDialog("confirm");
 });
 
 for (const button of panelButtons) {
