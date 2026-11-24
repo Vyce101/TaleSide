@@ -62,6 +62,39 @@ test("Pause aborts the active embedding and Resume retries it after restart", as
   deepEqual(sent, ["title: One | text: abcd", "title: One | text: abcd", "title: One | text: efgh", "title: One | text: ijkl"]);
 });
 
+test("clearing an active index aborts its work and rejects a late embedding after indexing starts again", async t => {
+  let release!: () => void;
+  const blocked = new Promise<void>(resolve => { release = resolve; });
+  t.after(() => release());
+  let requests = 0;
+  let activeSignal: AbortSignal | undefined;
+  const app = await fixture(t, {
+    ...fakeProvider,
+    async embed(model, dimensions, key, text, signal) {
+      if (++requests === 1) {
+        activeSignal = signal;
+        await blocked;
+      }
+      return fakeProvider.embed(model, dimensions, key, text, signal);
+    },
+  });
+  const key = await app.addKey("Index");
+  const world = await app.newWorld({ name: "Clear while indexing", key_ids: [key] }, [["Book.txt", "The story"]]);
+  const base = `/api/worlds/${world.id}`;
+  await until(() => activeSignal, Boolean);
+  const cleared = await app.call<World>(base + "/clear-index", {});
+  equal(activeSignal?.aborted, true);
+  equal(cleared.status, "unindexed");
+  equal(cleared.total_chunks, 0);
+  equal(cleared.books.length, 1);
+  await app.call(base + "/start-index", { book_revision: cleared.book_revision, key_ids: [key] });
+  release();
+  const ready = await until(() => app.world(world.id), current => current.status === "ready" || current.status === "failed");
+  equal(ready.status, "ready", ready.error ?? "");
+  equal(ready.embedded_chunks, 1);
+  equal(requests, 2);
+});
+
 test("idle edits revise book order and names, and new books wait for Resume", async t => {
   const app = await fixture(t);
   const keys = [await app.addKey("First"), await app.addKey("Second")];

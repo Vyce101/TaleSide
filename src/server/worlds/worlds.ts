@@ -281,7 +281,7 @@ export class Worlds {
   }
 
   clearIndex(id: string) {
-    this.editable(id);
+    this.require(id);
     transaction(this.db, () => {
       run(this.db, "DELETE FROM chunks WHERE book_id IN (SELECT id FROM books WHERE world_id = ?)", id);
       run(this.db, `
@@ -289,6 +289,7 @@ export class Worlds {
           graph_published = NULL, graph_base = NULL, graph_building = NULL, book_revision = book_revision + 1 WHERE id = ?
       `, id);
     });
+    this.indexing.abort(id);
     this.graphIndexes.collect();
     return this.detail(id);
   }

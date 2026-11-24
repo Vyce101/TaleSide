@@ -166,7 +166,7 @@ export function renderIndex(world: World | undefined, books: EditableBook[], bus
   action.hidden = status === "ready" && !needsExtractionSettings;
   action.disabled = busy || status === "pausing" || (status === "unindexed" && !books.length);
   clear.hidden = !world || status === "unindexed";
-  clear.disabled = busy || processing(world);
+  clear.disabled = busy;
   if (action.hidden && document.activeElement === action) clear.focus({ preventScroll: true });
   if (action.dataset.tooltip !== label) {
     action.dataset.tooltip = label;

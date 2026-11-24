@@ -504,7 +504,7 @@ export function createWorldEditor({ currentWorld, isOpen, showWorldPanel, enterW
     if (action === "discard-world" && form.world) { discardWorld(form.world); return; }
     if (action === "add-world-books") { element("world-books-input").click(); return; }
     if (action === "clear-index") {
-      if (!form.world || processing(form.world)) return;
+      if (!form.world) return;
       previewDialog({ title: "Delete indexing?", detail: "Your books and Tales will be kept. To chat again, start indexing and wait for the first passage.", danger: true },
         async () => {
           await runWorldAction(form, "clear-index");
