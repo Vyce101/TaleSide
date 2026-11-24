@@ -34,6 +34,8 @@ And none of this is staged. Harry, Umbridge, your missing friend, Ruijerd, Paul:
 
 [Run TaleSide on Windows](./docs/quickstart.md)
 
+[Explore the codebase](./docs/architecture.md)
+
 ## License
 
 TaleSide’s source code is licensed under the **[PolyForm Shield License 1.0.0](./PolyForm%20Shield%201.0.0)**.
