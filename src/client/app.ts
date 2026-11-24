@@ -7,7 +7,7 @@ import type { GenerationEvent, Message, Swipe, Tale, TaleSearchResult, TaleSumma
 import { apiError, keySettings, loadTales, loadWorlds, newId, orderedTales, post, recentTime, removeTale,
   request, storeTale, storeWorld, taleRoute, tales, worlds } from "./data.js";
 import { element } from "./dom.js";
-import { currentChatSettings, initializeSettings, renderChatKey, renderWorldContext } from "./settings.js";
+import { createTaleSettings } from "./tales/settings.js";
 import { fillMessageText, formatDate, formatDuration, homeView, icon, idleView, messageRows, messageTurn, recentCollapsed, recentTaleRows, taleRows, taleView, type Icon } from "./view.js";
 import { historyFrames, setSurfaceVisible, slideFrames } from "./motion.js";
 import { clearToast, showToast } from "./toasts.js";
@@ -60,11 +60,17 @@ const personas = createPersonaPanel({
   isOpen: () => state.panel === "personas",
 });
 
+const taleSettings = createTaleSettings({
+  currentWorld: () => state.world,
+  onWorldUpdated: updateWorld,
+  onChatSettingsChanged: refreshComposer,
+});
+
 const keysPanel = createKeysPanel({
   isOpen: () => state.panel === "keys",
   onKeysChanged: () => {
-    renderChatKey();
-    if (state.panel === "settings") renderWorldContext();
+    taleSettings.renderChatKey();
+    if (state.panel === "settings") taleSettings.renderWorldContext();
     worldEditor.updateWorldEditorKeys();
     refreshComposer();
   },
@@ -115,7 +121,7 @@ export function showPanel(next: Panel | null, returnFocus = true) {
     keysPanel.renderKeysView();
     void keysPanel.refreshKeys().catch(error => showToast(error));
   }
-  if (next === "settings") renderWorldContext();
+  if (next === "settings") taleSettings.renderWorldContext();
   if (next === "personas") void personas.refreshPersonas();
   const drawer = drawers[next];
   drawer.querySelector(".panel-content")!.scrollTop = 0;
@@ -298,7 +304,7 @@ async function openTale(world: World, tale: TaleSummary | undefined, inSidebar: 
   } catch (error) { if (navigation === revision) showToast(error); }
 }
 
-function warnMissingKeys(world: World, settings = currentChatSettings()) {
+function warnMissingKeys(world: World, settings = taleSettings.currentChatSettings()) {
   if (!settings) return true;
   const missingChat = settings.chat_key_ids.length === 0;
   const missingRetrieval = settings.prompts.some(block => block.kind === "retrieved_passages" && block.enabled)
@@ -616,7 +622,7 @@ async function sendOrStop(rewrite?: { message: Message; mode: "regenerate" | "sw
   if (activeReply) { if (!rewrite) stopReply(activeReply); return; }
   const input = element<HTMLTextAreaElement>("message-input");
   const text = input.value.trim();
-  const settings = currentChatSettings();
+  const settings = taleSettings.currentChatSettings();
   if ((!text && !rewrite) || !settings || element<HTMLButtonElement>("send-message").disabled) return;
   const missingKeys = warnMissingKeys(world, settings);
   if (rewrite && missingKeys) return;
@@ -891,7 +897,7 @@ void request<{ warn_signatures: boolean }>("/api/app-settings").then(saved => {
   warning.checked = warnSignatures;
 }).catch(error => { element("app-settings-error").textContent = String(error); });
 renderWorkspace();
-void Promise.all([loadWorlds(), loadTales(), initializeSettings(), keysPanel.refreshKeys()]).then(() => {
+void Promise.all([loadWorlds(), loadTales(), taleSettings.initialize(), keysPanel.refreshKeys()]).then(() => {
   syncWorlds();
   refreshTaleLists();
 }).catch(error => showToast(error));
