@@ -2,14 +2,13 @@ import { previewDialog } from "./dialog.js";
 import { renderPrompts } from "./prompts.js";
 import { GEMMA } from "../shared/models.js";
 import type { ChatSettings, KeyImpact, KeySummary, ProfileSettings, World, Wrappers } from "../shared/types.js";
-import { updateWorld, syncWorlds, refreshComposer, state } from "./app.js";
+import { updateWorld, syncWorlds, refreshComposer, state, worldEditor } from "./app.js";
 import { keySettings, loadKeys, loadWorlds, request, worldRoute } from "./data.js";
 import { showDrawerError, showToast } from "./toasts.js";
 import { element, showError } from "./dom.js";
 import { setSurfaceVisible, slideFrames } from "./motion.js";
 import { renderKeyPicker } from "./key-picker.js";
 import { escapeHtml, icon, type Icon } from "./view.js";
-import { updateWorldEditorKeys } from "./worlds/editor.js";
 
 type NumericSetting = "input_limit" | "output_limit" | "chunk_budget" | "graph_budget" | "graph_matches" | "graph_hops" | "graph_edges"
   | "minimum_similarity" | "chunk_overlap" | "messages_to_embed";
@@ -273,7 +272,7 @@ export async function refreshKeys() {
   renderKeysView();
   renderChatKey();
   if (state.panel === "settings") renderWorldContext();
-  updateWorldEditorKeys();
+  worldEditor.updateWorldEditorKeys();
   refreshComposer();
 }
 

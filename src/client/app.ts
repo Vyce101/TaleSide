@@ -11,7 +11,7 @@ import { fillMessageText, formatDate, formatDuration, homeView, icon, idleView, 
 import { historyFrames, setSurfaceVisible, slideFrames } from "./motion.js";
 import { clearToast, showToast } from "./toasts.js";
 import { initializeTooltips } from "./tooltips.js";
-import { handleWorldAction, hideWorldPanel, isWorldEditorOpen, leaveWorldSetup, openWorldEditor, restoreWorldPanel, syncWorldPanel } from "./worlds/editor.js";
+import { createWorldEditor } from "./worlds/editor.js";
 
 type OpenTale = Tale & { draft?: boolean };
 type Reply = { tale: OpenTale; id: string; controller: AbortController; assistant: Message; accepted: boolean; stopping: boolean; started: number; timer?: number; frame?: number };
@@ -44,6 +44,15 @@ export const state = {
 };
 const panelButtons = document.querySelectorAll<HTMLButtonElement>(".toolbar [data-panel]");
 
+export const worldEditor = createWorldEditor({
+  currentWorld: () => state.world,
+  isOpen: () => state.panel === "worlds",
+  showWorldPanel: () => showPanel("worlds", false),
+  enterWorld,
+  goHome: () => navigate(),
+  onWorldUpdated: updateWorld,
+});
+
 function updatePanelLayout() {
   const showFullWidth = narrow.matches && state.panel !== null && state.panel !== "keys" && state.panel !== "personas" && state.panel !== "app-settings";
   workspace.inert = showFullWidth;
@@ -73,7 +82,7 @@ export function showPanel(next: Panel | null, returnFocus = true) {
 
   if (previous) {
     setSurfaceVisible(drawers[previous], false, slideFrames, () => {
-      if (previous === "worlds") hideWorldPanel();
+      if (previous === "worlds") worldEditor.hideWorldPanel();
       if (previous === "keys") closeKeyEditor();
       if (!next && !state.panel && returnFocus) element(`${previous}-button`).focus({ preventScroll: true });
     });
@@ -83,7 +92,7 @@ export function showPanel(next: Panel | null, returnFocus = true) {
   updatePanelLayout();
   if (!next) return;
 
-  if (next === "worlds") restoreWorldPanel();
+  if (next === "worlds") worldEditor.restoreWorldPanel();
   if (next === "keys") {
     renderKeysView();
     void refreshKeys().catch(error => showToast(error));
@@ -266,7 +275,7 @@ async function openTale(world: World, tale: TaleSummary | undefined, inSidebar: 
     warnMissingKeys(currentWorld);
     if (inSidebar) {
       if (state.world?.id !== currentWorld.id || !state.tale) setWorkspace(currentWorld, selected);
-      if (state.panel === "worlds") openWorldEditor(currentWorld);
+      if (state.panel === "worlds") worldEditor.openWorldEditor(currentWorld);
     } else navigate(currentWorld, selected);
   } catch (error) { if (navigation === revision) showToast(error); }
 }
@@ -698,7 +707,7 @@ let lastWorlds = new Map<string, World>();
 export function syncWorlds() {
   for (const world of worlds) {
     const previous = lastWorlds.get(world.id);
-    if (!previous || previous.status === world.status || isWorldEditorOpen(world.id)) continue;
+    if (!previous || previous.status === world.status || worldEditor.isWorldEditorOpen(world.id)) continue;
     if (world.status === "failed") showToast(`${world.name}: ${world.error ?? "Indexing failed."}`);
     if (world.status === "ready" && ["creating", "pausing"].includes(previous.status)) {
       showToast(`${world.name} finished indexing.`, { success: true });
@@ -724,7 +733,7 @@ export function syncWorlds() {
       refreshComposer();
     }
   }
-  syncWorldPanel();
+  worldEditor.syncWorldPanel();
 }
 
 initializeDialog(event => {
@@ -741,7 +750,7 @@ for (const button of panelButtons) {
   if (name !== "inspector") button.addEventListener("click", () => showPanel(state.panel === name ? null : name));
 }
 
-element("home-button").addEventListener("click", () => leaveWorldSetup(() => navigate()));
+element("home-button").addEventListener("click", () => worldEditor.leaveWorldSetup(() => navigate()));
 for (const drawer of Object.values(drawers)) {
   drawer.querySelector(".panel-back")!.addEventListener("click", () => showPanel(null));
 }
@@ -778,7 +787,7 @@ document.addEventListener("click", event => {
     }
     case "open-tale": {
       const world = worlds.find(item => item.id === tale?.world_id);
-      if (tale && world) leaveWorldSetup(() => { void openTale(world, tale, false); });
+      if (tale && world) worldEditor.leaveWorldSetup(() => { void openTale(world, tale, false); });
       break;
     }
     case "new-tale": newTale(); break;
@@ -805,7 +814,7 @@ document.addEventListener("click", event => {
       if (tale) editTale(action === "rename-tale" ? "rename" : "delete", tale, button);
       break;
     default:
-      handleWorldAction(action, id, button);
+      worldEditor.handleWorldAction(action, id, button);
   }
 });
 workspace.addEventListener("submit", event => {
