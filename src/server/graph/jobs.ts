@@ -110,6 +110,7 @@ export class GraphJobs {
     const pass = passes.length;
     const records = await this.request(world, settings, extractionPrompt(chunk.preceding, chunk.text, pass ? previous : undefined),
       signal, working, text => parseExtraction(text, previous));
+    signal.throwIfAborted();
     const complete = pass >= settings.gleaning_passes || (pass > 0 && !newRecords(records, previous).length);
     transaction(this.db, () => {
       run(this.db, `
@@ -168,6 +169,7 @@ export class GraphJobs {
       const prompt = consolidationPrompt(summary.type ?? "relationship", summary.name, summary.input);
       try {
         const description = await this.request(world, settings, prompt, signal, working, text => parseConsolidation(text, summary.input));
+        signal.throwIfAborted();
         run(this.db, "UPDATE graph_records SET description = ?, characters = ? WHERE id = ?",
           description, renderedLength(summary, description), summary.id);
       } catch (error) {
@@ -195,6 +197,7 @@ export class GraphJobs {
       const values = await this.provider.embed(world.model, world.dimensions, key, `title: ${draft.name} | text: ${draft.description}`, signal);
       return encodeVector(values, world.dimensions);
     }, { cooldown: this.embeddingCooldown, paused: () => !working() });
+    signal.throwIfAborted();
     run(this.db, "UPDATE graph_records SET vector = ? WHERE id = ?", vector, draft.id);
     return false;
   }

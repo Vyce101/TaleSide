@@ -18,7 +18,7 @@ SQLite under `data/` is the shared source of truth for Worlds, books, indexing p
 
 ## Pause and resume indexing
 
-The World routes send pause and resume to [World indexing](../src/server/worlds/indexing.ts). Pause lets the work already in progress finish. Resume checks key assignments and picks up from the saved chunks and graph records. The browser polls while a World is creating or pausing, and paints progress in the World editor.
+The World routes send pause and resume to [World indexing](../src/server/worlds/indexing.ts). Pause aborts active indexing requests and keeps work that was already saved. Resume checks key assignments and picks up from the saved chunks, extraction passes, and graph records. The browser polls while a World is indexing and shows progress in the World editor.
 
 ## Verify the flows
 

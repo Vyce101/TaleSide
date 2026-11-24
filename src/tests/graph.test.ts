@@ -157,58 +157,64 @@ test("Tales use live passages and publish a graph from the whole queue, then reu
   equal(graphEmbeddings.length, embedded);
 });
 
-test("passage embedding and extraction advance independently and pausing finishes both active steps", async t => {
+test("Pause aborts both active requests and Resume reuses only the work saved before Pause", async t => {
   let releasePassage!: () => void;
   let releaseGleaning!: () => void;
   const passage = new Promise<void>(resolve => { releasePassage = resolve; });
   const gleaning = new Promise<void>(resolve => { releaseGleaning = resolve; });
   t.after(() => { releasePassage(); releaseGleaning(); });
-  let waitingForPassage = false;
-  let waitingForGleaning = false;
+  let passageSignal: AbortSignal | undefined;
+  let gleaningSignal: AbortSignal | undefined;
+  let firstPasses = 0;
+  let gleaningAttempts = 0;
   const app = await fixture(t, {
     ...fakeProvider,
     async embed(model, dimensions, key, text, signal) {
-      if (text === "title: Book | text: abcd") {
-        waitingForPassage = true;
+      if (text === "title: Book | text: efgh" && !passageSignal) {
+        passageSignal = signal;
         await passage;
       }
       return fakeProvider.embed(model, dimensions, key, text, signal);
     },
-    async *chat(_model, _key, body) {
+    async *chat(_model, _key, body, signal) {
       const prompt = (body as Request).contents[0].parts[0].text;
       if (prompt.endsWith("#### Excerpt\nabcd")) {
+        firstPasses++;
         yield { text: complete(entity("CLERK", "CHARACTER", "A clerk at the harbor.")) };
-      } else {
-        if (prompt.includes("#### Excerpt\nabcd\n\n#### Already Extracted")) {
-          waitingForGleaning = true;
-          await gleaning;
-        }
-        yield { text: "<|COMPLETE|>" };
+        return;
       }
+      if (prompt.includes("#### Excerpt\nabcd\n\n#### Already Extracted") && ++gleaningAttempts === 1) {
+        gleaningSignal = signal;
+        await gleaning;
+        yield { text: complete(entity("LATE", "CHARACTER", "A late provider response.")) };
+        return;
+      }
+      yield { text: "<|COMPLETE|>" };
     },
   }, undefined, { graphResponses: "provider" });
   const key = await app.addKey("Gemini");
   const world = await app.newWorld({ name: "Parallel indexing", key_ids: [key], max_chunk_size: 4,
     graph: { model: FLASH_LITE, thinking_level: "MINIMAL", gleaning_passes: 1 } }, [["Book.txt", "abcdefgh"]]);
-  await until(() => waitingForPassage && waitingForGleaning, ready => ready);
+  await until(() => passageSignal && gleaningSignal, Boolean);
   const incomplete = await app.world(world.id);
   equal(incomplete.books[0].extracted_chunks, 0);
-  equal(incomplete.books[0].embedded_chunks, 0);
-  releasePassage();
-  const searchable = await until(() => app.world(world.id), value => value.embedded_chunks === 2);
-  equal(searchable.can_play, true);
-  equal(searchable.books[0].extracted_chunks, 0);
-  equal(searchable.graph_progress, null);
-  equal(searchable.progress, 20);
+  equal(incomplete.books[0].embedded_chunks, 1);
+  equal(incomplete.can_play, true);
 
   const base = `/api/worlds/${world.id}`;
-  equal((await app.call<World>(base + "/pause", {})).status, "pausing");
-  releaseGleaning();
-  const paused = await until(() => app.world(world.id), value => value.status === "paused");
-  equal(paused.books[0].extracted_chunks, 1);
-  equal(paused.progress, 45);
+  const paused = await app.call<World>(base + "/pause", {});
+  equal(paused.status, "paused");
+  equal(paused.active_book, null);
+  equal(paused.progress, 10);
+  equal(passageSignal?.aborted, true);
+  equal(gleaningSignal?.aborted, true);
   await app.call(base + "/resume", {});
-  const finished = await until(() => app.world(world.id), value => value.status === "ready");
+  releasePassage();
+  releaseGleaning();
+  const finished = await until(() => app.world(world.id), value => value.status === "ready" || value.status === "failed");
+  equal(finished.status, "ready", finished.error ?? "");
+  equal(firstPasses, 1);
+  equal(gleaningAttempts, 2);
   equal(finished.books[0].extracted_chunks, 2);
   equal(finished.progress, 100);
   deepEqual(finished.graph_progress, { combined: 1, summarized: 1, embedded: 1 });

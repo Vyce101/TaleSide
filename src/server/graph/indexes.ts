@@ -9,7 +9,7 @@ export class GraphIndexes {
   private directory: string;
   private readers = new Map<number, Worker>();
   private leases = new Map<number, number>();
-  private builds = new Map<number, { promise: Promise<void>; controller: AbortController }>();
+  private builds = new Map<number, { promise: Promise<void>; controller: AbortController; waiters: number }>();
   private latest?: number;
 
   constructor(private db: DatabaseSync, private database: string) {
@@ -53,23 +53,38 @@ export class GraphIndexes {
   }
 
   async build(id: number, signal: AbortSignal) {
+    const previous = this.builds.get(id);
+    if (previous?.controller.signal.aborted) await previous.promise.catch(() => {});
     signal.throwIfAborted();
-    if (Object.values(graphPaths(this.directory, id)).every(existsSync)) return;
     let build = this.builds.get(id);
     if (!build) {
+      if (Object.values(graphPaths(this.directory, id)).every(existsSync)) return;
       const worker = this.worker(id);
       const controller = new AbortController();
       const promise = this.request<void>(worker, { operation: "build" }, controller.signal).finally(async () => {
         await worker.terminate();
         this.builds.delete(id);
+        if (controller.signal.aborted) {
+          this.remove(id);
+          this.remove(id, true);
+          this.collect();
+        }
       });
-      build = { promise, controller };
+      build = { promise, controller, waiters: 0 };
       this.builds.set(id, build);
     }
+    build.waiters++;
     let abort!: ReturnType<typeof addAbortListener>;
     const stopped = new Promise<never>((_resolve, reject) => { abort = addAbortListener(signal, () => reject(signal.reason)); });
     try { await Promise.race([build.promise, stopped]); }
-    finally { abort[Symbol.dispose](); }
+    finally {
+      abort[Symbol.dispose]();
+      build.waiters--;
+      if (signal.aborted && !build.waiters) {
+        build.controller.abort();
+        await build.promise.catch(() => {});
+      }
+    }
   }
 
   capture(id: number | null) {

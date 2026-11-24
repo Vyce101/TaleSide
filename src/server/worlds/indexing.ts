@@ -52,7 +52,7 @@ export class WorldIndexing {
 
   progress(world: WorldRow, totalChunks: number, embeddedChunks: number, extractedChunks: number) {
     const graph_progress = this.graph.recordCounts(world);
-    const active = this.active?.worldId === world.id ? this.active : undefined;
+    const active = this.active?.worldId === world.id && !this.active.controller.signal.aborted ? this.active : undefined;
     return {
       graph_progress,
       active_book: active?.passageBook ?? active?.extractionBook ?? null,
@@ -66,8 +66,8 @@ export class WorldIndexing {
 
   pause(id: string) {
     if (requireWorld(this.db, id).status !== "creating") throw new RequestError("This World has already changed state.", 409);
-    const nextStatus = this.active?.worldId === id ? "pausing" : "paused";
-    run(this.db, "UPDATE worlds SET status = ? WHERE id = ?", nextStatus, id);
+    run(this.db, "UPDATE worlds SET status = 'paused' WHERE id = ?", id);
+    this.abort(id);
   }
 
   resume(id: string) {
@@ -102,9 +102,8 @@ export class WorldIndexing {
       try {
         await this.indexWorld(world);
       } catch (error) {
-        if (!this.closing) {
+        if (!this.closing && !this.active?.controller.signal.aborted) {
           const message = error instanceof Error ? error.message : "Could not index this World.";
-          run(this.db, "UPDATE worlds SET status = 'paused' WHERE id = ? AND status = 'pausing'", world.id);
           run(this.db, "UPDATE worlds SET status = 'failed', error = ? WHERE id = ? AND status = 'creating'", message, world.id);
         }
       } finally {
@@ -133,7 +132,7 @@ export class WorldIndexing {
     };
     const stopAfterFailure = (error: unknown) => { fatalFailure ??= { error }; };
 
-    // Wait for both active steps to drain when either task fails or the World is paused.
+    // Let both tasks unwind before starting another World or resuming this one.
     const passageTask = this.embedPassages(world, job, canStartStep).catch(stopAfterFailure);
     const extractionTask = graphSettings && world.graph_building === null
       ? this.extractChunks(world, graphSettings, job, canStartStep).catch(stopAfterFailure)
@@ -148,7 +147,6 @@ export class WorldIndexing {
       if (graphSettings) await this.finishGraph(world, graphSettings, signal, canStartStep);
       else run(this.db, "UPDATE worlds SET status = 'ready' WHERE id = ?", world.id);
     }
-    run(this.db, "UPDATE worlds SET status = 'paused' WHERE id = ? AND status = 'pausing'", world.id);
   }
 
   private async embedPassages(world: WorldRow, job: IndexJob, canStartStep: () => boolean) {

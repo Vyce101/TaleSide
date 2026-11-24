@@ -142,7 +142,7 @@ export class Worlds {
 
   private editable(id: string, revision?: unknown) {
     const world = this.require(id);
-    if (activeStatuses.has(world.status)) throw new RequestError("Pause indexing and wait for the active request.", 409);
+    if (activeStatuses.has(world.status)) throw new RequestError("Pause indexing before editing this World.", 409);
     if (revision !== undefined && revision !== world.book_revision) throw new RequestError("This World changed. Try again.", 409);
     return world;
   }

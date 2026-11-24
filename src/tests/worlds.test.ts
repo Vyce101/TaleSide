@@ -27,15 +27,20 @@ test("a name-only World stays editable and removing its last book keeps the Worl
   deepEqual(removed.books, []);
 });
 
-test("pausing finishes the active chunk and Resume processes only queued chunks after restart", async t => {
+test("Pause aborts the active embedding and Resume retries it after restart", async t => {
   let unblock!: () => void;
   const blocked = new Promise<void>(resolve => { unblock = resolve; });
   const sent: string[] = [];
+  let activeSignal: AbortSignal | undefined;
+  t.after(() => unblock());
   const provider = {
     ...fakeProvider,
     async embed(model: string, dimensions: number, key: string, text: string, signal: AbortSignal) {
       sent.push(text);
-      if (sent.length === 1) await blocked;
+      if (sent.length === 1) {
+        activeSignal = signal;
+        await blocked;
+      }
       return fakeProvider.embed(model, dimensions, key, text, signal);
     },
   };
@@ -44,18 +49,17 @@ test("pausing finishes the active chunk and Resume processes only queued chunks 
   const world = await app.newWorld({ name: "Long", key_ids: [key], max_chunk_size: 4 }, [["One.txt", "abcdefghijkl"]]);
   const base = `/api/worlds/${world.id}`;
   await until(() => sent.length, sent => sent === 1);
-  const pausing = await app.call<World>(base + "/pause", {});
-  equal(pausing.status, "pausing");
-  equal((await app.send(base + "/clear-index", {})).status, 409);
+  const paused = await app.call<World>(base + "/pause", {});
+  equal(paused.status, "paused");
+  equal(paused.active_book, null);
+  equal(paused.embedded_chunks, 0);
+  equal(activeSignal?.aborted, true);
   unblock();
-  const paused = await until(() => app.world(world.id), current => current.status === "paused");
-  equal(paused.embedded_chunks, 1);
-  equal(paused.can_play, true);
   await app.close();
   const reopened = await fixture(t, provider, app.database);
   await reopened.call(base + "/resume", {});
   await until(() => reopened.world(world.id), current => current.status === "ready");
-  deepEqual(sent, ["title: One | text: abcd", "title: One | text: efgh", "title: One | text: ijkl"]);
+  deepEqual(sent, ["title: One | text: abcd", "title: One | text: abcd", "title: One | text: efgh", "title: One | text: ijkl"]);
 });
 
 test("idle edits revise book order and names, and new books wait for Resume", async t => {
@@ -117,15 +121,16 @@ test("creation is idempotent and local API refuses cross-origin state changes", 
 test("a large index reports progress below one percent after one chunk is embedded and extracted", async t => {
   let release!: () => void;
   const gate = new Promise<void>(resolve => { release = resolve; });
-  let sent = 0;
+  let embeddings = 0;
+  let extractions = 0;
   const provider = {
     ...fakeProvider,
     async embed(model: string, dimensions: number, key: string, text: string, signal: AbortSignal) {
-      if (++sent === 1) await gate;
+      if (++embeddings === 2) await gate;
       return fakeProvider.embed(model, dimensions, key, text, signal);
     },
     async *chat() {
-      await gate;
+      if (++extractions === 2) await gate;
       yield { text: "<|COMPLETE|>" };
     },
   };
@@ -134,7 +139,7 @@ test("a large index reports progress below one percent after one chunk is embedd
   const world = await app.newWorld({ name: "Small chunks", key_ids: [key], max_chunk_size: 100 },
     [["Long.txt", "word ".repeat(4000)]]);
   try {
-    await until(() => sent, value => value === 1);
+    await until(() => embeddings === 2 && extractions === 2, Boolean);
     await app.call(`/api/worlds/${world.id}/pause`, {});
   } finally { release(); }
   const paused = await until(() => app.world(world.id), value => value.status === "paused");
