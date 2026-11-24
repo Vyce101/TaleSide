@@ -3,6 +3,7 @@ import { pythonWorker } from "../python.js";
 export type BookInput = { filename: string; name: string; original: Uint8Array };
 type Chunk = { start: number; end: number; originalStart: number; originalEnd: number };
 type PreparedText = { working: string; encoding: string; bomSize: number; chunks: Chunk[] };
+export type StoredBook = BookInput & { id: string; number: number; working: string; encoding: string; bom_size: number };
 export type PreparedBook = BookInput & PreparedText;
 
 export const DEFAULT_CHUNK_SIZE = 8000;

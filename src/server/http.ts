@@ -12,6 +12,7 @@ import { Profiles } from "./profiles.js";
 import { GraphIndexes } from "./graph/indexes.js";
 import { Tales } from "./tales.js";
 import { fields, identifier, RequestError, requiredText } from "./validation.js";
+import { WorldIndexing } from "./worlds/indexing.js";
 import { Worlds, type Artwork } from "./worlds/worlds.js";
 
 const publicRoot = fileURLToPath(new URL("../../public/", import.meta.url));
@@ -119,7 +120,8 @@ export async function createApplication(databasePath: string, options: Options =
     const provider = options.provider ?? gemini;
     const keys = new ProviderKeys(db, options.protect);
     const graphIndexes = new GraphIndexes(db, databasePath);
-    const worlds = new Worlds(db, keys, provider, graphIndexes);
+    const indexing = new WorldIndexing(db, keys, provider, graphIndexes);
+    const worlds = new Worlds(db, keys, graphIndexes, indexing);
     const profiles = new Profiles(db, keys);
     const personas = new Personas(db);
     const tales = new Tales(worlds, profiles, provider, databasePath, personas);
@@ -253,8 +255,8 @@ export async function createApplication(databasePath: string, options: Options =
             case "rename": worlds.rename(id, input.name); break;
             case "embedding-key": worlds.setKeys(id, "embedding", input.key_ids); break;
             case "retrieval-key": worlds.setKeys(id, "retrieval", input.key_ids); break;
-            case "pause": worlds.pause(id); break;
-            case "resume": worlds.resume(id); break;
+            case "pause": indexing.pause(id); break;
+            case "resume": indexing.resume(id); break;
             case "discard":
               worlds.discard(id);
               tales.discardWorld(id);
@@ -303,7 +305,7 @@ export async function createApplication(databasePath: string, options: Options =
       },
       async close() {
         closing = true;
-        await Promise.all([worlds.close(), tales.close()]);
+        await Promise.all([indexing.close(), tales.close()]);
         await Promise.allSettled(inFlight);
         await graphIndexes.close();
         db.close();
