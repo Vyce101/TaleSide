@@ -1,15 +1,16 @@
+import { createTaleLists, latestTale } from "./tales/lists.js";
 import { createKeysPanel } from "./keys-panel.js";
-import { followLatestDuringResize, keepReadingPosition, scrollToLatest } from "./tales/reading-position.js";
+import { keepReadingPosition, scrollToLatest } from "./tales/reading-position.js";
 import { initializeDialog, outside, previewDialog } from "./dialog.js";
 import { refreshPromptCounts } from "./prompts.js";
 import { createPersonaPanel } from "./personas.js";
-import type { GenerationEvent, Message, Swipe, Tale, TaleSearchResult, TaleSummary, World } from "../shared/types.js";
-import { apiError, keySettings, loadTales, loadWorlds, newId, orderedTales, post, recentTime, removeTale,
-  request, storeTale, storeWorld, taleRoute, tales, worlds } from "./data.js";
+import type { GenerationEvent, Message, Swipe, Tale, TaleSummary, World } from "../shared/types.js";
+import { apiError, keySettings, loadTales, loadWorlds, newId, post,
+  request, storeTale, storeWorld, taleRoute, worlds } from "./data.js";
 import { element } from "./dom.js";
 import { createTaleSettings } from "./tales/settings.js";
-import { fillMessageText, formatDate, formatDuration, homeView, icon, idleView, messageRows, messageTurn, recentCollapsed, recentTaleRows, taleRows, taleView, type Icon } from "./view.js";
-import { historyFrames, setSurfaceVisible, slideFrames } from "./motion.js";
+import { fillMessageText, formatDate, formatDuration, icon, messageRows, messageTurn, taleView, type Icon } from "./view.js";
+import { setSurfaceVisible, slideFrames } from "./motion.js";
 import { clearToast, showToast } from "./toasts.js";
 import { initializeTooltips } from "./tooltips.js";
 import { createWorldEditor } from "./worlds/editor.js";
@@ -40,11 +41,19 @@ export const state = {
   world: undefined as World | undefined,
   tale: undefined as OpenTale | undefined,
   panel: null as Panel | null,
-  expanded: false,
-  history: false,
 };
 const panelButtons = document.querySelectorAll<HTMLButtonElement>(".toolbar [data-panel]");
 
+const taleLists = createTaleLists({
+  workspace,
+  currentWorld: () => state.world,
+  currentTale: () => state.tale,
+  closeDrawer: () => showPanel(null, false),
+  openTale: (world, tale) => openTale(world, tale, false),
+  openListedTale: (world, tale) => worldEditor.leaveWorldSetup(() => { void openTale(world, tale, false); }),
+  goHome: () => navigate(),
+  forgetDraft: id => { drafts.delete(id); },
+});
 export const worldEditor = createWorldEditor({
   currentWorld: () => state.world,
   isOpen: () => state.panel === "worlds",
@@ -102,7 +111,7 @@ export function showPanel(next: Panel | null, returnFocus = true) {
   for (const button of panelButtons) {
     if (!button.disabled) button.setAttribute("aria-expanded", String(button.dataset.panel === next));
   }
-  if (next && state.history) setHistory(false);
+  if (next && taleLists.historyOpen) taleLists.setHistory(false);
 
   if (previous) {
     setSurfaceVisible(drawers[previous], false, slideFrames, () => {
@@ -184,57 +193,8 @@ export function refreshComposer() {
   button.dataset.tooltip = label;
 }
 
-let homeQuery = "";
-let searchResults: TaleSearchResult[] = [];
-let searchTimer: number | undefined;
-let searchRequest: AbortController | undefined;
-let searchedWorldNames = "";
-
-function cancelTaleSearch() {
-  window.clearTimeout(searchTimer);
-  searchRequest?.abort();
-  searchRequest = undefined;
-  searchResults = [];
-}
-
-function updateTaleSearch(input: HTMLInputElement, debounce = true) {
-  cancelTaleSearch();
-  const world = input.id === "world-tale-search" ? state.world : undefined;
-  const list = element(world ? "history-list" : "recent-tales");
-  const more = workspace.querySelector<HTMLButtonElement>('[data-action="expand-recent"]');
-  const query = input.value.trim();
-  if (more) more.hidden = !!query || tales.length <= recentCollapsed;
-  if (!query) {
-    list.removeAttribute("aria-busy");
-    list.innerHTML = world ? taleRows(orderedTales(world), state.tale?.id)
-      : recentTaleRows(orderedTales(), state.expanded, false);
-    return;
-  }
-
-  list.setAttribute("aria-busy", "true");
-  const search = async () => {
-    const controller = new AbortController();
-    searchRequest = controller;
-    const params = new URLSearchParams({ q: query });
-    if (world) params.set("world", world.id);
-    try {
-      const results = await request<TaleSearchResult[]>(`/api/tales/search?${params}`, undefined, controller.signal);
-      if (controller.signal.aborted || !input.isConnected) return;
-      searchResults = results;
-      list.innerHTML = world && results.length ? taleRows(results, state.tale?.id)
-        : recentTaleRows(results, state.expanded, true);
-    } catch (error) {
-      if (!controller.signal.aborted && input.isConnected) showToast(error, { key: "tale-search" });
-    } finally {
-      if (!controller.signal.aborted) list.removeAttribute("aria-busy");
-    }
-  };
-  if (debounce) searchTimer = window.setTimeout(() => void search(), 175);
-  else void search();
-}
-
 function renderWorkspace() {
-  cancelTaleSearch();
+  taleLists.reset();
   const { tale, world } = state;
   element("home-button").setAttribute("aria-current", String(!world));
   if (tale && world) {
@@ -242,12 +202,7 @@ function renderWorkspace() {
     element<HTMLTextAreaElement>("message-input").value = drafts.get(tale.id) ?? "";
     renderMessages();
     scrollToLatest();
-  } else {
-    workspace.innerHTML = idleView(homeView(orderedTales(), state.expanded));
-    const input = element<HTMLInputElement>("home-tale-search");
-    input.value = homeQuery;
-    if (homeQuery.trim()) updateTaleSearch(input, false);
-  }
+  } else taleLists.showHome();
 }
 
 function setWorkspace(world?: World, tale?: OpenTale) {
@@ -257,7 +212,6 @@ function setWorkspace(world?: World, tale?: OpenTale) {
   state.tale = tale;
   refreshPromptCounts(tale?.prompt_counts);
   if (world) void personas.refreshPersonas();
-  state.history = false;
   renderWorkspace();
 }
 
@@ -266,10 +220,6 @@ export function navigate(world?: World, tale?: OpenTale) {
   showPanel(null, false);
   setWorkspace(world, tale);
   element("screen-title").focus({ preventScroll: true });
-}
-
-function latestTale(world: World) {
-  return tales.filter(tale => tale.world_id === world.id).sort((a, b) => recentTime(b) - recentTime(a))[0];
 }
 
 function draftOpening(world: World, previous?: Message): Message[] {
@@ -324,80 +274,6 @@ function newTale() {
   element("message-input").focus({ preventScroll: true });
 }
 
-function renderHistory() {
-  updateTaleSearch(element<HTMLInputElement>("world-tale-search"), false);
-}
-
-function setHistory(show: boolean, returnFocus = false) {
-  const toggle = workspace.querySelector<HTMLButtonElement>('[data-action="toggle-history"]');
-  if (!toggle) return;
-  if (show && state.panel) showPanel(null, false);
-  if (show) renderHistory();
-  else cancelTaleSearch();
-  const history = element("tale-history");
-  const transcript = element("transcript");
-  const followingLatest = transcript.scrollHeight - transcript.clientHeight - transcript.scrollTop < 3;
-  keepReadingPosition(() => {
-    state.history = show;
-    const motion = setSurfaceVisible(history, show, historyFrames);
-    if (motion && followingLatest) followLatestDuringResize(transcript, motion);
-    toggle.setAttribute("aria-expanded", String(show));
-  });
-  if (show) element("history-list").focus({ preventScroll: true });
-  if (returnFocus) toggle.focus({ preventScroll: true });
-}
-
-function refreshTaleLists() {
-  if (state.history) renderHistory();
-  if (!state.tale) {
-    updateTaleSearch(element<HTMLInputElement>("home-tale-search"), false);
-  }
-}
-
-function restoreRowFocus(button: HTMLButtonElement) {
-  if (button.isConnected) {
-    button.focus({ preventScroll: true });
-    return;
-  }
-  const { action, id } = button.dataset;
-  const replacement = [...workspace.querySelectorAll<HTMLButtonElement>("[data-action]")]
-    .find(candidate => candidate.getClientRects().length
-      && candidate.dataset.action === action && candidate.dataset.id === id);
-  (replacement ?? element("screen-title")).focus({ preventScroll: true });
-}
-
-function editTale(action: "rename" | "delete", tale: TaleSummary, button: HTMLButtonElement) {
-  const isRename = action === "rename";
-  const options = isRename
-    ? { title: "Rename Tale", initialName: tale.title, nameLabel: "Tale name" }
-    : { title: "Delete Tale?", detail: `Permanently remove “${tale.title}” and its messages?`, danger: true };
-  previewDialog(options, async name => {
-    try {
-      const open = tale.id === state.tale?.id ? state.tale : undefined;
-      if (!open?.draft) await request(`${taleRoute(tale)}/${action}`, isRename ? { title: name } : {});
-      if (isRename) {
-        tale.title = name;
-        if (open) {
-          open.title = name;
-          const heading = element("screen-title");
-          heading.textContent = name;
-          heading.dataset.tooltip = name;
-        }
-        refreshTaleLists();
-      } else {
-        removeTale(tale.id);
-        drafts.delete(tale.id);
-        const world = state.world;
-        if (open && world) {
-          const latest = latestTale(world);
-          if (latest) await openTale(world, latest, false);
-          else navigate();
-        } else refreshTaleLists();
-      }
-    } catch (error) { showToast(error); }
-  }, () => restoreRowFocus(button));
-}
-
 function setSignatureWarning(value: boolean, checkbox = element<HTMLInputElement>("warn-signatures")) {
   const previous = warnSignatures;
   warnSignatures = value;
@@ -439,7 +315,7 @@ async function changeTurn(tale: OpenTale, message: Message, action: string, deta
       if (action === "branch") navigate(state.world, updated);
       else Object.assign(tale, updated);
     }
-    refreshTaleLists();
+    taleLists.refreshTaleLists();
     return true;
   } catch (error) {
     if (state.tale === tale) turnError(message.id, error);
@@ -716,7 +592,7 @@ async function sendOrStop(rewrite?: { message: Message; mode: "regenerate" | "sw
       if (state.tale === tale) keepReadingPosition(renderMessages, !rewrite);
     }
     if (reply.accepted || reply.controller.signal.aborted) {
-      void loadTales().then(refreshTaleLists, error => showToast(error));
+      void loadTales().then(taleLists.refreshTaleLists, error => showToast(error));
     }
   }
 }
@@ -738,12 +614,7 @@ export function syncWorlds() {
     }
   }
   lastWorlds = new Map(worlds.map(world => [world.id, world]));
-  const worldNames = JSON.stringify(worlds.map(world => [world.id, world.name]).sort());
-  if (searchedWorldNames !== worldNames) {
-    searchedWorldNames = worldNames;
-    const input = document.querySelector<HTMLInputElement>("#home-tale-search");
-    if (input?.value.trim()) updateTaleSearch(input, false);
-  }
+  taleLists.refreshWorldNames();
   if (state.world) {
     const previous = state.world;
     const world = worlds.find(item => item.id === previous.id);
@@ -762,7 +633,7 @@ export function syncWorlds() {
 
 initializeDialog(event => {
   if (state.panel && outside(event, drawers[state.panel])) showPanel(null);
-  if (state.history && outside(event, element("tale-history"))) setHistory(false, true);
+  if (taleLists.historyOpen && outside(event, element("tale-history"))) taleLists.setHistory(false, true);
 });
 
 for (const button of panelButtons) {
@@ -779,12 +650,12 @@ for (const drawer of Object.values(drawers)) {
   drawer.querySelector(".panel-back")!.addEventListener("click", () => showPanel(null));
 }
 document.addEventListener("click", event => {
-  if ((!state.panel && !state.history) || !(event.target instanceof Element)
+  if ((!state.panel && !taleLists.historyOpen) || !(event.target instanceof Element)
     || event.target.closest(".toolbar button, dialog[open], #toasts")) return;
   if (state.panel && drawers[state.panel].contains(event.target)) return;
-  if (state.history && event.target.closest('#tale-history, [data-action="toggle-history"]')) return;
+  if (taleLists.historyOpen && event.target.closest('#tale-history, [data-action="toggle-history"]')) return;
   const clickedControl = event.target.closest("button, a[href], input, select, textarea, label, summary, [tabindex], [contenteditable=true]");
-  if (state.history) setHistory(false, !clickedControl);
+  if (taleLists.historyOpen) taleLists.setHistory(false, !clickedControl);
   else showPanel(null, !clickedControl);
 }, { capture: true });
 narrow.addEventListener("change", () => {
@@ -802,45 +673,19 @@ document.addEventListener("click", event => {
   if (!button) return;
   const { action, id } = button.dataset;
   if (button.closest(".turn")) { void handleTurn(button); return; }
-  const tale = id && state.tale?.id === id ? state.tale : tales.find(entry => entry.id === id) ?? searchResults.find(entry => entry.id === id);
   switch (action) {
     case "open-world": {
       const world = worlds.find(entry => entry.id === id);
       if (world) void enterWorld(world);
       break;
     }
-    case "open-tale": {
-      const world = worlds.find(item => item.id === tale?.world_id);
-      if (tale && world) worldEditor.leaveWorldSetup(() => { void openTale(world, tale, false); });
-      break;
-    }
     case "new-tale": newTale(); break;
     case "close-tale": navigate(); break;
-    case "toggle-history": setHistory(!state.history); break;
-    case "expand-recent":
-      state.expanded = !state.expanded;
-      renderWorkspace();
-      if (state.expanded) workspace.querySelectorAll<HTMLButtonElement>(".tale-link")[recentCollapsed]?.focus();
-      else restoreRowFocus(button);
-      break;
-    case "pin-tale":
-      if (tale) {
-        void request(`${taleRoute(tale)}/pin`, { pinned: !tale.pinned }).then(() => {
-          tale.pinned = !tale.pinned;
-          storeTale(tale);
-          refreshTaleLists();
-          restoreRowFocus(button);
-        }).catch(error => showToast(error));
-      }
-      break;
-    case "rename-tale":
-    case "delete-tale":
-      if (tale) editTale(action === "rename-tale" ? "rename" : "delete", tale, button);
-      break;
     default:
-      worldEditor.handleWorldAction(action, id, button);
+      if (!taleLists.handleAction(action, id, button)) worldEditor.handleWorldAction(action, id, button);
   }
 });
+
 workspace.addEventListener("submit", event => {
   if (!(event.target instanceof HTMLFormElement) || event.target.id !== "composer") return;
   event.preventDefault();
@@ -849,10 +694,6 @@ workspace.addEventListener("submit", event => {
 
 workspace.addEventListener("input", event => {
   const input = event.target;
-  if (input instanceof HTMLInputElement && ["home-tale-search", "world-tale-search"].includes(input.id)) {
-    if (input.id === "home-tale-search") homeQuery = input.value;
-    updateTaleSearch(input);
-  }
   if (state.tale && input instanceof HTMLTextAreaElement && input.id === "message-input") {
     drafts.set(state.tale.id, input.value);
   }
@@ -864,7 +705,7 @@ document.addEventListener("wheel", event => {
   const origin = event.target;
   if (!(origin instanceof Element) || origin.closest("textarea, select, #toasts")) return;
   const scroller = state.panel ? drawers[state.panel].querySelector<HTMLElement>(".panel-content")
-    : state.history ? document.getElementById("history-list")
+    : taleLists.historyOpen ? document.getElementById("history-list")
     : document.getElementById("transcript") ?? workspace.querySelector<HTMLElement>(".home-view");
   if (!scroller || scroller.contains(origin) || scroller.scrollHeight <= scroller.clientHeight) return;
   const unit = event.deltaMode === WheelEvent.DOM_DELTA_LINE ? 16
@@ -876,7 +717,7 @@ document.addEventListener("wheel", event => {
 document.addEventListener("keydown", event => {
   if (event.key === "Escape" && !document.querySelector("dialog[open]")) {
     if (state.panel) showPanel(null);
-    else if (state.history) setHistory(false, true);
+    else if (taleLists.historyOpen) taleLists.setHistory(false, true);
   }
   const input = event.target;
   if (event.key === "Enter" && !event.shiftKey && !event.isComposing
@@ -890,6 +731,7 @@ document.addEventListener("keydown", event => {
 window.addEventListener("pagehide", () => { if (activeReply) stopReply(activeReply, true); });
 initializeTooltips();
 keysPanel.initialize();
+taleLists.initialize();
 const warning = element<HTMLInputElement>("warn-signatures");
 warning.addEventListener("change", () => setSignatureWarning(warning.checked, warning));
 void request<{ warn_signatures: boolean }>("/api/app-settings").then(saved => {
@@ -899,7 +741,7 @@ void request<{ warn_signatures: boolean }>("/api/app-settings").then(saved => {
 renderWorkspace();
 void Promise.all([loadWorlds(), loadTales(), taleSettings.initialize(), keysPanel.refreshKeys()]).then(() => {
   syncWorlds();
-  refreshTaleLists();
+  taleLists.refreshTaleLists();
 }).catch(error => showToast(error));
 
 let polling = false;
