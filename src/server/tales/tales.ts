@@ -1,15 +1,15 @@
-import { FIRST_MESSAGE, WORLD_DESCRIPTION } from "../shared/story-defaults.js";
-import { Personas } from "./personas.js";
-import type { ChatSettings, GenerationEvent, Message, Persona, PromptCounts, Swipe, Tale, TaleSummary } from "../shared/types.js";
-import { selectedKeys } from "./key-selections.js";
-import { all, get, run, transaction } from "./sqlite.js";
-import { CHAT_MODELS, GEMMA } from "../shared/models.js";
-import { InputTooLarge, tokenBody, type GeminiClient, type Part } from "./gemini.js";
-import { Profiles } from "./profiles.js";
+import { FIRST_MESSAGE, WORLD_DESCRIPTION } from "../../shared/story-defaults.js";
+import { Personas } from "../personas.js";
+import type { ChatSettings, GenerationEvent, Message, Persona, PromptCounts, Swipe, Tale, TaleSummary } from "../../shared/types.js";
+import { selectedKeys } from "../key-selections.js";
+import { all, get, run, transaction } from "../sqlite.js";
+import { CHAT_MODELS, GEMMA } from "../../shared/models.js";
+import { InputTooLarge, tokenBody, type GeminiClient, type Part } from "../gemini.js";
+import { Profiles } from "../profiles.js";
 import { openRetrieval, retrievalVector, type HistoryEntry } from "./retrieval.js";
-import { identifier, makeId, RequestError, requiredText, whole } from "./validation.js";
-import { searchTales } from "./tale-search.js";
-import { Worlds } from "./worlds/worlds.js";
+import { identifier, makeId, RequestError, requiredText, whole } from "../validation.js";
+import { searchTales } from "./search.js";
+import { Worlds } from "../worlds/worlds.js";
 
 type Active = { id: string; worldId: string; controller: AbortController; stopped: boolean; message?: Message; done: Promise<void> };
 type TaleRow = Omit<TaleSummary, "pinned"> & { pinned: number };

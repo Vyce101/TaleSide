@@ -10,7 +10,7 @@ import { gemini, type GeminiClient } from "./gemini.js";
 import { ProviderKeys, dpapi } from "./keys.js";
 import { Profiles } from "./profiles.js";
 import { GraphIndexes } from "./graph/indexes.js";
-import { Tales } from "./tales.js";
+import { Tales } from "./tales/tales.js";
 import { fields, identifier, RequestError, requiredText } from "./validation.js";
 import { WorldIndexing } from "./worlds/indexing.js";
 import { Worlds, type Artwork } from "./worlds/worlds.js";
