@@ -176,24 +176,31 @@ export class Worlds {
   editBooks(id: string, action: string, input: Record<string, unknown>) {
     const world = this.editable(id, this.requireRevision(input.book_revision));
     transaction(this.db, () => {
-      const ids = all<{ id: string }>(this.db, "SELECT id FROM books WHERE world_id = ? ORDER BY number", id).map(book => book.id);
+      const savedBookIds = all<{ id: string }>(this.db, "SELECT id FROM books WHERE world_id = ? ORDER BY number", id).map(book => book.id);
       if (action === "book-order") {
-        const order: unknown = input.book_ids;
-        if (!Array.isArray(order) || order.length !== ids.length || new Set(order).size !== ids.length || order.some(book => !ids.includes(book))) {
+        const requestedOrder: unknown = input.book_ids;
+        if (!Array.isArray(requestedOrder) || requestedOrder.length !== savedBookIds.length) {
           throw new RequestError("Provide every saved book in the new order.");
         }
-        if (order.every((book, index) => book === ids[index])) return;
-        this.renumber(id, order);
+        const uniqueBookIds = new Set(requestedOrder);
+        const hasEverySavedBook = uniqueBookIds.size === savedBookIds.length && savedBookIds.every(bookId => uniqueBookIds.has(bookId));
+        if (!hasEverySavedBook) throw new RequestError("Provide every saved book in the new order.");
+        if (requestedOrder.every((bookId, index) => bookId === savedBookIds[index])) return;
+        this.renumber(id, requestedOrder);
       } else {
-        const book = identifier(input.book_id);
-        if (!ids.includes(book)) throw new RequestError("Choose a book in this World.");
+        const bookId = identifier(input.book_id);
+        if (!savedBookIds.includes(bookId)) throw new RequestError("Choose a book in this World.");
         if (action === "rename-book") {
-          run(this.db, "UPDATE books SET name = ? WHERE id = ?", requiredText(input.name, "Enter a book name up to 100 characters.", TITLE_LIMIT), book);
+          run(this.db, "UPDATE books SET name = ? WHERE id = ?", requiredText(input.name, "Enter a book name up to 100 characters.", TITLE_LIMIT), bookId);
         } else {
-          run(this.db, "DELETE FROM books WHERE id = ?", book);
-          this.renumber(id, ids.filter(candidate => candidate !== book));
-          const state = ids.length === 1 ? "unindexed" : world.status !== "unindexed" && !this.indexing.hasPendingPassages(world) ? "ready" : world.status;
-          run(this.db, "UPDATE worlds SET status = ?, error = CASE WHEN ? IN ('ready', 'unindexed') THEN NULL ELSE error END WHERE id = ?", state, state, id);
+          run(this.db, "DELETE FROM books WHERE id = ?", bookId);
+          const remainingBookIds = savedBookIds.filter(candidate => candidate !== bookId);
+          this.renumber(id, remainingBookIds);
+          let nextStatus = world.status;
+          if (!remainingBookIds.length) nextStatus = "unindexed";
+          else if (world.status !== "unindexed" && !this.indexing.hasPendingPassages(world)) nextStatus = "ready";
+          run(this.db, "UPDATE worlds SET status = ?, error = CASE WHEN ? IN ('ready', 'unindexed') THEN NULL ELSE error END WHERE id = ?",
+            nextStatus, nextStatus, id);
         }
       }
       if (world.graph_settings && action !== "rename-book") {
