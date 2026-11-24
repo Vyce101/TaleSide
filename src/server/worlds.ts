@@ -6,9 +6,9 @@ import { DEFAULT_CHUNK_SIZE, decode, normalizeLines, prepareBooks, type BookInpu
 import { saveSelection, selectedKeys } from "./key-selections.js";
 import { all, get, run, transaction } from "./sqlite.js";
 import { EMBEDDING_MODEL, EMBEDDING_MODELS, encodeVector, tokenBody, type GeminiClient } from "./gemini.js";
-import { GraphJobs, GraphRequestFailed, readGraphSettings, type GraphWorldFields } from "./graph-jobs.js";
-import { MAX_GRAPH_ATTEMPTS } from "./graph-extraction.js";
-import type { GraphIndexes } from "./graph-indexes.js";
+import { GraphJobs, GraphRequestFailed, readGraphSettings, type GraphWorldFields } from "./graph/jobs.js";
+import { MAX_GRAPH_ATTEMPTS } from "./graph/extraction.js";
+import type { GraphIndexes } from "./graph/indexes.js";
 import { ProviderKeys } from "./keys.js";
 import { identifier, makeId, RequestError, requiredText, whole } from "./validation.js";
 

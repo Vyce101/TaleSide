@@ -1,6 +1,6 @@
 import type { ChatSettings, PromptCounts } from "../shared/types.js";
 import { GEMMA, GEMMA_SAMPLING } from "../shared/models.js";
-import type { GraphContext } from "./graph-worker.js";
+import type { GraphContext } from "./graph/worker.js";
 import { InputTooLarge, LEGACY_EMBEDDING } from "./gemini.js";
 import { pythonWorker } from "./python.js";
 import type { WorldRow } from "./worlds.js";

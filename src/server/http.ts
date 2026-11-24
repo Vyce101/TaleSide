@@ -9,7 +9,7 @@ import { openDatabase } from "./database.js";
 import { gemini, type GeminiClient } from "./gemini.js";
 import { ProviderKeys, dpapi } from "./keys.js";
 import { Profiles } from "./profiles.js";
-import { GraphIndexes } from "./graph-indexes.js";
+import { GraphIndexes } from "./graph/indexes.js";
 import { Tales } from "./tales.js";
 import { fields, identifier, RequestError, requiredText } from "./validation.js";
 import { Worlds, type Artwork } from "./worlds.js";

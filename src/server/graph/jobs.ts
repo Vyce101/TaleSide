@@ -1,18 +1,18 @@
 import type { DatabaseSync } from "node:sqlite";
 import { setImmediate as yieldToServer } from "node:timers/promises";
-import { CHAT_MODELS } from "../shared/models.js";
-import type { GraphProgress, GraphSettings, World } from "../shared/types.js";
-import { selectedKeys } from "./key-selections.js";
-import { all, get, run, transaction } from "./sqlite.js";
-import { encodeVector, type GeminiClient } from "./gemini.js";
+import { CHAT_MODELS } from "../../shared/models.js";
+import type { GraphProgress, GraphSettings, World } from "../../shared/types.js";
+import { selectedKeys } from "../key-selections.js";
+import { all, get, run, transaction } from "../sqlite.js";
+import { encodeVector, type GeminiClient } from "../gemini.js";
 import {
   consolidationPrompt, extractionPrompt, graphRequest, MAX_GRAPH_ATTEMPTS,
   newRecords, parseConsolidation, parseExtraction, type Extraction,
-} from "./graph-extraction.js";
-import { resolveGraph } from "./graph-resolution.js";
-import type { GraphIndexes } from "./graph-indexes.js";
-import type { ProviderKeys } from "./keys.js";
-import { fields, RequestError, whole } from "./validation.js";
+} from "./extraction.js";
+import { resolveGraph } from "./resolution.js";
+import type { GraphIndexes } from "./indexes.js";
+import type { ProviderKeys } from "../keys.js";
+import { fields, RequestError, whole } from "../validation.js";
 
 export type GraphWorldFields = { graph_settings: string | null; graph_published: number | null;
   graph_base: number | null; graph_building: number | null };

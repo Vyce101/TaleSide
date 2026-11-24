@@ -1,11 +1,11 @@
 import { closeSync, fsyncSync, mkdirSync, openSync, renameSync, unlinkSync, writeSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { parentPort, workerData, type MessagePort } from "node:worker_threads";
-import type { ChatSettings } from "../shared/types.js";
-import { normalizedName } from "./graph-extraction.js";
-import { graphRecordTitle } from "./graph-jobs.js";
-import { graphPaths } from "./graph-indexes.js";
-import { VectorIndex } from "./graph-vector-index.js";
+import type { ChatSettings } from "../../shared/types.js";
+import { normalizedName } from "./extraction.js";
+import { graphRecordTitle } from "./jobs.js";
+import { graphPaths } from "./indexes.js";
+import { VectorIndex } from "./vector-index.js";
 
 const HUB_EDGES = 150;
 const HOP_WIDTH = 20;

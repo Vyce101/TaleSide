@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { entityIdentity, type Endpoint, type Extraction } from "./graph-extraction.js";
+import { entityIdentity, type Endpoint, type Extraction } from "./extraction.js";
 
 type Note = { book: number; chunk: number; description: string };
 type Entity = Endpoint & { notes: Note[] };

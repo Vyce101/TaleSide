@@ -1,5 +1,5 @@
-import { GEMMA, GEMMA_SAMPLING } from "../shared/models.js";
-import type { GraphSettings } from "../shared/types.js";
+import { GEMMA, GEMMA_SAMPLING } from "../../shared/models.js";
+import type { GraphSettings } from "../../shared/types.js";
 
 const ENTITY_TYPES = ["CHARACTER", "LOCATION", "FACTION/GROUP", "SYSTEM_OR_WORLD_RULE", "ITEM", "EVENT"] as const;
 type EntityType = typeof ENTITY_TYPES[number];

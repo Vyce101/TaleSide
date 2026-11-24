@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { backup, DatabaseSync } from "node:sqlite";
 import { installTaleSearch } from "./tale-search.js";
-import { graphSchema } from "./graph-schema.js";
+import { graphSchema } from "./graph/schema.js";
 import { selections } from "./key-selections.js";
 import { all, get, transaction } from "./sqlite.js";
 

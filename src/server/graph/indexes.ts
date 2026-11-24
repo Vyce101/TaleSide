@@ -3,8 +3,8 @@ import { existsSync, readdirSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import { MessageChannel, Worker } from "node:worker_threads";
-import { all, get, run } from "./sqlite.js";
-import type { GraphContext, GraphQuery } from "./graph-worker.js";
+import { all, get, run } from "../sqlite.js";
+import type { GraphContext, GraphQuery } from "./worker.js";
 
 export function graphPaths(directory: string, id: number) {
   return {
@@ -33,7 +33,7 @@ export class GraphIndexes {
   }
 
   private worker(generation: number) {
-    return new Worker(new URL("./graph-worker.js", import.meta.url),
+    return new Worker(new URL("./worker.js", import.meta.url),
       { workerData: { database: this.database, directory: this.directory, generation } });
   }
 
