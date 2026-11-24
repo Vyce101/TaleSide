@@ -86,7 +86,7 @@ export class GraphJobs {
       try {
         const { readKey } = this.keys.attempts("extraction", keys, signal).next().value!;
         let answer = "";
-        for await (const part of this.provider.chat(model.id, readKey(), payload, signal)) {
+        for await (const part of this.provider.chat(model.id, readKey(), payload, signal, { requireComplete: true })) {
           signal.throwIfAborted();
           if (!part.thought && typeof part.text === "string") answer += part.text;
         }

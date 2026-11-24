@@ -8,16 +8,18 @@ export const EMBEDDING_MODELS: EmbeddingModel[] = [
   { id: LEGACY_EMBEDDING, dimensions: 3072, max_token_limit: 2040 },
 ];
 export const INPUT_LIMIT_ERROR = "The full request exceeds the input token limit.";
+const STREAM_TIMEOUT_MS = 300_000;
 
 export class InputTooLarge extends Error {
   constructor() { super(INPUT_LIMIT_ERROR); }
 }
 
 export type Part = { text?: string; thought?: boolean; thoughtSignature?: string };
+type ChatOptions = { requireComplete?: boolean };
 export type GeminiClient = {
   count: (model: string, key: string, body: object, signal: AbortSignal) => Promise<number>;
   embed: (model: string, dimensions: number, key: string, text: string, signal: AbortSignal) => Promise<number[]>;
-  chat: (model: string, key: string, body: object, signal: AbortSignal) => AsyncIterable<Part>;
+  chat: (model: string, key: string, body: object, signal: AbortSignal, options?: ChatOptions) => AsyncIterable<Part>;
 };
 
 class ProviderError extends RequestError {
@@ -61,7 +63,7 @@ async function request(model: string, key: string, method: string, body: object,
   try {
     response = await fetch(url, {
       method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": key },
-      body: JSON.stringify(body), signal: AbortSignal.any([signal, AbortSignal.timeout(stream ? 300000 : 30000)]),
+      body: JSON.stringify(body), signal: stream ? signal : AbortSignal.any([signal, AbortSignal.timeout(30_000)]),
     });
   } catch (error) {
     if (signal.aborted) throw error;
@@ -111,14 +113,18 @@ export const gemini: GeminiClient = {
     encodeVector(values, dimensions);
     return values;
   },
-  async *chat(model, key, body, signal) {
-    const response = await request(model, key, "streamGenerateContent", body, signal, true);
-    const reader = response.body!.pipeThrough(new TextDecoderStream()).getReader();
-    let buffer = "";
-    let errorEvent = false;
+  async *chat(model, key, body, signal, options) {
+    const timeout = AbortSignal.timeout(STREAM_TIMEOUT_MS);
+    const requestSignal = AbortSignal.any([signal, timeout]);
+    let reader: ReadableStreamDefaultReader<string> | undefined;
     try {
+      const response = await request(model, key, "streamGenerateContent", body, requestSignal, true);
+      reader = response.body!.pipeThrough(new TextDecoderStream()).getReader();
+      let buffer = "";
+      let errorEvent = false;
       for (;;) {
         const { done, value } = await reader.read();
+        requestSignal.throwIfAborted();
         buffer += done ? "\n" : value;
         const lines = buffer.split("\n");
         buffer = lines.pop()!;
@@ -130,12 +136,27 @@ export const gemini: GeminiClient = {
           if (!payload || payload === "[DONE]") continue;
           const packet = JSON.parse(payload);
           if (errorEvent || packet.error) throw new ProviderError(0, packet.error ?? packet, key);
-          for (const part of packet.candidates?.[0]?.content?.parts ?? []) yield part;
+          const candidate = packet.candidates?.[0];
+          if (options?.requireComplete) {
+            const blocked = packet.promptFeedback?.blockReason;
+            const finish = candidate?.finishReason;
+            if (blocked && blocked !== "BLOCK_REASON_UNSPECIFIED") {
+              throw new ProviderError(502, `Gemini blocked the prompt (${blocked}).`, key);
+            }
+            if (finish && finish !== "STOP" && finish !== "FINISH_REASON_UNSPECIFIED") {
+              throw new ProviderError(502, `Gemini stopped generation (${finish}).`, key);
+            }
+          }
+          for (const part of candidate?.content?.parts ?? []) yield part;
         }
         if (done) break;
       }
+    } catch (error) {
+      signal.throwIfAborted();
+      if (timeout.aborted) throw new RequestError("Gemini timed out while generating a response.", 504);
+      throw error;
     } finally {
-      await reader.cancel().catch(() => {});
+      await reader?.cancel().catch(() => {});
     }
   },
 };

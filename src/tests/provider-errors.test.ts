@@ -91,6 +91,30 @@ test("Gemini forwards HTTP and streaming provider errors with credentials remove
   deepEqual(parts, ["Partial"]);
 });
 
+test("graph requests report Gemini block, cutoff, and timeout reasons", async t => {
+  const signal = new AbortController().signal;
+  const timeout = new AbortController();
+  t.mock.method(AbortSignal, "timeout", () => timeout.signal);
+  let packet: object = { promptFeedback: { blockReason: "PROHIBITED_CONTENT" } };
+  const fetchMock = t.mock.method(globalThis, "fetch", async () => new Response(`data: ${JSON.stringify(packet)}\n\n`));
+  async function extract() {
+    for await (const part of gemini.chat("fixture", "fixture-key", {}, signal, { requireComplete: true })) {
+      equal(part.text, undefined);
+    }
+  }
+
+  await rejects(extract, /Gemini blocked the prompt \(PROHIBITED_CONTENT\)/);
+  packet = { candidates: [{ finishReason: "MAX_TOKENS" }] };
+  await rejects(extract, /Gemini stopped generation \(MAX_TOKENS\)/);
+  fetchMock.mock.mockImplementation(async () => new Response(new ReadableStream({
+    start(controller) {
+      timeout.abort(new DOMException("Timed out", "TimeoutError"));
+      controller.error(timeout.signal.reason);
+    },
+  })));
+  await rejects(extract, { status: 504, message: "Gemini timed out while generating a response." });
+});
+
 test("indexing cools down a failed key after another key succeeds", async t => {
   let rejected = 0;
   const app = await fixture(t, {
