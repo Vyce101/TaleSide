@@ -1,18 +1,19 @@
 import type { DatabaseSync } from "node:sqlite";
-import type { GraphIndexes } from "../graph/indexes.js";
-import type { ProviderKeys } from "../keys.js";
+import { GEMMA } from "../../shared/models.js";
+import type { Part } from "../gemini.js";
 import { FIRST_MESSAGE, WORLD_DESCRIPTION } from "../../shared/story-defaults.js";
-import { Personas } from "../personas.js";
 import type { ChatSettings, GenerationEvent, Message, Persona, PromptCounts, Swipe, Tale, TaleSummary } from "../../shared/types.js";
+import type { GeminiClient } from "../gemini.js";
+import type { GraphIndexes } from "../graph/indexes.js";
 import { selectedKeys } from "../key-selections.js";
+import type { ProviderKeys } from "../keys.js";
+import type { Personas } from "../personas.js";
+import type { Profiles } from "../profiles.js";
 import { all, get, run, transaction } from "../sqlite.js";
-import { CHAT_MODELS, GEMMA } from "../../shared/models.js";
-import { InputTooLarge, tokenBody, type GeminiClient, type Part } from "../gemini.js";
-import { Profiles } from "../profiles.js";
-import { openRetrieval, retrievalVector, type HistoryEntry } from "./retrieval.js";
 import { identifier, makeId, RequestError, requiredText, whole } from "../validation.js";
+import type { Worlds } from "../worlds/worlds.js";
+import { openReplyContext } from "./reply-context.js";
 import { searchTales } from "./search.js";
-import { Worlds } from "../worlds/worlds.js";
 
 type Active = { id: string; worldId: string; controller: AbortController; stopped: boolean; message?: Message; done: Promise<void> };
 type TaleRow = Omit<TaleSummary, "pinned"> & { pinned: number };
@@ -313,22 +314,14 @@ export class Tales {
     const signal = active.controller.signal;
     const worldId = active.worldId;
     const started = performance.now();
-    const snapshot = await openRetrieval(this.databasePath, worldId, signal);
-    let graph: ReturnType<typeof this.graphIndexes.capture>;
+    const context = await openReplyContext({
+      databasePath: this.databasePath, worldId, readWorld: () => this.worlds.require(worldId), keys: this.keys,
+      provider: this.provider, graphIndexes: this.graphIndexes, settings, retrievalKeys, signal,
+    });
     const signedParts: Part[] = [];
     let failure: string | undefined;
     let promptCounts: PromptCounts | undefined;
     try {
-      const { world } = snapshot;
-      const current = this.worlds.require(worldId);
-      if (current.index_number !== world.index_number || current.book_revision !== world.book_revision || current.name !== world.name) {
-        throw new RequestError("This World changed. Send the message again.", 409);
-      }
-      this.keys.validate(settings.chat_key_ids);
-      if (retrievalKeys.length) {
-        this.keys.validate(retrievalKeys);
-        graph = this.graphIndexes.capture(current.graph_published);
-      }
       const persona = this.personas.resolve(worldId, title === undefined ? this.personaSelection(id) : input.personaSelection);
       let user: Message | undefined;
       let assistant: Message;
@@ -353,28 +346,8 @@ export class Tales {
       }
       active.message = assistant;
       emit({ type: "accepted", tale: this.detail(worldId, id), user, assistant });
-      const history: HistoryEntry[] = rewrite ? input.history.filter(row => row.content)
-        : this.rows(id).filter(row => row.content);
-      const retrievalHistory = (rewrite ? input.history : this.rows(id)).filter(row => row.content && !row.opening);
-      const keys = this.keys;
-      const query = retrievalKeys.length ? await retrievalVector(world, retrievalHistory.slice(-settings.messages_to_embed),
-        text => keys.retry("retrieval", retrievalKeys, signal, key => this.provider.count(world.model, key, tokenBody(text), signal)),
-        text => keys.retry("retrieval", retrievalKeys, signal, key => this.provider.embed(world.model, world.dimensions, key, text, signal))) : [];
-      const graphContext = graph && query.length ? await graph.search({
-        vector: query, text: retrievalHistory.filter(message => message.role === "user").at(-1)?.content ?? "",
-        graph_budget: settings.graph_budget, graph_matches: settings.graph_matches,
-        graph_hops: settings.graph_hops, graph_edges: settings.graph_edges,
-      }, signal) : undefined;
-      graph?.close();
-      const { payload, prompt_counts } = await snapshot.build(query, history, settings, { description, persona: {
-        name: persona.name, description: persona.description,
-      } }, graphContext);
-      snapshot.close();
-      if (settings.input_limit < CHAT_MODELS.find(model => model.id === settings.model)!.context_limit) {
-        const full = { generateContentRequest: { model: `models/${settings.model}`, ...payload } };
-        const tokens = await keys.retry("chat", settings.chat_key_ids, signal, key => this.provider.count(settings.model, key, full, signal));
-        if (tokens > settings.input_limit) throw new InputTooLarge();
-      }
+      const history = rewrite ? input.history : this.rows(id);
+      const { payload, prompt_counts } = await context.build(history, description, { name: persona.name, description: persona.description });
       run(this.db, "UPDATE tales SET prompt_counts = ? WHERE id = ?", JSON.stringify(prompt_counts), id);
       promptCounts = prompt_counts;
       const resetReply = () => {
@@ -413,8 +386,7 @@ export class Tales {
       active.message.status = active.stopped ? "stopped" : "error";
       if (!signal.aborted) failure = error instanceof Error ? error.message : "The reply could not finish.";
     } finally {
-      graph?.close();
-      snapshot.close();
+      context.close();
       const assistant = active.message;
       if (assistant) {
         const ended = performance.now();
