@@ -2,7 +2,7 @@ import type { DatabaseSync } from "node:sqlite";
 import type { Persona, PersonasView } from "../shared/types.js";
 import { all, get, run, transaction } from "./sqlite.js";
 import { identifier, makeId, RequestError, requiredText } from "./validation.js";
-import type { Artwork } from "./worlds/worlds.js";
+import type { Artwork } from "./artwork.js";
 
 type PersonaRow = Omit<Persona, "artwork"> & { portrait: string | null };
 const user: Persona = { id: "user", name: "User", nickname: "Default", description: "", artwork: null };

@@ -1,3 +1,5 @@
+import { readArtwork } from "./artwork.js";
+import { formData, parseJson, readJson } from "./http-body.js";
 import { Personas } from "./personas.js";
 import { get, run } from "./sqlite.js";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
@@ -13,71 +15,20 @@ import { GraphIndexes } from "./graph/indexes.js";
 import { Tales } from "./tales/tales.js";
 import { fields, identifier, RequestError, requiredText } from "./validation.js";
 import { WorldIndexing } from "./worlds/indexing.js";
-import { Worlds, type Artwork } from "./worlds/worlds.js";
+import { Worlds } from "./worlds/worlds.js";
 
 const publicRoot = fileURLToPath(new URL("../../public/", import.meta.url));
 const distRoot = fileURLToPath(new URL("../", import.meta.url));
-const MAX_BODY_BYTES = 256 * 1024 * 1024;
-const MAX_ARTWORK_BYTES = 16 * 1024 * 1024;
 const types: Record<string, string> = {
   svg: "image/svg+xml", html: "text/html; charset=utf-8", css: "text/css; charset=utf-8", js: "text/javascript; charset=utf-8",
   mjs: "text/javascript; charset=utf-8", png: "image/png", ico: "image/x-icon", woff2: "font/woff2", ttf: "font/ttf",
   webmanifest: "application/manifest+json", txt: "text/plain; charset=utf-8",
 };
-const imageTypes = new Set(["image/png", "image/jpeg", "image/gif", "image/webp", "image/avif", "image/svg+xml",
-  "image/x-icon", "image/vnd.microsoft.icon", "image/bmp"]);
-
 type Options = { provider?: GeminiClient; protect?: typeof dpapi; onBackup?: () => void };
 
 function json(response: ServerResponse, value: unknown, status = 200) {
   response.writeHead(status, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" });
   response.end(JSON.stringify(value));
-}
-
-async function body(request: IncomingMessage, limit: number) {
-  const length = Number(request.headers["content-length"]);
-  if (!Number.isSafeInteger(length) || length < 0) throw new RequestError("The body needs a valid length.");
-  if (length > limit) throw new RequestError("The upload is too large.", 413);
-  const bytes: Buffer[] = [];
-  let received = 0;
-  for await (const chunk of request as AsyncIterable<Buffer>) {
-    received += chunk.length;
-    if (received > length) throw new RequestError("The upload is too large.", 413);
-    bytes.push(chunk);
-  }
-  if (received !== length) throw new RequestError("The upload is incomplete.");
-  return Buffer.concat(bytes, received);
-}
-
-function parseJson(text: string) {
-  let value: unknown;
-  try { value = JSON.parse(text); }
-  catch { throw new RequestError("The request contains invalid JSON."); }
-  return fields(value);
-}
-
-async function readJson(request: IncomingMessage) {
-  if (request.headers["content-type"]?.split(";")[0] !== "application/json") throw new RequestError("Expected JSON.");
-  return parseJson((await body(request, MAX_BODY_BYTES)).toString("utf8"));
-}
-
-async function formData(request: IncomingMessage) {
-  const contentType = request.headers["content-type"];
-  if (!contentType?.startsWith("multipart/form-data;")) throw new RequestError("Send files and settings together.");
-  const bytes = await body(request, MAX_BODY_BYTES);
-  try {
-    return await new Response(new Uint8Array(bytes), { headers: { "Content-Type": contentType } }).formData();
-  } catch {
-    throw new RequestError("The upload is incomplete.");
-  }
-}
-
-async function readArtwork(file: FormDataEntryValue | null): Promise<Artwork | undefined> {
-  if (file === null) return;
-  if (typeof file === "string" || !imageTypes.has(file.type) || !file.size || file.size > MAX_ARTWORK_BYTES) {
-    throw new RequestError("Choose a supported World image up to 16 MB.");
-  }
-  return { content_type: file.type, image: new Uint8Array(await file.arrayBuffer()) };
 }
 
 async function upload(request: IncomingMessage) {

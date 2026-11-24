@@ -1,6 +1,7 @@
 import type { DatabaseSync } from "node:sqlite";
 import { FIRST_MESSAGE, WORLD_DESCRIPTION } from "../../shared/story-defaults.js";
 import type { Book, World, WorldSettings } from "../../shared/types.js";
+import type { Artwork } from "../artwork.js";
 import { EMBEDDING_MODEL, EMBEDDING_MODELS } from "../gemini.js";
 import type { GraphIndexes } from "../graph/indexes.js";
 import { readGraphSettings } from "../graph/jobs.js";
@@ -11,8 +12,6 @@ import { identifier, makeId, RequestError, requiredText, whole } from "../valida
 import { DEFAULT_CHUNK_SIZE, prepareBooks, type BookInput, type PreparedBook, type StoredBook } from "./books.js";
 import type { WorldIndexing } from "./indexing.js";
 import { requireWorld, worldColumns, type WorldRow } from "./storage.js";
-
-export type Artwork = { content_type: string; image: Uint8Array };
 
 const activeStatuses = new Set(["creating", "pausing"]);
 const TITLE_LIMIT = 100;
