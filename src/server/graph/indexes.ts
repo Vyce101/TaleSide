@@ -1,18 +1,9 @@
 import { addAbortListener } from "node:events";
 import { existsSync, readdirSync, unlinkSync } from "node:fs";
-import { join } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import { MessageChannel, Worker } from "node:worker_threads";
 import { all, get, run } from "../sqlite.js";
-import type { GraphContext, GraphQuery } from "./worker.js";
-
-export function graphPaths(directory: string, id: number) {
-  return {
-    entities: join(directory, `${id}.entities.usearch`),
-    edges: join(directory, `${id}.edges.usearch`),
-    vectors: join(directory, `${id}.edges.f16`),
-  };
-}
+import { graphPaths, type GraphContext, type GraphQuery } from "./index-protocol.js";
 
 export class GraphIndexes {
   private directory: string;

@@ -7,8 +7,9 @@ import { all, get, run, transaction } from "../sqlite.js";
 import { encodeVector, type GeminiClient } from "../gemini.js";
 import {
   consolidationPrompt, extractionPrompt, graphRequest, MAX_GRAPH_ATTEMPTS,
-  newRecords, parseConsolidation, parseExtraction, type Extraction,
+  newRecords, parseConsolidation, parseExtraction,
 } from "./extraction.js";
+import { graphRecordTitle, type Extraction } from "./records.js";
 import { resolveGraph } from "./resolution.js";
 import type { GraphIndexes } from "./indexes.js";
 import type { ProviderKeys } from "../keys.js";
@@ -37,10 +38,6 @@ export function readGraphSettings(value: unknown, chunkSize: number, required: b
     preceding_context: whole(input.preceding_context ?? Math.round(chunkSize / 10), 0, "Enter a nonnegative preceding context length."),
     gleaning_passes: whole(input.gleaning_passes ?? 3, 0, "Enter a nonnegative number of gleaning passes."),
   };
-}
-
-export function graphRecordTitle(name: string, type: string | null) {
-  return type ? `${name} (${type})` : name;
 }
 
 function renderedLength(record: Pick<Summary, "name" | "type">, description: string) {

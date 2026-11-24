@@ -1,24 +1,11 @@
 import { GEMMA, GEMMA_SAMPLING } from "../../shared/models.js";
 import type { GraphSettings } from "../../shared/types.js";
 
-const ENTITY_TYPES = ["CHARACTER", "LOCATION", "FACTION/GROUP", "SYSTEM_OR_WORLD_RULE", "ITEM", "EVENT"] as const;
-type EntityType = typeof ENTITY_TYPES[number];
-export type Endpoint = { name: string; type: EntityType };
-export type EntityRecord = Endpoint & { kind: "entity"; description: string };
-export type EdgeRecord = { kind: "relationship"; source: Endpoint; target: Endpoint; description: string; strength: number };
-export type Extraction = EntityRecord | EdgeRecord;
+import { ENTITY_TYPES, entityIdentity, normalizedName, type Endpoint, type EntityType, type Extraction } from "./records.js";
 
 const COMPLETE = "<|COMPLETE|>";
 const FIELD = "<|>";
 export const MAX_GRAPH_ATTEMPTS = 3;
-
-export function normalizedName(name: string) {
-  return name.normalize("NFKC").trim().replace(/\s+/gu, " ").toUpperCase();
-}
-
-export function entityIdentity(entity: Endpoint) {
-  return JSON.stringify([normalizedName(entity.name), entity.type]);
-}
 
 function tuple(record: Extraction) {
   const values = record.kind === "entity" ? ['"entity"', record.name, record.type, record.description]

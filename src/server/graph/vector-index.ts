@@ -1,6 +1,6 @@
 import { openSync, readSync } from "node:fs";
 import { Index, MetricKind, ScalarKind } from "usearch";
-import type { graphPaths } from "./indexes.js";
+import type { graphPaths } from "./index-protocol.js";
 
 export class VectorIndex {
   private entities: Index;

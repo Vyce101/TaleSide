@@ -1,10 +1,8 @@
 import { closeSync, fsyncSync, mkdirSync, openSync, renameSync, unlinkSync, writeSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { parentPort, workerData, type MessagePort } from "node:worker_threads";
-import type { ChatSettings } from "../../shared/types.js";
-import { normalizedName } from "./extraction.js";
-import { graphRecordTitle } from "./jobs.js";
-import { graphPaths } from "./indexes.js";
+import { graphPaths, type GraphContext, type GraphQuery } from "./index-protocol.js";
+import { graphRecordTitle, normalizedName } from "./records.js";
 import { VectorIndex } from "./vector-index.js";
 
 const HUB_EDGES = 150;
@@ -18,10 +16,6 @@ type Row = { id: number; name: string; type: string | null; source: number | nul
   strength: number | null; characters: number };
 type Neighbor = { id: number; edge: number; strength: number };
 type Name = { name: string; id: number };
-export type GraphContext = { entities: number; relationships: number; notes: string[] };
-export type GraphQuery = Pick<ChatSettings, "graph_budget" | "graph_matches" | "graph_hops" | "graph_edges">
-  & { vector: number[]; text: string };
-
 const { database, directory, generation } = workerData as { database: string; directory: string; generation: number };
 const db = new DatabaseSync(database, { readOnly: true, timeout: 5000 });
 const paths = graphPaths(directory, generation);
