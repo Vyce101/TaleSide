@@ -1,22 +1,23 @@
-import { readArtwork } from "./artwork.js";
-import { formData, parseJson, readJson } from "./http-body.js";
-import { Personas } from "./personas.js";
-import { get, run } from "./sqlite.js";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { readFile, stat } from "node:fs/promises";
 import { resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { AddressInfo } from "node:net";
+import { readArtwork } from "./artwork.js";
 import { openDatabase } from "./database.js";
 import { gemini, type GeminiClient } from "./gemini.js";
-import { ProviderKeys, dpapi } from "./keys.js";
-import { Profiles } from "./profiles.js";
 import { GraphIndexes } from "./graph/indexes.js";
+import { formData, readJson } from "./http-body.js";
 import { json } from "./http-response.js";
+import { ProviderKeys, dpapi } from "./keys.js";
+import { Personas } from "./personas.js";
+import { Profiles } from "./profiles.js";
+import { get, run } from "./sqlite.js";
 import { handleTaleRoute } from "./tales/routes.js";
 import { Tales } from "./tales/tales.js";
-import { fields, identifier, RequestError, requiredText } from "./validation.js";
+import { identifier, RequestError } from "./validation.js";
 import { WorldIndexing } from "./worlds/indexing.js";
+import { handleWorldRoute } from "./worlds/routes.js";
 import { Worlds } from "./worlds/worlds.js";
 
 const publicRoot = fileURLToPath(new URL("../../public/", import.meta.url));
@@ -27,25 +28,6 @@ const types: Record<string, string> = {
   webmanifest: "application/manifest+json", txt: "text/plain; charset=utf-8",
 };
 type Options = { provider?: GeminiClient; protect?: typeof dpapi; onBackup?: () => void };
-
-async function upload(request: IncomingMessage) {
-  const form = await formData(request);
-  const value = form.get("settings");
-  if (typeof value !== "string") throw new RequestError("The upload is missing World settings.");
-  const input = parseJson(value);
-  const files = form.getAll("book");
-  const bookDetails = input.books ?? [];
-  if (!Array.isArray(bookDetails) || bookDetails.length !== files.length) throw new RequestError("The book list does not match the upload.");
-  const books = await Promise.all(files.map(async (file, index) => {
-    if (typeof file === "string" || !file.size) throw new RequestError("Select nonempty TXT files.");
-    const item = fields(bookDetails[index]);
-    const filename = item.filename;
-    if (typeof filename !== "string" || filename !== file.name) throw new RequestError("The book filenames do not match the upload.");
-    const name = requiredText(item.name, "Enter a book name up to 100 characters.", 100);
-    return { filename, name, original: new Uint8Array(await file.arrayBuffer()) };
-  }));
-  return { input, books, artwork: await readArtwork(form.get("artwork")) };
-}
 
 async function staticFile(response: ServerResponse, path: string) {
   const browserModule = /^\/(client|shared)\/[a-z0-9/-]+\.js$/i.test(path);
@@ -91,7 +73,6 @@ export async function createApplication(databasePath: string, options: Options =
 
       if (getRequest) {
         if (path === "/api/instance") return json(response, { app: "TaleSide", runtime: "node" });
-        if (path === "/api/worlds") return json(response, worlds.list());
         if (path === "/api/settings") return json(response, keys.settings());
         if (path === "/api/tale-settings") return json(response, profiles.view());
         if (path === "/api/app-settings") {
@@ -132,53 +113,7 @@ export async function createApplication(databasePath: string, options: Options =
       if (!getRequest && personaAction) return json(response, personas.change(personaAction[1], await readJson(request)));
 
       if (await handleTaleRoute(request, response, path, url.searchParams, tales, () => closing)) return;
-
-      const world = /^\/api\/worlds\/([a-f0-9]{32})(?:\/([a-z-]+))?$/.exec(path);
-      if (world) {
-        const [, id, action] = world;
-        if (getRequest && !action) return json(response, worlds.detail(id));
-        if (getRequest && action === "artwork") {
-          const artwork = worlds.artwork(id);
-          if (!artwork) throw new RequestError("Artwork not found.", 404);
-          response.writeHead(200, { "Content-Type": artwork.content_type, "Cache-Control": "no-cache",
-            "Content-Security-Policy": "sandbox; default-src 'none'; style-src 'unsafe-inline'" });
-          return response.end(artwork.image);
-        }
-        if (!getRequest) {
-          if (["create", "add-books"].includes(action)) {
-            const { input, books, artwork } = await upload(request);
-            return json(response, action === "create" ? await worlds.create(id, input, books, artwork) : await worlds.append(id, input.book_revision, books));
-          }
-          if (action === "artwork") {
-            const artwork = await readArtwork((await formData(request)).get("artwork"));
-            if (!artwork) throw new RequestError("Choose a World image.");
-            worlds.storeArtwork(id, artwork);
-            return json(response, worlds.detail(id));
-          }
-          const input = await readJson(request);
-          switch (action) {
-            case "story": return json(response, worlds.saveStory(id, input));
-            case "start-index": return json(response, await worlds.saveSettings(id, input, true));
-            case "index-settings": return json(response, await worlds.saveSettings(id, input, false));
-            case "clear-index": return json(response, worlds.clearIndex(id));
-            case "extraction-key": worlds.setKeys(id, "extraction", input.key_ids); break;
-            case "book-order":
-            case "rename-book":
-            case "remove-book": return json(response, worlds.editBooks(id, action, input));
-            case "rename": worlds.rename(id, input.name); break;
-            case "embedding-key": worlds.setKeys(id, "embedding", input.key_ids); break;
-            case "retrieval-key": worlds.setKeys(id, "retrieval", input.key_ids); break;
-            case "pause": indexing.pause(id); break;
-            case "resume": indexing.resume(id); break;
-            case "discard":
-              worlds.discard(id);
-              tales.discardWorld(id);
-              return json(response, { ok: true });
-            default: throw new RequestError("Action not found.", 404);
-          }
-          return json(response, worlds.detail(id));
-        }
-      }
+      if (await handleWorldRoute(request, response, path, worlds, indexing, id => tales.discardWorld(id))) return;
 
       const profile = /^\/api\/chat-profiles\/(select|create|save|rename|delete)$/.exec(path);
       if (!getRequest && profile) return json(response, profiles.change(profile[1], await readJson(request)));
