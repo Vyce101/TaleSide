@@ -12,6 +12,8 @@ import { gemini, type GeminiClient } from "./gemini.js";
 import { ProviderKeys, dpapi } from "./keys.js";
 import { Profiles } from "./profiles.js";
 import { GraphIndexes } from "./graph/indexes.js";
+import { json } from "./http-response.js";
+import { handleTaleRoute } from "./tales/routes.js";
 import { Tales } from "./tales/tales.js";
 import { fields, identifier, RequestError, requiredText } from "./validation.js";
 import { WorldIndexing } from "./worlds/indexing.js";
@@ -25,11 +27,6 @@ const types: Record<string, string> = {
   webmanifest: "application/manifest+json", txt: "text/plain; charset=utf-8",
 };
 type Options = { provider?: GeminiClient; protect?: typeof dpapi; onBackup?: () => void };
-
-function json(response: ServerResponse, value: unknown, status = 200) {
-  response.writeHead(status, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" });
-  response.end(JSON.stringify(value));
-}
 
 async function upload(request: IncomingMessage) {
   const form = await formData(request);
@@ -105,13 +102,6 @@ export async function createApplication(databasePath: string, options: Options =
           const world = url.searchParams.get("world");
           return json(response, personas.view(world === null ? null : identifier(world)));
         }
-        if (path === "/api/tales") return json(response, tales.list());
-        if (path === "/api/tales/search") {
-          const query = url.searchParams.get("q") ?? "";
-          if (query.length > 512) throw new RequestError("Use 512 characters or fewer to search Tales.");
-          const world = url.searchParams.get("world");
-          return json(response, tales.search(query, world === null ? null : identifier(world)));
-        }
         if (path === "/create" || path.startsWith("/worlds/")) {
           response.writeHead(302, { Location: "/" });
           return response.end();
@@ -141,35 +131,7 @@ export async function createApplication(databasePath: string, options: Options =
       const personaAction = /^\/api\/personas\/(create|save|default|delete)$/.exec(path);
       if (!getRequest && personaAction) return json(response, personas.change(personaAction[1], await readJson(request)));
 
-      const tale = /^\/api\/worlds\/([a-f0-9]{32})\/tales\/([a-f0-9]{32})(?:\/([a-z-]+))?$/.exec(path);
-      if (tale) {
-        const [, worldId, id, action] = tale;
-        if (getRequest && !action) return json(response, tales.detail(worldId, id));
-        if (!getRequest && action === "generate") {
-          const input = await readJson(request);
-          if (closing) throw new RequestError("TaleSide is closing.", 503);
-          const generationId = identifier(input.generation_id);
-          response.once("close", () => {
-            if (!response.writableEnded) tales.stop(worldId, id, generationId);
-          });
-          await tales.begin(worldId, id, input, event => {
-            if (response.destroyed) {
-              tales.stop(worldId, id, generationId);
-              return;
-            }
-            if (!response.headersSent) response.writeHead(200, { "Content-Type": "application/x-ndjson", "Cache-Control": "no-store" });
-            response.write(JSON.stringify(event) + "\n");
-          });
-          return response.end();
-        }
-        if (!getRequest && ["edit-message", "delete-message", "select-swipe", "branch", "persona"].includes(action)) {
-          return json(response, tales.changeMessage(worldId, id, action, await readJson(request)));
-        }
-        if (!getRequest && ["rename", "pin", "delete", "stop"].includes(action)) {
-          tales.change(worldId, id, action, await readJson(request));
-          return json(response, { ok: true });
-        }
-      }
+      if (await handleTaleRoute(request, response, path, url.searchParams, tales, () => closing)) return;
 
       const world = /^\/api\/worlds\/([a-f0-9]{32})(?:\/([a-z-]+))?$/.exec(path);
       if (world) {
