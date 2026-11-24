@@ -1,7 +1,7 @@
 import { followLatestDuringResize, keepReadingPosition, scrollToLatest } from "./tales/reading-position.js";
 import { initializeDialog, outside, previewDialog } from "./dialog.js";
 import { refreshPromptCounts } from "./prompts.js";
-import { currentPersona, refreshPersonas } from "./personas.js";
+import { createPersonaPanel } from "./personas.js";
 import type { GenerationEvent, Message, Swipe, Tale, TaleSearchResult, TaleSummary, World } from "../shared/types.js";
 import { apiError, keySettings, loadTales, loadWorlds, newId, orderedTales, post, recentTime, removeTale,
   request, storeTale, storeWorld, taleRoute, tales, worlds } from "./data.js";
@@ -53,6 +53,12 @@ export const worldEditor = createWorldEditor({
   onWorldUpdated: updateWorld,
 });
 
+const personas = createPersonaPanel({
+  currentWorld: () => state.world,
+  currentTale: () => state.tale,
+  isOpen: () => state.panel === "personas",
+});
+
 function updatePanelLayout() {
   const showFullWidth = narrow.matches && state.panel !== null && state.panel !== "keys" && state.panel !== "personas" && state.panel !== "app-settings";
   workspace.inert = showFullWidth;
@@ -98,7 +104,7 @@ export function showPanel(next: Panel | null, returnFocus = true) {
     void refreshKeys().catch(error => showToast(error));
   }
   if (next === "settings") renderWorldContext();
-  if (next === "personas") void refreshPersonas();
+  if (next === "personas") void personas.refreshPersonas();
   const drawer = drawers[next];
   drawer.querySelector(".panel-content")!.scrollTop = 0;
   drawer.querySelector<HTMLButtonElement>(".panel-back")!.focus({ preventScroll: true });
@@ -232,7 +238,7 @@ function setWorkspace(world?: World, tale?: OpenTale) {
   state.world = world;
   state.tale = tale;
   refreshPromptCounts(tale?.prompt_counts);
-  if (world) void refreshPersonas();
+  if (world) void personas.refreshPersonas();
   state.history = false;
   renderWorkspace();
 }
@@ -606,7 +612,7 @@ async function sendOrStop(rewrite?: { message: Message; mode: "regenerate" | "sw
   const originalDraft = input.value;
   const previousMessages = tale.messages;
   const opening = tale.draft ? tale.messages.find(message => message.opening)?.swipe : undefined;
-  const draftPlayer = currentPersona();
+  const draftPlayer = personas.currentPersona();
   const preview: Swipe = { content: "", thinking: "", model: settings.model, status: "generating",
     elapsed_ms: null, thinking_ms: null, error: null, has_signature: false };
   const assistant: Message = { ...(replacesReply ? rewrite.message : {}), ...preview,

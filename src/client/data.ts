@@ -1,4 +1,6 @@
-import type { KeySettings, TaleSummary, World } from "../shared/types.js";
+import type { KeySettings, Tale, TaleSummary, World } from "../shared/types.js";
+
+export type OpenTale = Tale & { draft?: boolean };
 
 export let worlds: World[] = [];
 export let tales: TaleSummary[] = [];
