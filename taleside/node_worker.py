@@ -9,7 +9,8 @@ from pathlib import Path
 from threading import Event
 
 from .books import BookSource, prepare_book
-from .tale_retrieval import chat_request, passages
+from .chat_request import chat_request
+from .tale_retrieval import passages
 
 
 def read():
