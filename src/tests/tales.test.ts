@@ -94,6 +94,30 @@ test("the passage budget checks lower-ranked chunks after skipping a chunk that 
   match(JSON.stringify(payload), /<retrieved_context>\\nBest note\\n\\nShort\\n<\/retrieved_context>/);
 });
 
+test("a higher-ranked passage gives back its overlap when the preceding passage also fits", async t => {
+  let chatRequest: object | undefined;
+  const app = await fixture(t, {
+    ...fakeProvider,
+    async embed(_model, dimensions, _key, text) {
+      const vector = Array<number>(dimensions).fill(0);
+      vector[0] = 1;
+      if (text.endsWith(" | text: abcdef")) vector[1] = 1;
+      return vector;
+    },
+    async *chat(model, key, body, signal) {
+      chatRequest = body;
+      yield* fakeProvider.chat(model, key, body, signal);
+    },
+  });
+  const key = await app.addKey("Gemini");
+  const world = await app.newWorld({ name: "Overlapping passages", key_ids: [key], max_chunk_size: 6 },
+    [["Book.txt", "abcdefghi"]]);
+  await until(() => app.world(world.id), value => value.status === "ready");
+  const settings = { ...(await app.profiles()).defaults, chat_key_ids: [key], chunk_budget: 11, chunk_overlap: 2 };
+  await app.generate(world.id, id(), "Find the matching passages.", settings);
+  match(JSON.stringify(chatRequest), /<retrieved_context>\\nabcdef\\n\\nghi\\n<\/retrieved_context>/);
+});
+
 test("deleting indexing preserves Tales and uses the first new passage without the old index", async t => {
   let block = false;
   let release!: () => void;
