@@ -1,6 +1,6 @@
 import { deepEqual, equal, rejects } from "node:assert/strict";
 import { test } from "node:test";
-import { prepareBooks } from "../server/books.js";
+import { prepareBooks } from "../server/worlds/books.js";
 
 test("TXT chunks preserve CRLF, Unicode character positions and original bytes", async () => {
   const original = Buffer.from("\uFEFFaé\r\n📕b\r\nc", "utf8");

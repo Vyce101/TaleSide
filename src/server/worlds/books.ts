@@ -1,4 +1,4 @@
-import { pythonWorker } from "./python.js";
+import { pythonWorker } from "../python.js";
 
 export type BookInput = { filename: string; name: string; original: Uint8Array };
 type Chunk = { start: number; end: number; originalStart: number; originalEnd: number };

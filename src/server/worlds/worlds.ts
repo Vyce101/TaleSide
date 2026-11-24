@@ -1,16 +1,16 @@
-import { FIRST_MESSAGE, WORLD_DESCRIPTION } from "../shared/story-defaults.js";
+import { FIRST_MESSAGE, WORLD_DESCRIPTION } from "../../shared/story-defaults.js";
 import type { DatabaseSync } from "node:sqlite";
 import { setImmediate as yieldToServer } from "node:timers/promises";
-import type { Book, GraphProgress, GraphSettings, World, WorldSettings } from "../shared/types.js";
+import type { Book, GraphProgress, GraphSettings, World, WorldSettings } from "../../shared/types.js";
 import { DEFAULT_CHUNK_SIZE, decode, normalizeLines, prepareBooks, type BookInput, type PreparedBook } from "./books.js";
-import { saveSelection, selectedKeys } from "./key-selections.js";
-import { all, get, run, transaction } from "./sqlite.js";
-import { EMBEDDING_MODEL, EMBEDDING_MODELS, encodeVector, tokenBody, type GeminiClient } from "./gemini.js";
-import { GraphJobs, GraphRequestFailed, readGraphSettings, type GraphWorldFields } from "./graph/jobs.js";
-import { MAX_GRAPH_ATTEMPTS } from "./graph/extraction.js";
-import type { GraphIndexes } from "./graph/indexes.js";
-import { ProviderKeys } from "./keys.js";
-import { identifier, makeId, RequestError, requiredText, whole } from "./validation.js";
+import { saveSelection, selectedKeys } from "../key-selections.js";
+import { all, get, run, transaction } from "../sqlite.js";
+import { EMBEDDING_MODEL, EMBEDDING_MODELS, encodeVector, tokenBody, type GeminiClient } from "../gemini.js";
+import { GraphJobs, GraphRequestFailed, readGraphSettings, type GraphWorldFields } from "../graph/jobs.js";
+import { MAX_GRAPH_ATTEMPTS } from "../graph/extraction.js";
+import type { GraphIndexes } from "../graph/indexes.js";
+import { ProviderKeys } from "../keys.js";
+import { identifier, makeId, RequestError, requiredText, whole } from "../validation.js";
 
 export type WorldRow = Pick<World, "id" | "name" | "status" | "model" | "dimensions" | "max_token_limit"
   | "max_chunk_size" | "book_revision" | "error"> & GraphWorldFields & { index_number: number; description: string | null; openings: string | null };

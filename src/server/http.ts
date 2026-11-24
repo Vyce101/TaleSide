@@ -12,7 +12,7 @@ import { Profiles } from "./profiles.js";
 import { GraphIndexes } from "./graph/indexes.js";
 import { Tales } from "./tales.js";
 import { fields, identifier, RequestError, requiredText } from "./validation.js";
-import { Worlds, type Artwork } from "./worlds.js";
+import { Worlds, type Artwork } from "./worlds/worlds.js";
 
 const publicRoot = fileURLToPath(new URL("../../public/", import.meta.url));
 const distRoot = fileURLToPath(new URL("../", import.meta.url));

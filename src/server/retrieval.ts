@@ -3,7 +3,7 @@ import { GEMMA, GEMMA_SAMPLING } from "../shared/models.js";
 import type { GraphContext } from "./graph/index-protocol.js";
 import { InputTooLarge, LEGACY_EMBEDDING } from "./gemini.js";
 import { pythonWorker } from "./python.js";
-import type { WorldRow } from "./worlds.js";
+import type { WorldRow } from "./worlds/worlds.js";
 
 export type HistoryEntry = { role: "user" | "assistant"; content: string; thinking?: string; model?: string | null; signed_parts?: string | null };
 

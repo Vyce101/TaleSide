@@ -9,7 +9,7 @@ import { Profiles } from "./profiles.js";
 import { openRetrieval, retrievalVector, type HistoryEntry } from "./retrieval.js";
 import { identifier, makeId, RequestError, requiredText, whole } from "./validation.js";
 import { searchTales } from "./tale-search.js";
-import { Worlds } from "./worlds.js";
+import { Worlds } from "./worlds/worlds.js";
 
 type Active = { id: string; worldId: string; controller: AbortController; stopped: boolean; message?: Message; done: Promise<void> };
 type TaleRow = Omit<TaleSummary, "pinned"> & { pinned: number };
