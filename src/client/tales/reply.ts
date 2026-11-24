@@ -6,7 +6,22 @@ import { showToast } from "../toasts.js";
 import { fillMessageText, formatDuration, messageTurn } from "../view.js";
 import { keepReadingPosition } from "./reading-position.js";
 
-type Reply = { tale: OpenTale; id: string; controller: AbortController; assistant: Message; accepted: boolean; stopping: boolean; started: number; timer?: number; frame?: number };
+const PENDING_USER_MESSAGE_ID = -1;
+const PENDING_ASSISTANT_MESSAGE_ID = -2;
+const REPLY_CLOCK_INTERVAL_MS = 250;
+
+type Reply = {
+  tale: OpenTale;
+  generationId: string;
+  controller: AbortController;
+  assistant: Message;
+  accepted: boolean;
+  stopping: boolean;
+  startedAtMs: number;
+  clockTimer?: number;
+  renderFrame?: number;
+};
+type ReplyTarget = { message: Message; mode: "regenerate" | "swipe" | "answer" };
 
 type ReplyOptions = {
   currentTale: () => OpenTale | undefined;
@@ -26,17 +41,16 @@ export function createTaleReply({ currentTale, currentWorld, currentChatSettings
   warnMissingKeys, clearDraft, restoreDraft, renderMessages, refreshComposer, onTalesChanged }: ReplyOptions) {
   let activeReply: Reply | undefined;
 
-  function stopReply(reply: Reply, leaving = false) {
+  function stopReply(reply: Reply, reason: "user" | "leave" = "user") {
+    const leavingTale = reason === "leave";
     reply.stopping = true;
-    if (leaving) window.clearInterval(reply.timer);
+    if (leavingTale) window.clearInterval(reply.clockTimer);
     if (reply.accepted) {
-      void post(`${taleRoute(reply.tale)}/stop`, { generation_id: reply.id, user_stopped: !leaving }, { keepalive: leaving })
+      void post(`${taleRoute(reply.tale)}/stop`, { generation_id: reply.generationId, user_stopped: !leavingTale }, { keepalive: leavingTale })
         .catch(() => reply.controller.abort());
     }
-    if (!reply.accepted || leaving) reply.controller.abort();
-    if (leaving) {
-      if (activeReply === reply) activeReply = undefined;
-    }
+    if (!reply.accepted || leavingTale) reply.controller.abort();
+    if (leavingTale && activeReply === reply) activeReply = undefined;
     refreshComposer();
   }
 
@@ -72,100 +86,126 @@ export function createTaleReply({ currentTale, currentWorld, currentChatSettings
   function updateReplyTime(reply: Reply) {
     const article = document.querySelector(`#messages [data-message="${reply.assistant.id}"]`);
     const time = article?.querySelector(".reply-time");
-    if (time) time.textContent = formatDuration(reply.assistant.elapsed_ms ?? performance.now() - reply.started);
+    if (time) time.textContent = formatDuration(reply.assistant.elapsed_ms ?? performance.now() - reply.startedAtMs);
   }
 
   function renderReply(reply: Reply) {
-    if (reply.frame !== undefined || currentTale() !== reply.tale || activeReply !== reply) return;
-    reply.frame = requestAnimationFrame(() => {
-      reply.frame = undefined;
+    if (reply.renderFrame !== undefined || currentTale() !== reply.tale || activeReply !== reply) return;
+    reply.renderFrame = requestAnimationFrame(() => {
+      reply.renderFrame = undefined;
       if (currentTale() === reply.tale && activeReply === reply) keepReadingPosition(() => updateReplyTurn(reply));
     });
   }
 
-  async function sendOrStop(rewrite?: { message: Message; mode: "regenerate" | "swipe" | "answer" }) {
+  function applyGenerationEvent(reply: Reply, event: GenerationEvent, followLatest: boolean) {
+    const { tale } = reply;
+    switch (event.type) {
+      case "accepted":
+        Object.assign(tale, event.tale, { draft: false });
+        reply.accepted = true;
+        reply.assistant = tale.messages.find(message => message.id === event.assistant.id)!;
+        storeTale(event.tale);
+        if (currentTale() === tale && activeReply === reply) keepReadingPosition(renderMessages, followLatest);
+        if (reply.stopping && !reply.controller.signal.aborted) stopReply(reply);
+        break;
+      case "saved":
+        reply.accepted = true;
+        Object.assign(tale, event.tale, { draft: false });
+        storeTale(event.tale);
+        break;
+      case "done":
+        Object.assign(reply.assistant, event.message);
+        if (event.error && currentTale() === tale) showToast(event.error);
+        if (event.prompt_counts) {
+          tale.prompt_counts = event.prompt_counts;
+          if (currentTale() === tale) refreshPromptCounts(tale.prompt_counts);
+        }
+        break;
+      case "retry":
+        reply.assistant.content = "";
+        reply.assistant.thinking = "";
+        reply.assistant.thinking_ms = null;
+        break;
+      case "thinking":
+        reply.assistant.thinking += event.text;
+        reply.assistant.thinking_ms = event.thinking_ms;
+        break;
+      case "reply":
+        reply.assistant.content += event.text;
+        break;
+    }
+    renderReply(reply);
+  }
+
+  async function sendOrStop(rewrite?: ReplyTarget) {
     const tale = currentTale();
     const world = currentWorld();
     if (!tale || !world || isTurnBusy()) return;
-    if (activeReply) { if (!rewrite) stopReply(activeReply); return; }
+    if (activeReply) {
+      if (!rewrite) stopReply(activeReply);
+      return;
+    }
+
     const input = element<HTMLTextAreaElement>("message-input");
     const text = input.value.trim();
     const settings = currentChatSettings();
     if ((!text && !rewrite) || !settings || element<HTMLButtonElement>("send-message").disabled) return;
     const missingKeys = warnMissingKeys(world, settings);
     if (rewrite && missingKeys) return;
-    const replacesReply = rewrite && rewrite.mode !== "answer";
+    const replacedMessage = rewrite?.mode === "answer" ? undefined : rewrite?.message;
+    const followLatest = !rewrite;
     const originalDraft = input.value;
     const previousMessages = tale.messages;
-    const opening = tale.draft ? tale.messages.find(message => message.opening)?.swipe : undefined;
-    const draftPlayer = currentPersona();
-    const preview: Swipe = { content: "", thinking: "", model: settings.model, status: "generating",
+    const selectedOpening = tale.draft ? tale.messages.find(message => message.opening)?.swipe : undefined;
+    const playerPersona = currentPersona();
+    const pendingSwipe: Swipe = { content: "", thinking: "", model: settings.model, status: "generating",
       elapsed_ms: null, thinking_ms: null, error: null, has_signature: false };
-    const assistant: Message = { ...(replacesReply ? rewrite.message : {}), ...preview,
-      id: replacesReply ? rewrite.message.id : -2, role: "assistant" };
-    const reply: Reply = { tale, id: newId(), controller: new AbortController(), assistant, accepted: false,
-      stopping: false, started: performance.now() };
+    const assistant: Message = {
+      ...replacedMessage, ...pendingSwipe, id: replacedMessage?.id ?? PENDING_ASSISTANT_MESSAGE_ID, role: "assistant",
+    };
+    const reply: Reply = {
+      tale, generationId: newId(), controller: new AbortController(), assistant, accepted: false,
+      stopping: false, startedAtMs: performance.now(),
+    };
     activeReply = reply;
     if (rewrite?.mode === "swipe") {
       const swipes = rewrite.message.swipes ?? [rewrite.message];
       assistant.swipe = swipes.length;
-      assistant.swipes = [...swipes, preview];
+      assistant.swipes = [...swipes, pendingSwipe];
     }
-    if (replacesReply) {
-      tale.messages = [...previousMessages.slice(0, -1), assistant];
-    } else if (rewrite) {
-      tale.messages = [...previousMessages, assistant];
+    if (rewrite) {
+      const retainedMessages = replacedMessage ? previousMessages.slice(0, -1) : previousMessages;
+      tale.messages = [...retainedMessages, assistant];
     } else {
       input.value = "";
       clearDraft(tale.id);
-      tale.messages = [...previousMessages, { id: -1, role: "user", content: text, thinking: "", model: null,
-        status: "complete", elapsed_ms: null, thinking_ms: null, player_name: draftPlayer?.name,
-        player_artwork: draftPlayer?.artwork }, ...(missingKeys ? [] : [assistant])];
+      const pendingUserMessage: Message = {
+        id: PENDING_USER_MESSAGE_ID, role: "user", content: text, thinking: "", model: null,
+        status: "complete", elapsed_ms: null, thinking_ms: null,
+        player_name: playerPersona?.name, player_artwork: playerPersona?.artwork,
+      };
+      tale.messages = [...previousMessages, pendingUserMessage];
+      if (!missingKeys) tale.messages.push(assistant);
     }
-    keepReadingPosition(renderMessages, !rewrite);
-    reply.timer = window.setInterval(() => { if (activeReply === reply) updateReplyTime(reply); }, 250);
+    keepReadingPosition(renderMessages, followLatest);
+    reply.clockTimer = window.setInterval(() => {
+      if (activeReply === reply) updateReplyTime(reply);
+    }, REPLY_CLOCK_INTERVAL_MS);
+
     try {
-      const response = await post(`${taleRoute(tale)}/generate`,
-        { generation_id: reply.id, title: tale.title, settings, ...(rewrite
-          ? { message_id: rewrite.message.id, swipe: rewrite.message.swipe ?? 0, mode: rewrite.mode }
-          : { content: text, opening: opening ?? (tale.draft ? 0 : undefined), persona_id: tale.persona_id }) },
-        { signal: reply.controller.signal });
+      const turn = rewrite
+        ? { message_id: rewrite.message.id, swipe: rewrite.message.swipe ?? 0, mode: rewrite.mode }
+        : { content: text, opening: selectedOpening ?? (tale.draft ? 0 : undefined), persona_id: tale.persona_id };
+      const request = { generation_id: reply.generationId, title: tale.title, settings, ...turn };
+      const response = await post(`${taleRoute(tale)}/generate`, request, { signal: reply.controller.signal });
       if (!response.ok) throw await apiError(response);
-      let finished = false;
-      await readReply(response, event => {
-        if (event.type === "accepted") {
-          Object.assign(tale, event.tale, { draft: false });
-          reply.accepted = true;
-          reply.assistant = tale.messages.find(message => message.id === event.assistant.id)!;
-          storeTale(event.tale);
-          if (currentTale() === tale && activeReply === reply) keepReadingPosition(renderMessages, !rewrite);
-          if (reply.stopping && !reply.controller.signal.aborted) stopReply(reply);
-        } else if (event.type === "saved") {
-          finished = true;
-          reply.accepted = true;
-          Object.assign(tale, event.tale, { draft: false });
-          storeTale(event.tale);
-        } else if (event.type === "done") {
-          finished = true;
-          Object.assign(reply.assistant, event.message);
-          if (event.error && currentTale() === tale) showToast(event.error);
-          if (event.prompt_counts) {
-            tale.prompt_counts = event.prompt_counts;
-            if (currentTale() === tale) refreshPromptCounts(tale.prompt_counts);
-          }
-        } else if (event.type === "retry") {
-          reply.assistant.content = "";
-          reply.assistant.thinking = "";
-          reply.assistant.thinking_ms = null;
-        } else if (event.type === "thinking") {
-          reply.assistant.thinking += event.text;
-          reply.assistant.thinking_ms = event.thinking_ms;
-        } else if (event.type === "reply") {
-          reply.assistant.content += event.text;
-        }
-        renderReply(reply);
+
+      let receivedFinalEvent = false;
+      await readGenerationEvents(response, event => {
+        applyGenerationEvent(reply, event, followLatest);
+        if (event.type === "saved" || event.type === "done") receivedFinalEvent = true;
       });
-      if (!finished) throw new Error("The connection closed before the reply finished.");
+      if (!receivedFinalEvent) throw new Error("The connection closed before the reply finished.");
     } catch (error) {
       if (!reply.stopping && !reply.controller.signal.aborted && currentTale() === tale) showToast(error);
       if (!reply.accepted) {
@@ -176,12 +216,12 @@ export function createTaleReply({ currentTale, currentWorld, currentChatSettings
         }
       }
     } finally {
-      window.clearInterval(reply.timer);
+      window.clearInterval(reply.clockTimer);
       if (reply.assistant.status === "generating") reply.assistant.status = reply.stopping ? "stopped" : "error";
-      if (reply.frame !== undefined) cancelAnimationFrame(reply.frame);
+      if (reply.renderFrame !== undefined) cancelAnimationFrame(reply.renderFrame);
       if (activeReply === reply) {
         activeReply = undefined;
-        if (currentTale() === tale) keepReadingPosition(renderMessages, !rewrite);
+        if (currentTale() === tale) keepReadingPosition(renderMessages, followLatest);
       }
       if (reply.accepted || reply.controller.signal.aborted) {
         void loadTales().then(onTalesChanged, error => showToast(error));
@@ -190,23 +230,25 @@ export function createTaleReply({ currentTale, currentWorld, currentChatSettings
   }
 
   function leave() {
-    if (activeReply) stopReply(activeReply, true);
+    if (activeReply) stopReply(activeReply, "leave");
   }
 
   return { get active(): Readonly<Reply> | undefined { return activeReply; }, sendOrStop, leave };
 }
 
-async function readReply(response: Response, consume: (event: GenerationEvent) => void) {
+async function readGenerationEvents(response: Response, consume: (event: GenerationEvent) => void) {
   const reader = response.body!.pipeThrough(new TextDecoderStream()).getReader();
-  let buffer = "";
+  let pendingLine = "";
   try {
     for (;;) {
       const { done, value } = await reader.read();
       if (done) return;
-      buffer += value;
-      const lines = buffer.split("\n");
-      buffer = lines.pop()!;
+      pendingLine += value;
+      const lines = pendingLine.split("\n");
+      pendingLine = lines.pop()!;
       for (const line of lines) if (line) consume(JSON.parse(line) as GenerationEvent);
     }
-  } finally { await reader.cancel().catch(() => {}); }
+  } finally {
+    await reader.cancel().catch(() => {});
+  }
 }
