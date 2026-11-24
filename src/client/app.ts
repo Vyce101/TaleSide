@@ -1,3 +1,4 @@
+import { createKeysPanel } from "./keys-panel.js";
 import { followLatestDuringResize, keepReadingPosition, scrollToLatest } from "./tales/reading-position.js";
 import { initializeDialog, outside, previewDialog } from "./dialog.js";
 import { refreshPromptCounts } from "./prompts.js";
@@ -6,7 +7,7 @@ import type { GenerationEvent, Message, Swipe, Tale, TaleSearchResult, TaleSumma
 import { apiError, keySettings, loadTales, loadWorlds, newId, orderedTales, post, recentTime, removeTale,
   request, storeTale, storeWorld, taleRoute, tales, worlds } from "./data.js";
 import { element } from "./dom.js";
-import { closeKeyEditor, currentChatSettings, initializeSettings, refreshKeys, renderKeysView, renderWorldContext } from "./settings.js";
+import { currentChatSettings, initializeSettings, renderChatKey, renderWorldContext } from "./settings.js";
 import { fillMessageText, formatDate, formatDuration, homeView, icon, idleView, messageRows, messageTurn, recentCollapsed, recentTaleRows, taleRows, taleView, type Icon } from "./view.js";
 import { historyFrames, setSurfaceVisible, slideFrames } from "./motion.js";
 import { clearToast, showToast } from "./toasts.js";
@@ -59,6 +60,17 @@ const personas = createPersonaPanel({
   isOpen: () => state.panel === "personas",
 });
 
+const keysPanel = createKeysPanel({
+  isOpen: () => state.panel === "keys",
+  onKeysChanged: () => {
+    renderChatKey();
+    if (state.panel === "settings") renderWorldContext();
+    worldEditor.updateWorldEditorKeys();
+    refreshComposer();
+  },
+  onWorldsReloaded: syncWorlds,
+});
+
 function updatePanelLayout() {
   const showFullWidth = narrow.matches && state.panel !== null && state.panel !== "keys" && state.panel !== "personas" && state.panel !== "app-settings";
   workspace.inert = showFullWidth;
@@ -89,7 +101,7 @@ export function showPanel(next: Panel | null, returnFocus = true) {
   if (previous) {
     setSurfaceVisible(drawers[previous], false, slideFrames, () => {
       if (previous === "worlds") worldEditor.hideWorldPanel();
-      if (previous === "keys") closeKeyEditor();
+      if (previous === "keys") keysPanel.closeKeyEditor();
       if (!next && !state.panel && returnFocus) element(`${previous}-button`).focus({ preventScroll: true });
     });
   }
@@ -100,8 +112,8 @@ export function showPanel(next: Panel | null, returnFocus = true) {
 
   if (next === "worlds") worldEditor.restoreWorldPanel();
   if (next === "keys") {
-    renderKeysView();
-    void refreshKeys().catch(error => showToast(error));
+    keysPanel.renderKeysView();
+    void keysPanel.refreshKeys().catch(error => showToast(error));
   }
   if (next === "settings") renderWorldContext();
   if (next === "personas") void personas.refreshPersonas();
@@ -871,6 +883,7 @@ document.addEventListener("keydown", event => {
 
 window.addEventListener("pagehide", () => { if (activeReply) stopReply(activeReply, true); });
 initializeTooltips();
+keysPanel.initialize();
 const warning = element<HTMLInputElement>("warn-signatures");
 warning.addEventListener("change", () => setSignatureWarning(warning.checked, warning));
 void request<{ warn_signatures: boolean }>("/api/app-settings").then(saved => {
@@ -878,7 +891,7 @@ void request<{ warn_signatures: boolean }>("/api/app-settings").then(saved => {
   warning.checked = warnSignatures;
 }).catch(error => { element("app-settings-error").textContent = String(error); });
 renderWorkspace();
-void Promise.all([loadWorlds(), loadTales(), initializeSettings(), refreshKeys()]).then(() => {
+void Promise.all([loadWorlds(), loadTales(), initializeSettings(), keysPanel.refreshKeys()]).then(() => {
   syncWorlds();
   refreshTaleLists();
 }).catch(error => showToast(error));
