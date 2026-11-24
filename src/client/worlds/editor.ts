@@ -140,17 +140,17 @@ export function createWorldEditor({ currentWorld, isOpen, showWorldPanel, enterW
     }
     element("world-index-action").addEventListener("click", () => {
       const status = form.world?.status;
-      if (status === "creating") void act(form, "pause");
+      if (status === "creating") void runWorldAction(form, "pause");
       if (status === "paused" || status === "failed") {
-        if (form.world?.graph) void act(form, "resume");
-        else void saveWorld(form);
+        if (form.world?.graph) void runWorldAction(form, "resume");
+        else void submitIndexAction(form);
       }
-      if (status === "ready" && !form.world?.graph) void saveWorld(form);
+      if (status === "ready" && !form.world?.graph) void submitIndexAction(form);
     });
     element("world-progress").addEventListener("toggle", () => { if (editor === form) renderWorldProgress(form.world); });
     element("world-editor").addEventListener("submit", event => {
       event.preventDefault();
-      void saveWorld(form);
+      void submitIndexAction(form);
     });
     element<HTMLInputElement>("world-art-input").addEventListener("change", async event => {
       const input = event.target as HTMLInputElement;
@@ -178,7 +178,7 @@ export function createWorldEditor({ currentWorld, isOpen, showWorldPanel, enterW
         total_chunks: 0, embedded_chunks: 0, extracted_chunks: 0,
       }));
       if (books.length) {
-        if (form.world) await act(form, "add-books", upload({ book_revision: form.world.book_revision }, books));
+        if (form.world) await runWorldAction(form, "add-books", upload({ book_revision: form.world.book_revision }, books));
         else {
           form.books.push(...books);
           markDirty(form);
@@ -312,7 +312,7 @@ export function createWorldEditor({ currentWorld, isOpen, showWorldPanel, enterW
       else if (form.world) {
         const picker = element("world-key");
         picker.inert = true;
-        void act(form, "embedding-key", { key_ids: ids }).finally(() => { picker.inert = false; });
+        void runWorldAction(form, "embedding-key", { key_ids: ids }).finally(() => { picker.inert = false; });
       }
     }, processing(form.world) || form.busy);
     form.extractionKeyIds = form.extractionKeyIds.filter(id => available.has(id));
@@ -320,7 +320,7 @@ export function createWorldEditor({ currentWorld, isOpen, showWorldPanel, enterW
       form.extractionKeyIds = ids;
       markDirty(form);
       if (form.world?.status === "unindexed") saveIndexSettings(form);
-      else if (form.world?.graph) void act(form, "extraction-key", { key_ids: ids });
+      else if (form.world?.graph) void runWorldAction(form, "extraction-key", { key_ids: ids });
     }, processing(form.world) || form.busy);
   }
 
@@ -353,8 +353,10 @@ export function createWorldEditor({ currentWorld, isOpen, showWorldPanel, enterW
 
   function saveIndexSettings(form: Editor) {
     const settings = readSettings(form);
-    if (!Number.isSafeInteger(settings.max_chunk_size) || settings.max_chunk_size < 1
-      || ![settings.graph.preceding_context, settings.graph.gleaning_passes].every(value => Number.isSafeInteger(value) && value >= 0)) return;
+    const validChunkSize = Number.isSafeInteger(settings.max_chunk_size) && settings.max_chunk_size >= 1;
+    const validGraphSettings = [settings.graph.preceding_context, settings.graph.gleaning_passes]
+      .every(value => Number.isSafeInteger(value) && value >= 0);
+    if (!validChunkSize || !validGraphSettings) return;
     form.settingsSave = (form.settingsSave ?? Promise.resolve()).then(async () => {
       if (form.world?.status !== "unindexed") return;
       try {
@@ -363,46 +365,52 @@ export function createWorldEditor({ currentWorld, isOpen, showWorldPanel, enterW
     });
   }
 
-  async function saveWorld(form: Editor) {
-    if (form.busy || processing(form.world) || (form.world?.graph && form.world.status !== "unindexed")) return;
+  async function submitIndexAction(form: Editor) {
+    if (form.busy || processing(form.world)) return;
+    if (form.world?.graph && form.world.status !== "unindexed") return;
+
     const settings = readSettings(form);
-    if ((form.world || form.books.length) && !settings.key_ids.length) {
+    const willIndexBooks = Boolean(form.world) || form.books.length > 0;
+    if (willIndexBooks && !settings.key_ids.length) {
       showError("world-error", "Choose at least one saved Google AI Studio key before indexing.");
       element("world-model").closest("details")!.open = true;
       return;
     }
-    if ((form.world || form.books.length) && !checkGraphSettings(settings)) return;
+    if (willIndexBooks && !checkGraphSettings(settings)) return;
     await form.settingsSave;
     if (editor !== form) return;
     if (form.world) {
-      await act(form, "start-index", { ...settings, book_revision: form.world.book_revision });
+      await runWorldAction(form, "start-index", { ...settings, book_revision: form.world.book_revision });
       return;
     }
-    const result = await act(form, "create", upload({ ...settings, description: form.description, openings: form.openings }, form.books, form.artwork));
-    if (!result) return;
+    const worldSettings = { ...settings, description: form.description, openings: form.openings };
+    const newWorld = await runWorldAction(form, "create", upload(worldSettings, form.books, form.artwork));
+    if (!newWorld) return;
     closeWorldEditor();
-    await enterWorld(result);
+    await enterWorld(newWorld);
     if (isOpen()) {
-      openWorldEditor(result);
+      openWorldEditor(newWorld);
       element("world-index-action").focus({ preventScroll: true });
     }
   }
 
-  async function act(form: Editor, action: string, input: object = {}): Promise<World | undefined> {
+  async function runWorldAction(form: Editor, action: string, input: object = {}): Promise<World | undefined> {
     if (form.busy) return;
     form.busy = true;
     showError("world-error");
     refreshEditor(form);
     try {
-      const result = await request<World>(`${worldRoute(form.id)}/${action}`, input);
-      onWorldUpdated(result);
-      return result;
+      const updatedWorld = await request<World>(`${worldRoute(form.id)}/${action}`, input);
+      onWorldUpdated(updatedWorld);
+      return updatedWorld;
     } catch (error) {
-      if (editor === form) {
-        showDrawerError("world-error", error);
-        if (form.world) {
-          try { onWorldUpdated(await request<World>(worldRoute(form.id))); } catch { /* Keep the original error. */ }
-        }
+      if (editor !== form) return;
+      showDrawerError("world-error", error);
+      if (form.world) {
+        try {
+          const savedWorld = await request<World>(worldRoute(form.id));
+          onWorldUpdated(savedWorld);
+        } catch { /* Keep the original error if refreshing the saved World also fails. */ }
       }
     } finally {
       form.busy = false;
@@ -416,30 +424,42 @@ export function createWorldEditor({ currentWorld, isOpen, showWorldPanel, enterW
   function isWorldEditorOpen(id: string) { return isOpen() && editor?.world?.id === id; }
 
   function syncWorldPanel() {
-    if (editor?.world) {
-      const world = worlds.find(item => item.id === editor?.id);
-      if (!world) return;
-      const previous = editor.world;
-      editor.world = world;
-      editor.books = world.books;
-      if (previous === world) return;
-      if (world.status === "unindexed" && previous.status !== "unindexed") {
-        element<HTMLSelectElement>("world-model").replaceChildren(...keySettings.models.map(model => new Option(model.id, model.id)));
-      }
-      if (JSON.stringify(previous.embedding_key_ids) !== JSON.stringify(world.embedding_key_ids)
-        || JSON.stringify(previous.extraction_key_ids) !== JSON.stringify(world.extraction_key_ids) || processing(previous) !== processing(world)) {
-        editor.keyIds = world.embedding_key_ids;
-        if (world.graph) editor.extractionKeyIds = world.extraction_key_ids;
-        if (!editor.busy) updateWorldEditorKeys();
-      }
-      if (previous.status !== world.status || previous.error !== world.error || previous.progress !== world.progress || previous.active_book !== world.active_book
-        || previous.book_revision !== world.book_revision || JSON.stringify(previous.graph_progress) !== JSON.stringify(world.graph_progress)
-        || previous.books.some((book, index) => book.extracted_chunks !== world.books[index]?.extracted_chunks)) {
-        refreshEditor(editor);
-      }
-    } else if (!editor && isOpen()) {
+    const form = editor;
+    if (!form) {
+      if (!isOpen()) return;
       if (document.getElementById("world-list")) updateWorldRows();
       else showWorldList();
+      return;
+    }
+
+    const previous = form.world;
+    if (!previous) return;
+    const updatedWorld = worlds.find(world => world.id === form.id);
+    if (!updatedWorld) return;
+    form.world = updatedWorld;
+    form.books = updatedWorld.books;
+    if (previous === updatedWorld) return;
+
+    const statusChanged = previous.status !== updatedWorld.status;
+    if (statusChanged && updatedWorld.status === "unindexed") {
+      element<HTMLSelectElement>("world-model").replaceChildren(...keySettings.models.map(model => new Option(model.id, model.id)));
+    }
+    const keyPickerNeedsRefresh = processing(previous) !== processing(updatedWorld)
+      || JSON.stringify(previous.embedding_key_ids) !== JSON.stringify(updatedWorld.embedding_key_ids)
+      || JSON.stringify(previous.extraction_key_ids) !== JSON.stringify(updatedWorld.extraction_key_ids);
+    if (keyPickerNeedsRefresh) {
+      form.keyIds = updatedWorld.embedding_key_ids;
+      if (updatedWorld.graph) form.extractionKeyIds = updatedWorld.extraction_key_ids;
+      if (!form.busy) updateWorldEditorKeys();
+    }
+
+    const indexingProgressChanged = previous.progress !== updatedWorld.progress
+      || previous.active_book !== updatedWorld.active_book
+      || JSON.stringify(previous.graph_progress) !== JSON.stringify(updatedWorld.graph_progress)
+      || previous.books.some((book, index) => book.extracted_chunks !== updatedWorld.books[index]?.extracted_chunks);
+    const booksChanged = previous.book_revision !== updatedWorld.book_revision;
+    if (statusChanged || previous.error !== updatedWorld.error || indexingProgressChanged || booksChanged) {
+      refreshEditor(form);
     }
   }
 
@@ -449,7 +469,7 @@ export function createWorldEditor({ currentWorld, isOpen, showWorldPanel, enterW
     const [book] = reordered.splice(from, 1);
     reordered.splice(to, 0, book);
     if (form.world) {
-      await act(form, "book-order", { book_revision: form.world.book_revision, book_ids: reordered.map(item => item.id) });
+      await runWorldAction(form, "book-order", { book_revision: form.world.book_revision, book_ids: reordered.map(item => item.id) });
     } else {
       form.books = reordered;
       markDirty(form);
@@ -487,7 +507,7 @@ export function createWorldEditor({ currentWorld, isOpen, showWorldPanel, enterW
       if (!form.world || processing(form.world)) return;
       previewDialog({ title: "Delete indexing?", detail: "Your books and Tales will be kept. To chat again, start indexing and wait for the first passage.", danger: true },
         async () => {
-          await act(form, "clear-index");
+          await runWorldAction(form, "clear-index");
           if (editor === form) element("world-index-action").focus({ preventScroll: true });
         });
       return;
@@ -503,7 +523,7 @@ export function createWorldEditor({ currentWorld, isOpen, showWorldPanel, enterW
     }
     if (action === "rename-book") {
       previewDialog({ title: "Rename book", initialName: book.name }, async name => {
-        if (form.world) await act(form, "rename-book", { book_revision: form.world.book_revision, book_id: book.id, name });
+        if (form.world) await runWorldAction(form, "rename-book", { book_revision: form.world.book_revision, book_id: book.id, name });
         else {
           book.name = name;
           markDirty(form);
@@ -513,7 +533,7 @@ export function createWorldEditor({ currentWorld, isOpen, showWorldPanel, enterW
     }
     if (action === "remove-book") {
       previewDialog({ title: "Remove book?", detail: `Remove “${book.name}” from this World?`, danger: true }, async () => {
-        if (form.world) await act(form, "remove-book", { book_revision: form.world.book_revision, book_id: book.id });
+        if (form.world) await runWorldAction(form, "remove-book", { book_revision: form.world.book_revision, book_id: book.id });
         else {
           form.books.splice(index, 1);
           markDirty(form);
