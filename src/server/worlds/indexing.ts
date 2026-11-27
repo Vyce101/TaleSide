@@ -238,7 +238,15 @@ export class WorldIndexing {
   }
 
   private async finishGraph(world: WorldRow, settings: GraphSettings, signal: AbortSignal, canStartStep: () => boolean) {
-    const generation = world.graph_building ?? this.graph.prepare(world);
+    const generation = world.graph_building ?? await this.activity.track({
+      worldId: world.id, bookRevision: world.book_revision, kind: "graph", name: "Graph resolution",
+    }, signal, async activity => {
+      await yieldToServer();
+      signal.throwIfAborted();
+      const generation = this.graph.prepare(world);
+      activity.step("Resolved records saved");
+      return generation;
+    });
     await this.graph.summarize(world, settings, generation, signal, canStartStep);
     while (canStartStep()) {
       if (await this.graph.finishNext(world, generation, signal, canStartStep)) {

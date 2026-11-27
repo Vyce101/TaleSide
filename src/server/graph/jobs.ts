@@ -215,16 +215,30 @@ export class GraphJobs {
       SELECT id, name, description FROM graph_records WHERE generation = ? AND vector IS NULL ORDER BY id LIMIT 1
     `, generation);
     if (!draft) {
-      await this.indexes.build(generation, signal);
+      await this.activity.track({
+        worldId: world.id, bookRevision: world.book_revision, kind: "graph", name: "Graph publication",
+      }, signal, () => this.indexes.build(generation, signal));
       return true;
     }
     const keys = selectedKeys(this.db, "world_embedding_keys", world.id);
-    const vector = await this.keys.retry("embedding", keys, signal, async key => {
-      const values = await this.provider.embed(world.model, world.dimensions, key, `title: ${draft.name} | text: ${draft.description}`, signal);
-      return encodeVector(values, world.dimensions);
-    }, { cooldown: this.embeddingCooldown, paused: () => !working() });
-    signal.throwIfAborted();
-    run(this.db, "UPDATE graph_records SET vector = ? WHERE id = ?", vector, draft.id);
+    await this.activity.track({
+      worldId: world.id, bookRevision: world.book_revision, kind: "embedding", name: "Graph embedding",
+      location: { record: draft.name },
+    }, signal, async activity => {
+      const input = `title: ${draft.name} | text: ${draft.description}`;
+      activity.input(input);
+      const vector = await this.keys.retry("embedding", keys, signal, async key => {
+        const values = await this.provider.embed(world.model, world.dimensions, key, input, signal);
+        activity.step("Embedding received");
+        activity.output(JSON.stringify(values));
+        return encodeVector(values, world.dimensions);
+      }, {
+        cooldown: this.embeddingCooldown, paused: () => !working(), onRetry: activity.retry,
+        onAttempt: key => activity.request("Embedding request started", key),
+      });
+      signal.throwIfAborted();
+      run(this.db, "UPDATE graph_records SET vector = ? WHERE id = ?", vector, draft.id);
+    });
     return false;
   }
 }
