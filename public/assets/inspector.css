@@ -20,6 +20,7 @@
 .inspector-rail, .inspector-main { min-width: 0; min-height: 0; overflow: auto; overscroll-behavior: contain; }
 .inspector-rail { border-right: 1px solid var(--line); padding: 8px var(--panel-gutter) 12px; }
 .inspector-main { position: relative; padding: 8px var(--panel-gutter) 12px; scrollbar-gutter: stable; }
+.inspector-main:has(.inspector-graph-browser) { overflow-anchor: none; }
 .inspector-world-name { margin: 0 0 8px; overflow-wrap: anywhere; }
 .inspector-sidebar { display: grid; gap: 4px; }
 .inspector-nav-row {
@@ -207,6 +208,31 @@ details.inspector-card > summary small { display: block; padding-top: 4px; }
   display: block; margin: 9px 0; border-block: 1px solid #4d554d; padding: 3px 0; color: var(--mint); font-size: 11px;
 }
 .inspector-context-boundary:first-child { margin-top: 0; }
+.inspector-graph-explorer {
+  min-width: 0; padding: 10px; border: 1px solid #426251; border-radius: 7px; background: #242e28;
+}
+.inspector-graph-explorer .inspector-heading > .icon-button { align-self: start; }
+.inspector-graph-explorer .inspector-reader { padding: 8px; }
+.inspector-graph-connected { display: grid; gap: 5px; border-top: 1px solid #486351; padding-top: 8px; }
+.inspector-graph-connection-row { display: flex; gap: 5px; align-items: stretch; min-height: 39px; }
+.inspector-graph-connection {
+  flex: 1; min-width: 0; overflow-wrap: anywhere; text-align: left; border: 0;
+  background: #294438; color: var(--mint); border-radius: 4px; padding: 6px 8px;
+}
+.inspector-graph-connection:hover, .inspector-graph-connection-row .icon-button:hover { background: var(--green); }
+.inspector-graph-connection-row .icon-button { flex: none; width: 34px; background: #26372e; border-radius: 4px; }
+.inspector-graph-connection-row .icon-button svg { width: 17px; height: 17px; }
+.inspector-graph-browser > div:empty { display: none; }
+.inspector-graph-browser > button { justify-self: start; }
+.inspector-graph-row {
+  min-height: 47px; padding: 7px 10px; display: flex; align-items: center; justify-content: space-between;
+  gap: 6px; text-align: left; overflow-wrap: anywhere; border: 1px solid #3c5145;
+  border-inline-start-width: 3px; border-radius: 6px;
+}
+.inspector-graph-row[data-kind="entity"] { background: #202d26; border-inline-start-color: #77ae95; }
+.inspector-graph-row[data-kind="relationship"] { background: #232c32; border-inline-start-color: #88a6bc; }
+.inspector-graph-row:is(:hover, :focus-visible) { color: var(--mint); border-color: #759d89; }
+.inspector-graph-row-label { display: grid; min-width: 0; gap: 2px; }
 .inspector-graph-map {
   display: grid; gap: 8px; min-width: 0;
   --inspector-graph-node: var(--mint); --inspector-graph-link: #78938a; --inspector-graph-label: #eff7ef;
@@ -229,6 +255,23 @@ details.inspector-card > summary small { display: block; padding-top: 4px; }
   background: #304339; color: var(--mint);
 }
 .inspector-map-live-controls svg { width: 15px; height: 15px; }
+.inspector-map-search { display: grid; gap: 4px; }
+.inspector-map-search input {
+  border: 1px solid #414843; background: #111412; padding: 6px 9px; border-radius: 5px;
+}
+.inspector-map-search input:focus { border-color: #76af94; }
+.inspector-graph-filter-field { position: relative; min-width: 0; }
+.inspector-graph-filter-menu {
+  position: absolute; inset: calc(100% + 3px) 0 auto; z-index: 1;
+  display: grid; max-height: 220px; overflow: auto; overscroll-behavior: contain;
+  border: 1px solid #414843; border-radius: 5px; background: #171b18; box-shadow: 0 5px 14px #0006;
+}
+.inspector-graph-filter-option {
+  display: flex; align-items: center; justify-content: space-between; gap: 9px; text-align: left;
+  padding: 6px 9px; border: 0; background: none;
+}
+.inspector-graph-filter-option:is(:hover, [aria-selected="true"]) { background: #2a3831; color: var(--mint); }
+.inspector-graph-filter-option small { font-variant-numeric: tabular-nums; }
 .inspector-map-empty { position: absolute; inset: 50% 12px auto; text-align: center; color: var(--muted); pointer-events: none; }
 .inspector-map-stage .inspector-graph-info {
   position: absolute; bottom: 7px; left: 7px; max-width: calc(100% - 14px); pointer-events: none; background: #222723ed;
