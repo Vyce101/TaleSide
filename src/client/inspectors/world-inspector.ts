@@ -1,14 +1,15 @@
-import type { ActivityDetail, InspectorBookPage, InspectorChunkDetail, InspectorOverview } from "../../shared/inspectors.js";
+import type { ActivityDetail, InspectorBookPage, InspectorChunkDetail, InspectorMap, InspectorOverview, InspectorRecordDetail } from "../../shared/inspectors.js";
 import type { World } from "../../shared/types.js";
 import { request, worldRoute } from "../data.js";
 import { activityView } from "./world-activity.js";
 import { booksView, chunkReader } from "./world-books.js";
+import { graphView } from "./world-graph.js";
 import { overviewView } from "./world-overview.js";
 import { backControl, button, el, iconControl, muted, notice, readerHeading, replacePanel } from "./ui.js";
 
-type Tab = "overview" | "activities" | "books";
+type Tab = "overview" | "activities" | "books" | "graph";
 type View = { root: HTMLElement; update: (overview: InspectorOverview) => void; escape?: () => boolean; close?: () => void };
-const tabs: [Tab, string][] = [["overview","Overview"],["activities","Activities"],["books","Books & Chunks"]];
+const tabs: [Tab, string][] = [["overview", "Overview"], ["activities", "Activities"], ["books", "Books & Chunks"], ["graph", "Graph"]];
 
 export function createWorldInspector(panel: HTMLElement, worldUpdated: (world: World) => void) {
   const name = panel.querySelector<HTMLElement>(".inspector-world-name")!;
@@ -97,12 +98,20 @@ export function createWorldInspector(panel: HTMLElement, worldUpdated: (world: W
     for (const row of sidebar.querySelectorAll<HTMLButtonElement>("button")) row.setAttribute("aria-pressed", String(row.dataset.tab === tab));
     if (tab === "overview") view = overviewView(change);
     else if (tab === "activities") view = activityView(id => read<ActivityDetail>("inspector-activity", { operation: String(id) }), sourceMarker);
-    else view = booksView(
+    else if (tab === "books") view = booksView(
       (bookId, offset) => read<InspectorBookPage>("inspector-book", { book: bookId, offset: String(offset) }),
       (book, chunk) => {
         if (data) void showChunk(book, chunk, data.world.book_revision, "extraction");
       },
     );
+    else view = graphView({
+      map: (publishedOnly, revision) => read<InspectorMap | { revision: string }>("inspector-map", {
+        ready: publishedOnly ? "1" : "0", revision,
+      }),
+      record: (recordId, publishedOnly) => read<InspectorRecordDetail>("inspector-record", {
+        record: recordId, ready: publishedOnly ? "1" : "0",
+      }),
+    }, sourceMarker);
     replacePanel(main, [view.root]);
     if (data) view.update(data);
   }

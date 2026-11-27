@@ -208,6 +208,7 @@ details.inspector-card > summary small { display: block; padding-top: 4px; }
   display: block; margin: 9px 0; border-block: 1px solid #4d554d; padding: 3px 0; color: var(--mint); font-size: 11px;
 }
 .inspector-context-boundary:first-child { margin-top: 0; }
+.inspector-graph-map-issue:empty { display: none; }
 .inspector-graph-explorer {
   min-width: 0; padding: 10px; border: 1px solid #426251; border-radius: 7px; background: #242e28;
 }
