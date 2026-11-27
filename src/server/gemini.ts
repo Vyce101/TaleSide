@@ -15,7 +15,7 @@ export class InputTooLarge extends Error {
 }
 
 export type Part = { text?: string; thought?: boolean; thoughtSignature?: string };
-type ChatOptions = { requireComplete?: boolean };
+type ChatOptions = { requireComplete?: boolean; onPromptTokens?: (tokens: number) => void };
 export type GeminiClient = {
   count: (model: string, key: string, body: object, signal: AbortSignal) => Promise<number>;
   embed: (model: string, dimensions: number, key: string, text: string, signal: AbortSignal) => Promise<number[]>;
@@ -136,6 +136,8 @@ export const gemini: GeminiClient = {
           if (!payload || payload === "[DONE]") continue;
           const packet = JSON.parse(payload);
           if (errorEvent || packet.error) throw new ProviderError(0, packet.error ?? packet, key);
+          const tokens = packet.usageMetadata?.promptTokenCount;
+          if (Number.isSafeInteger(tokens) && tokens >= 0) options?.onPromptTokens?.(tokens);
           const candidate = packet.candidates?.[0];
           if (options?.requireComplete) {
             const blocked = packet.promptFeedback?.blockReason;

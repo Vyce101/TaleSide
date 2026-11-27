@@ -49,10 +49,10 @@ export async function fixture(t: TestContext, provider: GeminiClient = fakeProvi
   const database = path ?? await databasePath(t);
   const testProvider: GeminiClient = options.graphResponses === "provider" ? provider : {
     ...provider,
-    async *chat(model, key, body, signal) {
+    async *chat(model, key, body, signal, options) {
       const request = body as { generationConfig?: { thinkingConfig?: { includeThoughts?: boolean } } };
       if (request.generationConfig?.thinkingConfig?.includeThoughts === false) yield { text: "<|COMPLETE|>" };
-      else yield* provider.chat(model, key, body, signal);
+      else yield* provider.chat(model, key, body, signal, options);
     },
   };
   const app = await createApplication(database, { provider: testProvider, protect: (_operation, input) => Buffer.from(input) });

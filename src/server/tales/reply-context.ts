@@ -89,13 +89,14 @@ export async function openReplyContext({ databasePath, worldId, readWorld, keys,
       snapshot.close();
 
       const chatModel = CHAT_MODELS.find(model => model.id === settings.model)!;
+      let inputTokens: number | null = null;
       if (settings.input_limit < chatModel.context_limit) {
         const countRequest = { generateContentRequest: { model: `models/${settings.model}`, ...request.payload } };
-        const inputTokens = await keys.retry("chat", settings.chat_key_ids, signal,
+        inputTokens = await keys.retry("chat", settings.chat_key_ids, signal,
           key => provider.count(settings.model, key, countRequest, signal));
         if (inputTokens > settings.input_limit) throw new InputTooLarge();
       }
-      return request;
+      return { ...request, inputTokens };
     },
     close,
   };
