@@ -14,9 +14,8 @@ import { resolveGraph } from "./resolution.js";
 import type { GraphIndexes } from "./indexes.js";
 import type { ProviderKeys } from "../keys.js";
 import { fields, RequestError, whole } from "../validation.js";
+import { precedingChunkTextSql, type GraphWorldFields } from "../worlds/storage.js";
 
-export type GraphWorldFields = { graph_settings: string | null; graph_published: number | null;
-  graph_base: number | null; graph_building: number | null };
 type IndexedWorld = Pick<World, "id" | "model" | "dimensions" | "status"> & GraphWorldFields & { index_number: number };
 type Chunk = { book_id: string; book: number; number: number; text: string; preceding: string };
 type Summary = { id: number; name: string; type: string | null; input: string };
@@ -65,9 +64,7 @@ export class GraphJobs {
     return get<Chunk>(this.db, `
       SELECT b.id AS book_id, b.number AS book, c.number,
         substr(b.working, c.start + 1, c.end - c.start) AS text,
-        CASE WHEN previous.number IS NULL OR ? = 0 THEN '' ELSE
-          substr(b.working, max(previous.start, c.start - ?) + 1, min(?, c.start - previous.start))
-        END AS preceding
+        ${precedingChunkTextSql} AS preceding
       FROM books b JOIN chunks c ON c.book_id = b.id
       LEFT JOIN chunks previous ON previous.book_id = c.book_id AND previous.index_number = c.index_number AND previous.number = c.number - 1
       LEFT JOIN graph_chunks g ON g.book_id = c.book_id AND g.index_number = c.index_number AND g.chunk_number = c.number
