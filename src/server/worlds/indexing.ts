@@ -10,6 +10,7 @@ import type { ProviderKeys } from "../keys.js";
 import { all, get, run } from "../sqlite.js";
 import { RequestError } from "../validation.js";
 import { decode, normalizeLines, type StoredBook } from "./books.js";
+import { IndexActivity, type IndexActivityRecorder } from "./index-activity.js";
 import { requireWorld, worldColumns, type WorldRow } from "./storage.js";
 
 const MIN_EMBEDDING_DIMENSIONS = 128;
@@ -43,6 +44,7 @@ export class WorldIndexing {
   private indexCooldown = new Map<string, number>();
   private cooldownWorld?: string;
 
+  readonly activity = new IndexActivity();
   private readonly graph: GraphJobs;
 
   constructor(private db: DatabaseSync, private keys: ProviderKeys, private provider: GeminiClient,
@@ -154,7 +156,10 @@ export class WorldIndexing {
       const chunk = this.nextUnembeddedChunk(world);
       if (!chunk) break;
       job.passageBook = chunk.book_number;
-      await this.embedPassage(world, chunk, job.controller.signal, canStartStep);
+      await this.activity.track({
+        worldId: world.id, bookRevision: world.book_revision, kind: "embedding", name: "Chunk embedding",
+        location: { book: chunk.book_number, chunk: chunk.number },
+      }, job.controller.signal, activity => this.embedPassage(world, chunk, job.controller.signal, canStartStep, activity));
       await yieldToServer();
     }
     job.passageBook = null;
@@ -184,7 +189,8 @@ export class WorldIndexing {
     return new Error(`Could not extract ${skippedChunks} ${units} after ${MAX_GRAPH_ATTEMPTS} attempts each. Last failure in ${lastChunkFailure}`);
   }
 
-  private async embedPassage(world: WorldRow, chunk: PendingPassage, signal: AbortSignal, canStartStep: () => boolean) {
+  private async embedPassage(world: WorldRow, chunk: PendingPassage, signal: AbortSignal, canStartStep: () => boolean,
+    activity: IndexActivityRecorder) {
     const keys = selectedKeys(this.db, "world_embedding_keys", world.id);
     const prefix = `title: ${chunk.name} | text: `;
     const passageCharacters = Array.from(chunk.text);
@@ -192,9 +198,15 @@ export class WorldIndexing {
       this.indexCooldown.clear();
       this.cooldownWorld = world.id;
     }
-    const indexing = { cooldown: this.indexCooldown, paused: () => !canStartStep() };
+    const indexing = { cooldown: this.indexCooldown, paused: () => !canStartStep(), onRetry: activity.retry };
     const countTokens = (passageText: string) => this.keys.retry("embedding", keys, signal,
-      key => this.provider.count(world.model, key, tokenBody(prefix + passageText), signal), indexing);
+      key => this.provider.count(world.model, key, tokenBody(prefix + passageText), signal), {
+        ...indexing, onAttempt: key => activity.request("Token count request started", key),
+      });
+    if (!chunk.tokens) {
+      activity.input(prefix + chunk.text);
+      activity.step("Counting input tokens");
+    }
     const fullTokenCount = chunk.tokens || await countTokens(chunk.text);
     let embeddingCharacters = passageCharacters.length;
     if (!chunk.tokens && fullTokenCount > world.max_token_limit) {
@@ -213,9 +225,13 @@ export class WorldIndexing {
     }
     signal.throwIfAborted();
     const vector = await this.keys.retry("embedding", keys, signal, async key => {
-      const values = await this.provider.embed(world.model, world.dimensions, key, prefix + passageCharacters.slice(0, embeddingCharacters).join(""), signal);
+      const input = prefix + passageCharacters.slice(0, embeddingCharacters).join("");
+      activity.input(input);
+      const values = await this.provider.embed(world.model, world.dimensions, key, input, signal);
+      activity.step("Embedding received");
+      activity.output(JSON.stringify(values));
       return encodeVector(values, world.dimensions);
-    }, indexing);
+    }, { ...indexing, onAttempt: key => activity.request("Embedding request started", key) });
     signal.throwIfAborted();
     run(this.db, "UPDATE chunks SET vector = ?, tokens = ?, embed_end = ? WHERE book_id = ? AND index_number = ? AND number = ?",
       vector, fullTokenCount, chunk.start + embeddingCharacters, chunk.id, world.index_number, chunk.number);

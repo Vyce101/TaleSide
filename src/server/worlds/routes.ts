@@ -51,6 +51,7 @@ export async function handleWorldRoute(request: IncomingMessage, response: Serve
         case "resume": indexing.resume(id); break;
         case "discard":
           worlds.discard(id);
+          indexing.activity.discard(id);
           onDiscard(id);
           return json(response, { ok: true });
         default: throw new RequestError("Action not found.", 404);

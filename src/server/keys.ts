@@ -70,16 +70,25 @@ export class ProviderKeys {
       const id = ordered.find(candidate => (cooldown?.get(candidate) ?? 0) <= performance.now()) ?? ordered[0];
       attempted.add(id);
       this.rotation.set(selection, (ids.indexOf(id) + 1) % ids.length);
-      yield { id, readKey: () => this.secret(this.require(id)), last: attempted.size === ids.length };
+      const readKey = (onAttempt?: (key: ProviderKeyIdentity) => void) => {
+        const saved = this.require(id);
+        const credential = this.secret(saved);
+        onAttempt?.({ id, name: saved.nickname });
+        return credential;
+      };
+      yield { id, readKey, last: attempted.size === ids.length };
     }
   }
 
   async retry<T>(purpose: Purpose, ids: string[], signal: AbortSignal, request: (key: string) => Promise<T>,
-    indexing?: { cooldown: Map<string, number>; paused: () => boolean }) {
+    indexing?: {
+      cooldown: Map<string, number>; paused: () => boolean;
+      onRetry?: (error: unknown) => void; onAttempt?: (key: ProviderKeyIdentity) => void;
+    }) {
     const failed: string[] = [];
     for (const { id, readKey, last } of this.attempts(purpose, ids, signal, indexing?.cooldown)) {
       try {
-        const response = await request(readKey());
+        const response = await request(readKey(indexing?.onAttempt));
         signal.throwIfAborted();
         if (indexing) {
           indexing.cooldown.delete(id);
@@ -88,6 +97,7 @@ export class ProviderKeys {
         return response;
       } catch (error) {
         if (last || signal.aborted || indexing?.paused()) throw error;
+        indexing?.onRetry?.(error);
         failed.push(id);
       }
     }
