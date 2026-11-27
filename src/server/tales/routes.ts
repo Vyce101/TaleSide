@@ -1,7 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { readJson } from "../http-body.js";
 import { json, streamGeneration } from "../http-response.js";
-import { identifier, RequestError } from "../validation.js";
+import { identifier, RequestError, whole } from "../validation.js";
 import type { Tales } from "./tales.js";
 
 export async function handleTaleRoute(request: IncomingMessage, response: ServerResponse, path: string,
@@ -21,6 +21,11 @@ export async function handleTaleRoute(request: IncomingMessage, response: Server
   if (tale) {
     const [, worldId, id, action] = tale;
     if (getRequest && !action) return json(response, tales.detail(worldId, id));
+    if (getRequest && action === "xray") {
+      const message = whole(Number(searchParams.get("message")), 1, "Choose a reply.");
+      const swipe = whole(Number(searchParams.get("swipe")), 0, "Choose a swipe.");
+      return json(response, tales.messageContext(worldId, id, message, swipe));
+    }
     if (!getRequest && action === "generate") {
       const input = await readJson(request);
       if (isClosing()) throw new RequestError("TaleSide is closing.", 503);

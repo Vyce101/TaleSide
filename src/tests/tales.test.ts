@@ -1,6 +1,7 @@
 import { deepEqual, equal, match, ok } from "node:assert/strict";
 import { test } from "node:test";
 import { setTimeout as wait } from "node:timers/promises";
+import type { MessageContext } from "../shared/inspectors.js";
 import type { GenerationEvent, Tale, TaleSummary, World } from "../shared/types.js";
 import { fakeProvider, fixture, id, until, upload } from "./fixture.js";
 
@@ -81,8 +82,15 @@ test("retrieval includes the full chunk even when indexing embedded only a prefi
   const settings = {
     ...(await app.profiles()).defaults, chat_key_ids: [key], chunk_budget: text.length, chunk_overlap: 2, minimum_similarity: 0.5,
   };
-  await app.generate(world.id, id(), "Find the matching passage.", settings);
+  const tale = id();
+  const events = await app.generate(world.id, tale, "Find the matching passage.", settings);
   equal(retrievedBlock(payload), `<retrieved_context>\n${text}\n</retrieved_context>`);
+  const reply = events.at(-1)!.message;
+  const context = await app.call<MessageContext>(`/api/worlds/${world.id}/tales/${tale}/xray?message=${reply.id}&swipe=0`);
+  equal(context.raw, JSON.stringify(payload));
+  const passage = context.trace.chunks.find(chunk => chunk.included);
+  equal(passage?.preceding, "ef");
+  equal(passage?.text, "ghi");
 
   await app.generate(world.id, id(), "Find the matching passage.", { ...settings, chunk_budget: text.length - 1 });
   equal(retrievedBlock(payload), "<retrieved_context>\n</retrieved_context>");

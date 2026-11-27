@@ -12,7 +12,7 @@ import { identifier, makeId, RequestError, requiredText, whole } from "../valida
 import type { Worlds } from "../worlds/worlds.js";
 import { openReplyContext } from "./reply-context.js";
 import { createReplyStream } from "./reply-stream.js";
-import { removeReplacedGraphPreview, syncMessageCaptures, trySaveRequestCapture } from "./request-capture.js";
+import { readRequestCapture, removeReplacedGraphPreview, syncMessageCaptures, trySaveRequestCapture } from "./request-capture.js";
 import { searchTales } from "./search.js";
 
 type Active = { id: string; worldId: string; controller: AbortController; stopped: boolean; message?: Message; done: Promise<void> };
@@ -102,6 +102,19 @@ export class Tales {
     `, selected, reply.content, reply.thinking, reply.model, reply.status,
     reply.elapsed_ms, reply.thinking_ms, reply.error ?? null, reply.signed_parts, reply.xray_id ?? null, id);
     syncMessageCaptures(this.db, id, swipes.map(swipe => swipe.xray_id));
+  }
+
+  messageContext(worldId: string, taleId: string, messageId: number, selected: number) {
+    const row = get<MessageRow>(this.db, `
+      SELECT ${messageFields} FROM tale_messages
+      WHERE id = ? AND role = 'assistant' AND opening = 0
+        AND tale_id = (SELECT id FROM tales WHERE id = ? AND world_id = ?)
+    `, messageId, taleId, worldId);
+    if (!row || row.swipe !== selected) throw new RequestError("That reply or swipe is no longer selected.", 404);
+    const capture = row.xray_id == null ? undefined : readRequestCapture(this.db, row.xray_id);
+    if (!capture) throw new RequestError("This reply has no saved request.", 404);
+    if (capture.trace.graph_preview?.message_id !== messageId) delete capture.trace.graph_preview;
+    return capture;
   }
 
   private touch(worldId: string, id: string) {

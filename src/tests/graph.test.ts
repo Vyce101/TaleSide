@@ -2,6 +2,7 @@ import { deepEqual, equal, match, ok } from "node:assert/strict";
 import { readdir, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import { test } from "node:test";
+import type { MessageContext } from "../shared/inspectors.js";
 import type { ChatSettings, World } from "../shared/types.js";
 import { FLASH_LITE, GEMMA, HYDROGEN } from "../shared/models.js";
 import { fakeProvider, fixture, id, until, upload } from "./fixture.js";
@@ -125,6 +126,12 @@ test("Tales use live passages and publish a graph from the whole queue, then reu
   match(await ask(), /B3:C1: Carter pilots the ferry\./);
   const extracted = [...extractionCalls];
 
+  const oldTale = id();
+  const oldReply = (await app.generate(world.id, oldTale, "Ask Corvin about the Watch.", { ...settings, chunk_budget: 1 })).at(-1).message;
+  const oldXray = () => app.call<MessageContext>(`${base}/tales/${oldTale}/xray?message=${oldReply.id}&swipe=0`);
+  const archive = await oldXray();
+  ok(archive.trace.chunks.every(chunk => !chunk.included));
+  equal(archive.trace.sources["B2:C1"], "Second chapter.");
   const inFlight = ask("Hold for the edit.");
   await until(() => queryAccepted, value => value);
   const removed = await app.call<World>(base + "/remove-book", { book_revision: appended.book_revision, book_id: appended.books[1].id });
@@ -133,6 +140,7 @@ test("Tales use live passages and publish a graph from the whole queue, then reu
   equal(reversed.status, "paused");
   releaseQuery();
   match(await inFlight, /A guardhouse at the docks\./);
+  equal((await oldXray()).trace.sources["B2:C1"], "Second chapter.");
   const whilePaused = await ask();
   ok(!whilePaused.includes("Entities =") && !whilePaused.includes("Second chapter."));
   await app.call(base + "/resume", {});
@@ -155,6 +163,7 @@ test("Tales use live passages and publish a graph from the whole queue, then reu
   app = await fixture(t, provider, path, { graphResponses: "provider" });
   match(await ask(), /Entities = 4/);
   equal(graphEmbeddings.length, embedded);
+  equal((await oldXray()).trace.sources["B2:C1"], "Second chapter.");
 });
 
 test("Pause aborts both active requests and Resume reuses only the work saved before Pause", async t => {
