@@ -1,5 +1,6 @@
 import { deepEqual, equal, match, ok } from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
+import { communityCenters, connectivitySeeds, graphRadius, GraphLayout, type GraphBody } from "../client/inspectors/graph-layout.js";
 import { test } from "node:test";
 import { deflateRawSync, inflateRawSync } from "node:zlib";
 import type { MessageContext } from "../shared/inspectors.js";
@@ -139,6 +140,46 @@ test("a failed model request has its actual request capture and capture failure 
   equal(saved.has_xray, false);
   equal(saved.xray_error, true);
   match((await app.call<Tale>(`/api/worlds/${world.id}/tales/${missingId}`)).messages.at(-1)!.content, /Reply/);
+});
+
+test("graph seeds separate components and concentric rings before the force simulation", () => {
+  const body = (id: string, degree: number): GraphBody => ({ id, name: id, degree, x: 0, y: 0, vx: 0, vy: 0 });
+  const hub = body("Hub", 10);
+  const spokes = Array.from({ length: 10 }, (_, index) => body(`Spoke ${index}`, 1));
+  const isolated = body("Isolated", 0);
+  const nodes = new Map([hub, ...spokes, isolated].map(node => [node.id, node]));
+  const adjacency = new Map([[hub.id, new Set(spokes.map(node => node.id))],
+    ...spokes.map(node => [node.id, new Set([hub.id])] as const)]);
+  const seeds = connectivitySeeds(nodes, adjacency);
+  deepEqual(seeds.get(hub.id), { x: 0, y: 0 });
+  const ring = seeds.get("Spoke 9")!;
+  const component = seeds.get(isolated.id)!;
+  ok(Math.abs(Math.hypot(ring.x, ring.y) - 170) < 0.001);
+  ok(Math.abs(Math.hypot(component.x, component.y) - 1470) < 0.001);
+  equal(graphRadius(0), 6);
+  equal(graphRadius(25), 22);
+
+  const layout = new GraphLayout();
+  for (const node of nodes.values()) Object.assign(node, seeds.get(node.id));
+  layout.step([...nodes.values()], spokes.map(to => ({ from: hub, to })));
+  ok(spokes.some(node => node.x !== seeds.get(node.id)!.x || node.y !== seeds.get(node.id)!.y));
+  ok([...nodes.values()].every(node => Number.isFinite(node.x) && Number.isFinite(node.y)));
+});
+
+test("dense graph neighborhoods joined by a bridge get separate layout centers", () => {
+  const neighborhoods = ["town", "forest"].map(place => Array.from({ length: 50 }, (_, index) => `${place}-${index}`));
+  const adjacency = new Map(neighborhoods.flatMap(group =>
+    group.map(id => [id, new Set(group.filter(other => other !== id))] as const)));
+  const [town, forest] = neighborhoods;
+  adjacency.get(town[0])!.add(forest[0]);
+  adjacency.get(forest[0])!.add(town[0]);
+  const nodes = new Map([...adjacency].map(([id, adjacent]) => [id, { id, degree: adjacent.size }]));
+  const centers = communityCenters(nodes, adjacency);
+  const townCenter = centers.get(town[0])!;
+  const forestCenter = centers.get(forest[0])!;
+  ok(town.every(id => centers.get(id) === townCenter));
+  ok(forest.every(id => centers.get(id) === forestCenter));
+  ok(Math.hypot(townCenter.x - forestCenter.x, townCenter.y - forestCenter.y) > 400);
 });
 
 test("indexing activity bounds the rolling list and clips retained text while keeping failure timing", () => {
