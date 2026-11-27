@@ -37,7 +37,7 @@ export type ChatModel = { id: string; label: string; context_limit: number; max_
 export type TurnStatus = "complete" | "generating" | "stopped" | "error";
 export type Swipe = {
   content: string; thinking: string; model: string | null; status: TurnStatus;
-  elapsed_ms: number | null; thinking_ms: number | null; error?: string | null; has_signature?: boolean;
+  elapsed_ms: number | null; thinking_ms: number | null; error?: string | null; has_signature?: boolean; has_xray?: boolean; xray_error?: boolean;
 };
 export type Message = Swipe & { id: number; role: "user" | "assistant";
   swipes?: Swipe[]; swipe?: number; opening?: boolean; player_name?: string | null; player_artwork?: string | null };

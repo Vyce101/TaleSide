@@ -7,7 +7,8 @@ export function createReplyStream(keys: ProviderKeys, provider: GeminiClient, se
   signal: AbortSignal, emit: (event: GenerationEvent) => void) {
   const signedParts: Part[] = [];
   return {
-    async send(payload: object, assistant: Message, started: number) {
+    async send(payload: object, assistant: Message, started: number,
+      onAttempt: () => void, onPromptTokens: (tokens: number) => void) {
       const resetReply = () => {
         assistant.content = "";
         assistant.thinking = "";
@@ -15,7 +16,7 @@ export function createReplyStream(keys: ProviderKeys, provider: GeminiClient, se
         signedParts.length = 0;
         emit({ type: "retry" });
       };
-      for await (const part of chatWithRetry(keys, provider, settings, payload, signal, resetReply)) {
+      for await (const part of chatWithRetry(keys, provider, settings, payload, signal, resetReply, onAttempt, onPromptTokens)) {
         signal.throwIfAborted();
         if (typeof part.text === "string" && part.text) {
           if (part.thought) {
@@ -45,13 +46,17 @@ export function createReplyStream(keys: ProviderKeys, provider: GeminiClient, se
   };
 }
 
-async function* chatWithRetry(keys: ProviderKeys, provider: GeminiClient, settings: ChatSettings, payload: object, signal: AbortSignal, resetReply: () => void) {
+async function* chatWithRetry(keys: ProviderKeys, provider: GeminiClient, settings: ChatSettings, payload: object, signal: AbortSignal, resetReply: () => void,
+  onAttempt: () => void, onPromptTokens: (tokens: number) => void) {
   let streamed = false;
   for (const { readKey, last } of keys.attempts("chat", settings.chat_key_ids, signal)) {
     let started = false;
     const pending: Part[] = [];
     try {
-      for await (const part of provider.chat(settings.model, readKey(), payload, signal)) {
+      const key = readKey();
+      signal.throwIfAborted();
+      onAttempt();
+      for await (const part of provider.chat(settings.model, key, payload, signal, { onPromptTokens })) {
         signal.throwIfAborted();
         if (!started && !part.text) { pending.push(part); continue; }
         if (!started) {

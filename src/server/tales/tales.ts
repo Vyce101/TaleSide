@@ -12,25 +12,26 @@ import { identifier, makeId, RequestError, requiredText, whole } from "../valida
 import type { Worlds } from "../worlds/worlds.js";
 import { openReplyContext } from "./reply-context.js";
 import { createReplyStream } from "./reply-stream.js";
+import { removeReplacedGraphPreview, syncMessageCaptures, trySaveRequestCapture } from "./request-capture.js";
 import { searchTales } from "./search.js";
 
 type Active = { id: string; worldId: string; controller: AbortController; stopped: boolean; message?: Message; done: Promise<void> };
 type TaleRow = Omit<TaleSummary, "pinned"> & { pinned: number };
 type Emit = (event: GenerationEvent) => void;
 const TALE_TITLE_LIMIT = 100;
-const messageFields = "id, role, content, thinking, model, status, elapsed_ms, thinking_ms, error, signed_parts, opening, swipe, player_name, player_artwork";
-type StoredSwipe = Swipe & { signed_parts: string | null };
+const messageFields = "id, role, content, thinking, model, status, elapsed_ms, thinking_ms, error, signed_parts, opening, swipe, player_name, player_artwork, xray_id";
+type StoredSwipe = Swipe & { signed_parts: string | null; xray_id?: number | null };
 type MessageRow = StoredSwipe & Pick<Message, "id" | "role" | "player_name" | "player_artwork"> & { swipe: number; opening: number };
 type Rewrite = { row: MessageRow; mode: "regenerate" | "swipe" };
 
 function swipeFrom(row: StoredSwipe): StoredSwipe {
-  const { content, thinking, model, status, elapsed_ms, thinking_ms, error, signed_parts } = row;
-  return { content, thinking, model, status, elapsed_ms, thinking_ms, error, signed_parts };
+  const { content, thinking, model, status, elapsed_ms, thinking_ms, error, signed_parts, xray_id } = row;
+  return { content, thinking, model, status, elapsed_ms, thinking_ms, error, signed_parts, xray_id };
 }
 
 function publicSwipe(row: StoredSwipe): Swipe {
-  const { signed_parts, ...swipe } = swipeFrom(row);
-  return { ...swipe, has_signature: Boolean(signed_parts) };
+  const { signed_parts, xray_id, ...swipe } = swipeFrom(row);
+  return { ...swipe, has_signature: Boolean(signed_parts), has_xray: xray_id != null };
 }
 const summarySql = `
   SELECT t.id, t.world_id, t.title, t.pinned, t.created_at, t.last_activity_at,
@@ -97,9 +98,10 @@ export class Tales {
     }
     run(this.db, `
       UPDATE tale_messages SET swipe = ?, content = ?, thinking = ?, model = ?, status = ?,
-        elapsed_ms = ?, thinking_ms = ?, error = ?, signed_parts = ? WHERE id = ?
+        elapsed_ms = ?, thinking_ms = ?, error = ?, signed_parts = ?, xray_id = ? WHERE id = ?
     `, selected, reply.content, reply.thinking, reply.model, reply.status,
-    reply.elapsed_ms, reply.thinking_ms, reply.error ?? null, reply.signed_parts, id);
+    reply.elapsed_ms, reply.thinking_ms, reply.error ?? null, reply.signed_parts, reply.xray_id ?? null, id);
+    syncMessageCaptures(this.db, id, swipes.map(swipe => swipe.xray_id));
   }
 
   private touch(worldId: string, id: string) {
@@ -307,6 +309,9 @@ export class Tales {
     const stream = createReplyStream(this.keys, this.provider, settings, signal, emit);
     let failure: string | undefined;
     let promptCounts: PromptCounts | undefined;
+    let preparedRequest: Awaited<ReturnType<typeof context.build>> | undefined;
+    let attemptedRequest = false;
+    let providerPromptTokens: number | null = null;
     try {
       const persona = this.personas.resolve(worldId, title === undefined ? this.personaSelection(id) : input.personaSelection);
       let user: Message | undefined;
@@ -315,7 +320,7 @@ export class Tales {
         this.touch(worldId, id);
         const previous = this.publicMessage(rewrite.row);
         assistant = { ...previous, content: "", thinking: "", model: settings.model, status: "generating",
-          elapsed_ms: null, thinking_ms: null, error: null, has_signature: false };
+          elapsed_ms: null, thinking_ms: null, error: null, has_signature: false, has_xray: false };
         if (rewrite.mode === "swipe") {
           assistant.swipe = previous.swipes!.length;
           assistant.swipes = [...previous.swipes!, publicSwipe({ ...assistant, signed_parts: null })];
@@ -333,10 +338,12 @@ export class Tales {
       active.message = assistant;
       emit({ type: "accepted", tale: this.detail(worldId, id), user, assistant });
       const history = rewrite ? input.history : this.rows(id);
-      const { payload, prompt_counts } = await context.build(history, description, { name: persona.name, description: persona.description });
+      preparedRequest = await context.build(history, description, { name: persona.name, description: persona.description });
+      const { payload, prompt_counts } = preparedRequest;
       run(this.db, "UPDATE tales SET prompt_counts = ? WHERE id = ?", JSON.stringify(prompt_counts), id);
       promptCounts = prompt_counts;
-      await stream.send(payload, assistant, started);
+      await stream.send(payload, assistant, started, () => { attemptedRequest = true; providerPromptTokens = null; },
+        tokens => { providerPromptTokens = tokens; });
       assistant.status = "complete";
     } catch (error) {
       if (!active.message) throw error;
@@ -349,17 +356,33 @@ export class Tales {
         const ended = performance.now();
         assistant.elapsed_ms = Math.round(ended - started);
         assistant.error = failure ?? null;
+        let captureFailed = false;
         try {
           const reply = swipeFrom({ ...assistant, signed_parts: stream.signedParts() });
           transaction(this.db, () => {
             if (rewrite && reply.status === "stopped" && !reply.content) return;
+            if (!get(this.db, "SELECT id FROM tale_messages WHERE id = ?", assistant.id)) return;
+            if (attemptedRequest && preparedRequest && assistant.model) {
+              const captureId = trySaveRequestCapture(this.db, {
+                model: assistant.model,
+                inputTokens: providerPromptTokens ?? preparedRequest.inputTokens,
+                characters: preparedRequest.prompt_counts.total,
+                payload: preparedRequest.payload,
+                trace: preparedRequest.trace,
+              });
+              if (captureId === undefined) captureFailed = true;
+              else reply.xray_id = captureId;
+            }
             const swipes = rewrite ? this.swipes(rewrite.row) : [reply];
             const position = rewrite?.mode === "swipe" ? swipes.length : rewrite?.row.swipe ?? 0;
+            const replacedCaptureId = swipes[position]?.xray_id;
+            if (replacedCaptureId != null) removeReplacedGraphPreview(this.db, replacedCaptureId, assistant.id);
             swipes[position] = reply;
             this.writeSwipes(assistant.id, swipes, position);
           });
           const row = get<MessageRow>(this.db, `SELECT ${messageFields} FROM tale_messages WHERE id = ?`, assistant.id);
           if (row) Object.assign(assistant, this.publicMessage(row));
+          if (captureFailed) assistant.xray_error = true;
         } catch {
           assistant.status = "error";
           failure = assistant.error = "The reply could not be saved.";
