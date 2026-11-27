@@ -1,3 +1,4 @@
+import type { RequestCaptureTrace } from "../../shared/inspectors.js";
 import { CHAT_MODELS, GEMMA, GEMMA_SAMPLING } from "../../shared/models.js";
 import type { ChatSettings, Persona, PromptCounts } from "../../shared/types.js";
 import { InputTooLarge, LEGACY_EMBEDDING, tokenBody, type GeminiClient } from "../gemini.js";
@@ -17,6 +18,7 @@ type HistoryEntry = {
   thinking: string;
   model: string | null;
   signed_parts: string | null;
+  player_name?: string | null;
 };
 type ContextOptions = {
   databasePath: string;
@@ -61,7 +63,7 @@ export async function openReplyContext({ databasePath, worldId, readWorld, keys,
 
   return {
     async build(messages: HistoryEntry[], description: string, persona: Pick<Persona, "name" | "description">) {
-      const history = messages.filter(message => message.content);
+      const history = messages.map((message, index) => ({ ...message, turn: index + 1 })).filter(message => message.content);
       const retrievalHistory = history.filter(message => !message.opening);
       let queryVector: number[] = [];
       if (retrievalKeys.length) {
@@ -118,11 +120,11 @@ async function openPassageSnapshot(database: string, worldId: string, signal: Ab
     const { world } = await worker.receive<{ world: RetrievalWorld }>();
     return {
       world,
-      async build(vector: number[], history: HistoryEntry[], settings: ChatSettings,
+      async build(vector: number[], history: (HistoryEntry & { turn: number })[], settings: ChatSettings,
         context: { description: string; persona: { name: string; description: string } }, graph?: GraphContext) {
         const gemma = settings.model === GEMMA;
         await worker.send({ vector, history, settings, context, graph, gemma });
-        const chatRequest = await worker.receive<{ payload: { generationConfig: object }; prompt_counts: PromptCounts }>();
+        const chatRequest = await worker.receive<{ payload: { generationConfig: object }; prompt_counts: PromptCounts; trace: RequestCaptureTrace }>();
         if (gemma) Object.assign(chatRequest.payload.generationConfig, GEMMA_SAMPLING);
         return chatRequest;
       },

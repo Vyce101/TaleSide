@@ -2,6 +2,7 @@
 
 import base64
 import json
+import re
 import sqlite3
 import sys
 from contextlib import closing
@@ -38,6 +39,26 @@ def prepare(request):
     send({"books": prepared})
 
 
+def read_graph_sources(database, world, graph):
+    if not graph:
+        return {}
+    labels = dict.fromkeys(
+        match.group() for note in graph["trace"]
+        for match in re.finditer(r"\bB[1-9][0-9]{0,8}:C[1-9][0-9]{0,8}\b", note["description"])
+    )
+    sources = {}
+    for label in labels:
+        book, chunk = map(int, label[1:].split(":C"))
+        row = database.execute("""
+            SELECT substr(b.working, c.start + 1, c.end - c.start)
+            FROM books b JOIN chunks c ON c.book_id = b.id
+            WHERE b.world_id = ? AND b.number = ? AND c.index_number = ? AND c.number = ?
+        """, (world["id"], book, world["index_number"], chunk)).fetchone()
+        if row:
+            sources[label] = row[0]
+    return sources
+
+
 def retrieve(request):
     path = Path(request["database"]).resolve().as_uri() + "?mode=ro"
     with closing(sqlite3.connect(path, uri=True)) as database:
@@ -55,16 +76,20 @@ def retrieve(request):
         send({"world": dict(world)})
         query = read()
         settings = query["settings"]
-        included, _, _, _ = (
+        included, skipped, below_minimum, other_skipped = (
             passages(database, world, query["vector"], settings, Event()) if query["vector"] else ([], [], 0, 0)
         )
+        graph = query.get("graph")
+        retrieval_trace = dict(chunks=included + skipped, graph=graph["trace"] if graph else [],
+                         endpoints=graph["endpoints"] if graph else [], sources=read_graph_sources(database, world, graph),
+                         below_minimum=below_minimum, other_skipped_chunks=other_skipped,
+                         other_skipped_graph=graph["other_skipped"] if graph else 0)
         passage_parts = passage_prompt_parts(included)
-        excerpts = ["".join(passage_parts)] if passage_parts else []
         for message in query["history"]:
             if message.get("signed_parts"):
                 message["signed_parts"] = json.loads(message["signed_parts"])
-        send(chat_request(world, books, excerpts, query["history"], settings, query["context"],
-                          query.get("graph"), query["gemma"]))
+        send(chat_request(world, books, passage_parts, query["history"], settings, query["context"],
+                          graph, query["gemma"], retrieval_trace))
 
 
 def main():
