@@ -8,7 +8,7 @@ import { element, showError } from "../dom.js";
 import { showDrawerError, showToast } from "../toasts.js";
 import { renderKeyPicker } from "../key-picker.js";
 import { avatar, iconButton, searchInput, worldRows } from "../view.js";
-import { editorMarkup, processing, renderBooks, renderIndex, renderWorldProgress, upload, type EditableBook } from "./form.js";
+import { editorMarkup, processing, renderBooks, renderIndex, upload, type EditableBook } from "./form.js";
 
 type Editor = { description: string; openings: string[]; id: string; world?: World; books: EditableBook[]; keyIds: string[];
   extractionKeyIds: string[]; artwork?: File;
@@ -150,7 +150,6 @@ export function createWorldEditor({ currentWorld, isOpen, showWorldPanel, enterW
       }
       if (status === "ready" && !form.world?.graph) void submitIndexAction(form);
     });
-    element("world-progress").addEventListener("toggle", () => { if (editor === form) renderWorldProgress(form.world); });
     element("world-editor").addEventListener("submit", event => {
       event.preventDefault();
       void submitIndexAction(form);

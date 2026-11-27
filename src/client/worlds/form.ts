@@ -64,14 +64,6 @@ export function editorMarkup(world: World | undefined, indexingOpen: boolean | u
         <input type="number" id="world-gleaning-passes" value="${world?.graph?.gleaning_passes ?? 3}" min="0">
       </fieldset>
     </details>
-    <details id="world-progress" class="index-settings" ${world ? "" : "hidden"}>
-      <summary>World progress</summary>
-      <div class="world-progress-body">
-        <p id="world-progress-total"></p>
-        <ul id="world-progress-books"></ul>
-        <dl id="world-graph-progress" class="world-graph-progress" hidden></dl>
-      </div>
-    </details>
     <label for="world-description">World description</label>
     <textarea id="world-description" rows="4"></textarea>
     <div class="opening-heading">
@@ -129,27 +121,6 @@ function settingHint(label: string, hint: string) {
   return `<span class="setting-hint" tabindex="0" aria-label="${label}" aria-description="${hint}" data-tooltip="${hint}">?</span>`;
 }
 
-// This temporary panel shows indexing counts. Detailed graph progress will move to the World and Message Context Inspector.
-export function renderWorldProgress(world?: World) {
-  if (!world || !element<HTMLDetailsElement>("world-progress").open) return;
-  const count = (done: number, total: number) => `${done.toLocaleString()} of ${total.toLocaleString()} chunks indexed`;
-  element("world-progress-total").textContent = count(world.embedded_chunks, world.total_chunks);
-  const graphProgress = element("world-graph-progress");
-  graphProgress.hidden = !world.total_chunks;
-  const records = world.graph_progress;
-  const recordCount = (count: number) => records ? `${count.toLocaleString()} of ${records.combined.toLocaleString()}` : "0";
-  graphProgress.innerHTML = `<dt>Extractions combined</dt><dd>${(records?.combined ?? 0).toLocaleString()}</dd>
-    <dt>Extractions summarized</dt><dd>${recordCount(records?.summarized ?? 0)}</dd>
-    <dt>Extractions embedded</dt><dd>${recordCount(records?.embedded ?? 0)}</dd>`;
-  const books = element("world-progress-books");
-  books.innerHTML = world.books.length ? world.books.map(book => `<li>
-    <strong>${escapeHtml(book.name)}</strong>
-    <progress max="${book.total_chunks || 1}" value="${book.embedded_chunks}" aria-label="${escapeHtml(book.name)} indexing progress"></progress>
-    <small>${count(book.embedded_chunks, book.total_chunks)}</small>
-    <small>${book.extracted_chunks.toLocaleString()} of ${book.total_chunks.toLocaleString()} chunks extracted</small>
-  </li>`).join("") : '<li>No books in this World.</li>';
-}
-
 export function renderIndex(world: World | undefined, books: EditableBook[], busy: boolean) {
   const status = world?.status;
   const needsExtractionSettings = world && status !== "unindexed" && !world.graph;
@@ -189,7 +160,6 @@ export function renderIndex(world: World | undefined, books: EditableBook[], bus
     const progress = element<HTMLProgressElement>("world-index-progress");
     progress.hidden = !["creating", "pausing", "paused", "failed"].includes(world.status);
     progress.value = world.progress;
-    renderWorldProgress(world);
   }
   renderBooks(books, world);
 }
