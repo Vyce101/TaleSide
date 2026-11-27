@@ -4,6 +4,8 @@ import { test } from "node:test";
 import { deflateRawSync, inflateRawSync } from "node:zlib";
 import type { MessageContext } from "../shared/inspectors.js";
 import type { Tale } from "../shared/types.js";
+import { IndexActivity } from "../server/worlds/index-activity.js";
+import { RequestError } from "../server/validation.js";
 import { fakeProvider, fixture, id, until } from "./fixture.js";
 
 test("Message Context reconstructs the provider body and follows saved swipes across edits, branches, restart and deletion", async t => {
@@ -137,4 +139,43 @@ test("a failed model request has its actual request capture and capture failure 
   equal(saved.has_xray, false);
   equal(saved.xray_error, true);
   match((await app.call<Tale>(`/api/worlds/${world.id}/tales/${missingId}`)).messages.at(-1)!.content, /Reply/);
+});
+
+test("indexing activity bounds the rolling list and clips retained text while keeping failure timing", () => {
+  const buffer = new IndexActivity();
+  const payload = "📚".repeat(250_000);
+  const active = buffer.start({
+    worldId: "world", bookRevision: 7, kind: "extraction", name: "Initial extraction", location: { book: 1, chunk: 1 },
+  });
+  active.input(payload);
+  active.output("Streaming", true);
+  active.retry(new RequestError("Rate limit reached.", 429));
+  const operation = buffer.snapshot("world").active[0].id;
+  const detail = buffer.detail("world", operation)!;
+  equal(detail.thinking, "Streaming");
+  equal(detail.steps.at(-1)?.error, "429 · Rate limit reached.");
+  equal(buffer.snapshot("world").events.at(-1)?.severity, "warning");
+  active.output("Partial reply");
+  active.resetOutput();
+  equal(buffer.detail("world", operation)?.output, "");
+  equal(buffer.detail("world", operation)?.thinking, "");
+  active.output("Replacement reply");
+  equal(buffer.detail("world", operation)?.output, "Replacement reply");
+  equal(detail.revision, 7);
+  equal(detail.clipped, true);
+  ok(Buffer.byteLength(detail.input) <= 384 * 1024);
+  for (let index = 0; index < 110; index++) {
+    const event = buffer.start({
+      worldId: "world", bookRevision: 7, kind: "embedding", name: "Chunk embedding", location: { book: 1, chunk: index + 2 },
+    });
+    event.input(payload);
+    event.finish("complete");
+  }
+  active.finish("error", "Provider refused the extraction.");
+  const events = buffer.snapshot("world").events;
+  equal(events.length, 200);
+  equal(events.at(-1)!.status, "error");
+  equal(buffer.snapshot("other").events.length, 0);
+  equal(buffer.detail("world", operation)?.steps.at(-1)?.label, "Failed");
+  equal(buffer.detail("world", operation)?.error, "Provider refused the extraction.");
 });

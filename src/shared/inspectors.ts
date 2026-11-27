@@ -1,3 +1,22 @@
+
+export type ActivityKind = "extraction" | "embedding" | "graph";
+export type ActivityStatus = "running" | "complete" | "error" | "stopped";
+export type ActivityStep = { label: string; at: number; severity?: "warning" | "error"; error?: string; key_name?: string };
+export type ActivityLocation = { book?: number; chunk?: number; pass?: number; record?: string };
+
+export type ActivityEvent = {
+  id: number; operation: number; kind: ActivityKind; status: ActivityStatus;
+  name: string; location: ActivityLocation; at: number; elapsed: number | null; revision: number;
+  operation_name: string; severity?: "warning" | "error"; keys?: { count: number; name?: string };
+};
+
+export type ActivityDetail = {
+  id: number; kind: ActivityKind; name: string; started: number; ended: number | null; status: ActivityStatus;
+  location: ActivityLocation; steps: ActivityStep[]; input: string; output: string; thinking: string;
+  clipped: boolean; steps_clipped: boolean; expired: boolean; error: string | null; revision: number;
+};
+
+export type ActiveOperation = Pick<ActivityDetail, "id" | "kind" | "name" | "location" | "started">;
 export type PassageTrace = {
   book: number; chunk: number; name: string; similarity: number; text: string; preceding?: string;
   included: boolean;
