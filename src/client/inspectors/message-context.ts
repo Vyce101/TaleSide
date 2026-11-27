@@ -3,7 +3,7 @@ import type { Message, Tale } from "../../shared/types.js";
 import { request, taleRoute } from "../data.js";
 import { setSurfaceVisible, slideFrames } from "../motion.js";
 import { backControl, button, copyControl, count, el, iconControl, muted, notice, readableRequest, reader, readerHeading, replacePanel, select, setMeter } from "./ui.js";
-
+import { createMessageContextGraph } from "./message-context-graph.js";
 
 const percent = new Intl.NumberFormat(undefined, { style: "percent", maximumFractionDigits: 1 });
 const preview = (text: string) => text.length > 260 ? text.slice(0, 260).trimEnd() + "…" : text;
@@ -18,8 +18,11 @@ export function createMessageContext(panel: HTMLElement) {
   let rawMode: "readable" | "json" = "readable";
   let chunkOrder: "sent" | "similarity" = "sent";
   let closeReader: (() => void) | undefined;
+  let graphView: ReturnType<typeof createMessageContextGraph> | undefined;
 
   function closeSection() {
+    graphView?.close();
+    graphView = undefined;
     closeReader = undefined;
   }
 
@@ -83,6 +86,7 @@ export function createMessageContext(panel: HTMLElement) {
       const views = el("div", "inspector-retrieved-views");
       views.append(
         row("chunks", `Chunks · ${count(sent)}`, chunks, roundedRatio(item.characters) - roundedRatio(graph)),
+        row("graph", data.trace.graph_preview ? "Graph Preview" : "Graph", graph),
       );
       group.append(summary, views);
       sidebar.append(group);
@@ -188,7 +192,10 @@ export function createMessageContext(panel: HTMLElement) {
       setMode(rawMode);
       replacePanel(main, [toolbar, code]);
     } else if (tab === "chunks") replacePanel(main, chunks());
-    else if (section?.kind === "chat_history") replacePanel(main, history());
+    else if (tab === "graph") {
+      graphView = createMessageContextGraph(data.trace);
+      replacePanel(main, graphView.content);
+    } else if (section?.kind === "chat_history") replacePanel(main, history());
     else if (section) replacePanel(main, [section.text ? reader(section.text, section.name) : muted("No text from this section was sent.")]);
   }
 
@@ -219,6 +226,6 @@ export function createMessageContext(panel: HTMLElement) {
 
   return {
     open, close, get visible() { return Boolean(controller); },
-    escape() { if (closeReader) closeReader(); else close(); },
+    escape() { if (closeReader) closeReader(); else if (!graphView?.closeRecord()) close(); },
   };
 }

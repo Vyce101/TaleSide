@@ -128,6 +128,8 @@ details.inspector-card > summary small { display: block; padding-top: 4px; }
 @media (prefers-reduced-motion: reduce) {
   .inspector-meter[data-indeterminate="true"], .inspector-spinner { animation: none; }
 }
+
+
 #message-xray .inspector-raw-row { justify-content: space-between; font-weight: 650; background: #252925; }
 .inspector-retrieved-group {
   min-width: 0; padding: 4px; border: 1px solid #3b4840; border-radius: 6px; background: #252b26;
@@ -179,6 +181,7 @@ details.inspector-card > summary small { display: block; padding-top: 4px; }
 .inspector-back svg { width: 15px; height: 15px; }
 .inspector-chunk-navigation { flex-wrap: nowrap; }
 .inspector-link { padding: 2px 0; border: 0; background: transparent; color: var(--mint); text-align: left; }
+.inspector-link:hover { text-decoration: underline; }
 .inspector-overall-label { display: grid; gap: 1px; }
 .inspector-overall-value { display: flex; align-items: center; gap: 10px; }
 .inspector-main .inspector-toggle-icon {
@@ -257,6 +260,7 @@ details.inspector-card > summary small { display: block; padding-top: 4px; }
   display: block; margin: 9px 0; border-block: 1px solid #4d554d; padding: 3px 0; color: var(--mint); font-size: 11px;
 }
 .inspector-context-boundary:first-child { margin-top: 0; }
+.inspector-xray-graph-body { display: grid; min-width: 0; gap: 10px; }
 .inspector-graph-map-issue:empty { display: none; }
 .inspector-graph-explorer {
   min-width: 0; padding: 10px; border: 1px solid #426251; border-radius: 7px; background: #242e28;
