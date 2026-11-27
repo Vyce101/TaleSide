@@ -1,5 +1,6 @@
-import { deepEqual, equal, match, rejects } from "node:assert/strict";
+import { deepEqual, doesNotMatch, equal, match, rejects } from "node:assert/strict";
 import { test } from "node:test";
+import type { ActivityDetail, InspectorOverview } from "../shared/inspectors.js";
 import type { GenerationEvent, Tale } from "../shared/types.js";
 import { gemini } from "../server/gemini.js";
 import { RequestError } from "../server/validation.js";
@@ -131,6 +132,20 @@ test("indexing cools down a failed key after another key succeeds", async t => {
   const ready = await until(() => app.world(world.id), world => world.status === "ready");
   equal(ready.embedded_chunks, 7);
   equal(rejected, 1);
+
+  const route = `/api/worlds/${world.id}`;
+  const overview = await app.call<InspectorOverview>(route + "/inspector");
+  const firstChunk = overview.events.filter(event => event.location.chunk === 1).at(-1)!;
+  const secondChunk = overview.events.filter(event => event.location.chunk === 2).at(-1)!;
+  deepEqual(firstChunk.keys, { count: 2 });
+  deepEqual(secondChunk.keys, { count: 1, name: "Good" });
+  const activity = await app.call<ActivityDetail>(route + `/inspector-activity?operation=${firstChunk.operation}`);
+  deepEqual(activity.steps.filter(step => step.key_name).map(step => [step.label, step.key_name]), [
+    ["Token count request started", "Good"],
+    ["Embedding request started", "Bad"],
+    ["Embedding request started", "Good"],
+  ]);
+  doesNotMatch(JSON.stringify({ overview, activity }), /fixture-(?:working|rejected)/);
 });
 
 test("an exhausted retrieval embedding retry keeps a blank accepted reply and stops", async t => {

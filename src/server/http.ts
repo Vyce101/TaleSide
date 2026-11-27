@@ -16,6 +16,7 @@ import { get, run } from "./sqlite.js";
 import { handleTaleRoute } from "./tales/routes.js";
 import { Tales } from "./tales/tales.js";
 import { identifier, RequestError } from "./validation.js";
+import { WorldInspector } from "./worlds/inspector.js";
 import { WorldIndexing } from "./worlds/indexing.js";
 import { handleWorldRoute } from "./worlds/routes.js";
 import { Worlds } from "./worlds/worlds.js";
@@ -52,6 +53,7 @@ export async function createApplication(databasePath: string, options: Options =
     const graphIndexes = new GraphIndexes(db, databasePath);
     const indexing = new WorldIndexing(db, keys, provider, graphIndexes);
     const worlds = new Worlds(db, keys, graphIndexes, indexing);
+    const inspector = new WorldInspector(db, indexing.activity, id => worlds.detail(id));
     const profiles = new Profiles(db, keys);
     const personas = new Personas(db);
     const tales = new Tales(db, worlds, profiles, keys, provider, graphIndexes, databasePath, personas);
@@ -113,7 +115,7 @@ export async function createApplication(databasePath: string, options: Options =
       if (!getRequest && personaAction) return json(response, personas.change(personaAction[1], await readJson(request)));
 
       if (await handleTaleRoute(request, response, path, url.searchParams, tales, () => closing)) return;
-      if (await handleWorldRoute(request, response, path, worlds, indexing, id => tales.discardWorld(id))) return;
+      if (await handleWorldRoute(request, response, path, url.searchParams, worlds, indexing, inspector, id => tales.discardWorld(id))) return;
 
       const profile = /^\/api\/chat-profiles\/(select|create|save|rename|delete)$/.exec(path);
       if (!getRequest && profile) return json(response, profiles.change(profile[1], await readJson(request)));

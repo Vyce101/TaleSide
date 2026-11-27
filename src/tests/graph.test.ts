@@ -2,7 +2,7 @@ import { deepEqual, equal, match, ok } from "node:assert/strict";
 import { readdir, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import { test } from "node:test";
-import type { MessageContext } from "../shared/inspectors.js";
+import type { ActivityDetail, InspectorMap, InspectorOverview, InspectorRecordPage, MessageContext } from "../shared/inspectors.js";
 import type { ChatSettings, World } from "../shared/types.js";
 import { FLASH_LITE, GEMMA, HYDROGEN } from "../shared/models.js";
 import { fakeProvider, fixture, id, until, upload } from "./fixture.js";
@@ -116,6 +116,29 @@ test("Tales use live passages and publish a graph from the whole queue, then reu
   await app.call(base + "/resume", {});
   await until(() => waiting, value => value);
   await until(() => app.world(world.id), value => value.embedded_chunks === 3);
+  const inspector = await app.call<InspectorOverview>(base + "/inspector");
+  equal(inspector.active[0].kind, "extraction");
+  const extractionId = inspector.active[0].id;
+  deepEqual(inspector.events.filter(event => event.operation === extractionId).at(-1)?.keys, { count: 1, name: "Gemini" });
+  const extraction = await app.call<ActivityDetail>(base + `/inspector-activity?operation=${extractionId}`);
+  equal(extraction.steps.find(step => step.label === "Request started · Attempt 1")?.key_name, "Gemini");
+  const provisional = await app.call<InspectorMap>(base + "/inspector-map");
+  equal(provisional.mode, "extracted");
+  equal(provisional.nodes.length, 4);
+  equal(provisional.nodes.find(node => node.name === "CORVIN")?.source_notes, 3);
+  const published = await app.call<InspectorMap>(base + "/inspector-map?ready=1");
+  equal(published.mode, "ready");
+  equal(published.edges.length, 3);
+  equal(published.nodes.find(node => node.name === "CORVIN")?.source_notes, 3);
+  deepEqual(published.edges.filter(edge => edge.name === "CORVIN → THE WATCH").map(edge => edge.source_notes).sort(), [1, 2]);
+  const filtered = await app.call<InspectorRecordPage>(base + "/inspector-records?kind=entities&type=ITEM");
+  deepEqual(filtered.items.map(item => item.name), ["GUILD SEAL"]);
+  const combined = await app.call<InspectorRecordPage>(base + "/inspector-records?kind=all&q=Corvin");
+  ok(combined.items.some(item => item.name === "CORVIN" && item.type === "CHARACTER"));
+  ok(combined.items.some(item => item.type === null && item.name.includes("CORVIN")));
+  const retrievalRecords = await app.call<InspectorRecordPage>(base + "/inspector-records?kind=all&ready=1");
+  equal(retrievalRecords.entities, published.nodes.length);
+  equal(retrievalRecords.relationships, published.edges.length);
   const during = await ask();
   match(during, /Third chapter\./);
   match(during, /Entities = 4/);
@@ -164,6 +187,7 @@ test("Tales use live passages and publish a graph from the whole queue, then reu
   match(await ask(), /Entities = 4/);
   equal(graphEmbeddings.length, embedded);
   equal((await oldXray()).trace.sources["B2:C1"], "Second chapter.");
+  equal((await app.call<InspectorOverview>(base + "/inspector")).events.length, 0);
 });
 
 test("Pause aborts both active requests and Resume reuses only the work saved before Pause", async t => {

@@ -3,11 +3,12 @@ import { readArtwork } from "../artwork.js";
 import { formData, parseJson, readJson } from "../http-body.js";
 import { json } from "../http-response.js";
 import { fields, RequestError, requiredText } from "../validation.js";
+import type { WorldInspector } from "./inspector.js";
 import type { WorldIndexing } from "./indexing.js";
 import type { Worlds } from "./worlds.js";
 
 export async function handleWorldRoute(request: IncomingMessage, response: ServerResponse, path: string,
-  worlds: Worlds, indexing: WorldIndexing, onDiscard: (id: string) => void) {
+  params: URLSearchParams, worlds: Worlds, indexing: WorldIndexing, inspector: WorldInspector, onDiscard: (id: string) => void) {
   const getRequest = request.method === "GET";
   if (getRequest && path === "/api/worlds") return json(response, worlds.list());
 
@@ -15,6 +16,7 @@ export async function handleWorldRoute(request: IncomingMessage, response: Serve
   if (world) {
     const [, id, action] = world;
     if (getRequest && !action) return json(response, worlds.detail(id));
+    if (getRequest && action.startsWith("inspector")) return json(response, inspector.route(id, action, params));
     if (getRequest && action === "artwork") {
       const artwork = worlds.artwork(id);
       if (!artwork) throw new RequestError("Artwork not found.", 404);

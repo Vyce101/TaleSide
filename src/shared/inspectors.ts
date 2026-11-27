@@ -19,6 +19,12 @@ export type ActivityDetail = {
 };
 
 export type ActiveOperation = Pick<ActivityDetail, "id" | "kind" | "name" | "location" | "started">;
+export type InspectorStage = { name: string; status: string; done: number; total: number | null };
+export type InspectorOverview = {
+  world: World; stages: InspectorStage[]; events: ActivityEvent[]; active: ActiveOperation[]; revision: string;
+  entities: number; relationships: number;
+};
+
 export type InspectorNode = { id: string; name: string; type: string | null; version: string; };
 export type InspectorEdge = InspectorNode & { source: string; target: string };
 export type InspectorMap = {
