@@ -49,7 +49,7 @@ export class WorldIndexing {
 
   constructor(private db: DatabaseSync, private keys: ProviderKeys, private provider: GeminiClient,
     private graphIndexes: GraphIndexes) {
-    this.graph = new GraphJobs(db, keys, provider, graphIndexes);
+    this.graph = new GraphJobs(db, keys, provider, graphIndexes, this.activity);
   }
 
   progress(world: WorldRow, totalChunks: number, embeddedChunks: number, extractedChunks: number) {

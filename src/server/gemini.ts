@@ -15,7 +15,7 @@ export class InputTooLarge extends Error {
 }
 
 export type Part = { text?: string; thought?: boolean; thoughtSignature?: string };
-type ChatOptions = { requireComplete?: boolean; onPromptTokens?: (tokens: number) => void };
+type ChatOptions = { requireComplete?: boolean; onPromptTokens?: (tokens: number) => void; onResponse?: () => void };
 export type GeminiClient = {
   count: (model: string, key: string, body: object, signal: AbortSignal) => Promise<number>;
   embed: (model: string, dimensions: number, key: string, text: string, signal: AbortSignal) => Promise<number[]>;
@@ -119,6 +119,7 @@ export const gemini: GeminiClient = {
     let reader: ReadableStreamDefaultReader<string> | undefined;
     try {
       const response = await request(model, key, "streamGenerateContent", body, requestSignal, true);
+      options?.onResponse?.();
       reader = response.body!.pipeThrough(new TextDecoderStream()).getReader();
       let buffer = "";
       let errorEvent = false;

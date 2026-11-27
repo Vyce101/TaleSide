@@ -14,9 +14,10 @@ import { resolveGraph } from "./resolution.js";
 import type { GraphIndexes } from "./indexes.js";
 import type { ProviderKeys } from "../keys.js";
 import { fields, RequestError, whole } from "../validation.js";
+import type { IndexActivity, IndexActivityRecorder } from "../worlds/index-activity.js";
 import { precedingChunkTextSql, type GraphWorldFields } from "../worlds/storage.js";
 
-type IndexedWorld = Pick<World, "id" | "model" | "dimensions" | "status"> & GraphWorldFields & { index_number: number };
+type IndexedWorld = Pick<World, "id" | "model" | "dimensions" | "status" | "book_revision"> & GraphWorldFields & { index_number: number };
 type Chunk = { book_id: string; book: number; number: number; text: string; preceding: string };
 type Summary = { id: number; name: string; type: string | null; input: string };
 
@@ -47,7 +48,7 @@ export class GraphJobs {
   private embeddingCooldown = new Map<string, number>();
 
   constructor(private db: DatabaseSync, private keys: ProviderKeys, private provider: GeminiClient,
-    private indexes: GraphIndexes) {}
+    private indexes: GraphIndexes, private activity: IndexActivity) {}
 
   recordCounts(world: IndexedWorld): GraphProgress | null {
     const generation = world.status === "ready" ? world.graph_published : world.graph_building;
@@ -75,25 +76,39 @@ export class GraphJobs {
   }
 
   private async request<T>(world: IndexedWorld, settings: GraphSettings, prompt: string, signal: AbortSignal,
-    working: () => boolean, parse: (text: string) => T) {
+    working: () => boolean, activity: IndexActivityRecorder, parse: (text: string) => T) {
     const keys = selectedKeys(this.db, "world_extraction_keys", world.id);
     const model = CHAT_MODELS.find(model => model.id === settings.model)!;
     const payload = graphRequest(settings, prompt, model.max_output);
+    activity.input(JSON.stringify(payload, null, 2));
     for (let attempt = 1; ; attempt++) {
       try {
         const { readKey } = this.keys.attempts("extraction", keys, signal).next().value!;
+        const key = readKey(identity => activity.request(`Request started · Attempt ${attempt}`, identity));
+        if (attempt > 1) activity.resetOutput();
         let answer = "";
-        for await (const part of this.provider.chat(model.id, readKey(), payload, signal, { requireComplete: true })) {
+        let received = false;
+        for await (const part of this.provider.chat(model.id, key, payload, signal, {
+          requireComplete: true, onResponse: () => activity.step("Response received"),
+        })) {
           signal.throwIfAborted();
-          if (!part.thought && typeof part.text === "string") answer += part.text;
+          if (typeof part.text !== "string" || !part.text) continue;
+          if (!received) {
+            received = true;
+            activity.step("First output received");
+          }
+          if (!part.thought) answer += part.text;
+          activity.output(part.text, part.thought);
         }
         signal.throwIfAborted();
+        activity.step("Validating output");
         return parse(answer);
       } catch (error) {
         if (!working()) throw error;
         if (attempt === MAX_GRAPH_ATTEMPTS) {
           throw new GraphRequestFailed(error instanceof Error ? error.message : "The extraction model request failed.");
         }
+        activity.retry(error);
       }
     }
   }
@@ -105,18 +120,25 @@ export class GraphJobs {
     `, ...key);
     const previous = newRecords(passes.flatMap(pass => JSON.parse(pass.records) as Extraction[]), []);
     const pass = passes.length;
-    const records = await this.request(world, settings, extractionPrompt(chunk.preceding, chunk.text, pass ? previous : undefined),
-      signal, working, text => parseExtraction(text, previous));
-    signal.throwIfAborted();
-    const complete = pass >= settings.gleaning_passes || (pass > 0 && !newRecords(records, previous).length);
-    transaction(this.db, () => {
-      run(this.db, `
-        INSERT INTO graph_chunks (book_id, index_number, chunk_number, complete) VALUES (?, ?, ?, ?)
-        ON CONFLICT (book_id, index_number, chunk_number) DO UPDATE SET complete = excluded.complete
-      `, ...key, Number(complete));
-      run(this.db, "INSERT INTO graph_passes VALUES (?, ?, ?, ?, ?)", ...key, pass, JSON.stringify(records));
+    const name = pass ? `Gleaning pass ${pass}` : "Initial extraction";
+    return this.activity.track({
+      worldId: world.id, bookRevision: world.book_revision, kind: "extraction", name,
+      location: { book: chunk.book, chunk: chunk.number, pass },
+    }, signal, async activity => {
+      const records = await this.request(world, settings, extractionPrompt(chunk.preceding, chunk.text, pass ? previous : undefined),
+        signal, working, activity, text => parseExtraction(text, previous));
+      signal.throwIfAborted();
+      const complete = pass >= settings.gleaning_passes || (pass > 0 && !newRecords(records, previous).length);
+      transaction(this.db, () => {
+        run(this.db, `
+          INSERT INTO graph_chunks (book_id, index_number, chunk_number, complete) VALUES (?, ?, ?, ?)
+          ON CONFLICT (book_id, index_number, chunk_number) DO UPDATE SET complete = excluded.complete
+        `, ...key, Number(complete));
+        run(this.db, "INSERT INTO graph_passes VALUES (?, ?, ?, ?, ?)", ...key, pass, JSON.stringify(records));
+      });
+      activity.step("Extraction saved");
+      return complete;
     });
-    return complete;
   }
 
   prepare(world: IndexedWorld) {
@@ -165,10 +187,17 @@ export class GraphJobs {
       after = summary.id;
       const prompt = consolidationPrompt(summary.type ?? "relationship", summary.name, summary.input);
       try {
-        const description = await this.request(world, settings, prompt, signal, working, text => parseConsolidation(text, summary.input));
-        signal.throwIfAborted();
-        run(this.db, "UPDATE graph_records SET description = ?, characters = ? WHERE id = ?",
-          description, renderedLength(summary, description), summary.id);
+        await this.activity.track({
+          worldId: world.id, bookRevision: world.book_revision, kind: "graph", name: "Graph summary",
+          location: { record: summary.name },
+        }, signal, async activity => {
+          const description = await this.request(world, settings, prompt, signal, working, activity,
+            text => parseConsolidation(text, summary.input));
+          signal.throwIfAborted();
+          run(this.db, "UPDATE graph_records SET description = ?, characters = ? WHERE id = ?",
+            description, renderedLength(summary, description), summary.id);
+          activity.step("Summary saved");
+        });
       } catch (error) {
         if (!(error instanceof GraphRequestFailed)) throw error;
         skipped++;
