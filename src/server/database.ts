@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
 import { backup, DatabaseSync } from "node:sqlite";
+import { requestCaptureSchema } from "./tales/request-capture.js";
 import { installTaleSearch } from "./tales/search.js";
 import { graphSchema } from "./graph/schema.js";
 import { selections } from "./key-selections.js";
@@ -131,7 +132,7 @@ function migrateLegacy(db: DatabaseSync, version: number) {
 
 }
 
-const DATABASE_VERSION = 6;
+const DATABASE_VERSION = 7;
 
 export async function openDatabase(path: string, onBackup?: () => void) {
   const existing = path !== ":memory:" && existsSync(path);
@@ -179,6 +180,7 @@ export async function openDatabase(path: string, onBackup?: () => void) {
         PRAGMA user_version = 5;
       `);
       if (version < 6) db.exec(`${graphSchema} PRAGMA user_version = 6;`);
+      if (version < 7) db.exec(`${requestCaptureSchema} PRAGMA user_version = 7;`);
       db.exec(`
         UPDATE worlds SET status = 'paused' WHERE status IN ('creating', 'pausing');
         UPDATE tale_messages SET status = 'error' WHERE status = 'generating';

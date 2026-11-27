@@ -80,6 +80,11 @@ test("a version 2 database keeps existing Tales and builds their search index", 
       DROP TRIGGER search_title_insert; DROP TRIGGER search_title_update; DROP TRIGGER search_title_delete;
       DROP TRIGGER search_world_insert; DROP TRIGGER search_world_update; DROP TRIGGER search_world_delete;
       DROP TRIGGER search_message_insert; DROP TRIGGER search_message_update; DROP TRIGGER search_message_delete;
+      DROP TABLE xray_owners;
+      DROP TABLE xray_blob_refs;
+      DROP TABLE xray_blobs;
+      DROP TABLE xray_captures;
+      ALTER TABLE tale_messages DROP COLUMN xray_id;
       DROP TABLE graph_passes;
       DROP TABLE graph_chunks;
       DROP TABLE graph_records;
