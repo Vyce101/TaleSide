@@ -3,6 +3,7 @@ import { DatabaseSync } from "node:sqlite";
 import { parentPort, workerData, type MessagePort } from "node:worker_threads";
 import { graphPaths, type GraphContext, type GraphQuery } from "./index-protocol.js";
 import { graphRecordTitle, normalizedName } from "./records.js";
+import type { GraphEndpoint, GraphTrace } from "../../shared/inspectors.js";
 import { VectorIndex } from "./vector-index.js";
 
 const MAX_EDGES_PER_ENTITY = 150;
@@ -12,13 +13,14 @@ const EDGE_SIMILARITY_WEIGHT = 0.8;
 const EDGE_STRENGTH_WEIGHT = 0.2;
 const MAX_RELATIONSHIP_STRENGTH = 10;
 const NOTE_SEPARATOR_CHARACTERS = 2;
+const SKIPPED_GRAPH_LIMIT = 20;
 const WORD = /[\p{L}\p{M}\p{N}_]/u;
 const TOKEN = /[\p{L}\p{M}\p{N}_]+|[^\p{L}\p{M}\p{N}_\s]/gu;
 type GraphRecordRow = { id: number; name: string; type: string | null; source: number | null; target: number | null;
   strength: number | null; characters: number };
 type Neighbor = { entityId: number; relationshipId: number; strength: number };
 type EntityName = { name: string; id: number };
-type IndexedRecord = { characters: number; endpoints?: [number, number]; vectorOffset?: number };
+type IndexedRecord = { name: string; type: string | null; characters: number; endpoints?: [number, number]; vectorOffset?: number };
 
 
 const { database, directory, generation } = workerData as { database: string; directory: string; generation: number };
@@ -71,13 +73,13 @@ function attachRecord(records: Map<number, IndexedRecord>, names: Map<string, En
       candidates.push({ name, id: row.id });
       names.set(first, candidates);
     }
-    records.set(row.id, { characters: row.characters });
+    records.set(row.id, { name: row.name, type: row.type, characters: row.characters });
     return;
   }
   const source = row.source!;
   const target = row.target!;
   const strength = row.strength!;
-  records.set(row.id, { characters: row.characters, endpoints: [source, target], vectorOffset });
+  records.set(row.id, { name: row.name, type: row.type, characters: row.characters, endpoints: [source, target], vectorOffset });
   for (const [from, to] of [[source, target], [target, source]]) {
     const neighbors = adjacency.get(from) ?? [];
     neighbors.push({ entityId: to, relationshipId: row.id, strength });
@@ -121,21 +123,30 @@ function createSearch() {
   index.view(paths, entities, relationships);
 
   return (query: GraphQuery): GraphContext => {
-    const selectedRecords = new Set<number>();
+    const included = new Map<number, { reason: string; hop: number }>();
+    const rejected = new Map<number, { reason: string; hop: number; excluded_reason: string }>();
     const visitedEntities = new Set<number>();
     const relationshipScores = new Map<number, number>();
     const queryVector = Float32Array.from(query.vector);
     const queryVectorLength = Math.sqrt(queryVector.reduce((sum, value) => sum + value * value, 0));
     let remainingCharacters = query.graph_budget;
 
-    function tryIncludeRecord(id: number) {
-      if (selectedRecords.has(id)) return false;
+    function skip(id: number, reason: string, hop: number, excluded: string) {
+      if (!included.has(id) && !rejected.has(id)) rejected.set(id, { reason, hop, excluded_reason: excluded });
+    }
+
+    function tryIncludeRecord(id: number, reason: string, hop = 0) {
+      if (included.has(id)) return false;
       const record = records.get(id);
       if (!record) return false;
-      const separatorCharacters = selectedRecords.size ? NOTE_SEPARATOR_CHARACTERS : 0;
+      const separatorCharacters = included.size ? NOTE_SEPARATOR_CHARACTERS : 0;
       const addedCharacters = record.characters + separatorCharacters;
-      if (addedCharacters > remainingCharacters) return false;
-      selectedRecords.add(id);
+      if (addedCharacters > remainingCharacters) {
+        skip(id, reason, hop, "budget full");
+        return false;
+      }
+      rejected.delete(id);
+      included.set(id, { reason, hop });
       remainingCharacters -= addedCharacters;
       return true;
     }
@@ -167,8 +178,9 @@ function createSearch() {
     const semanticMatches = index.search(queryVector, candidateLimit);
     const seeds: number[] = [];
     for (const id of [...exactMatches, ...semanticMatches.map(hit => hit.id)]) {
-      if (seeds.length >= query.graph_matches) break;
-      if (tryIncludeRecord(id)) seeds.push(id);
+      const reason = exactMatches.has(id) ? "Exact match" : "Meaning match";
+      if (seeds.length >= query.graph_matches) skip(id, reason, 0, "match limit reached");
+      else if (tryIncludeRecord(id, reason)) seeds.push(id);
     }
 
     let frontier: number[] = [];
@@ -183,9 +195,10 @@ function createSearch() {
 
     for (let hop = 0; hop < query.graph_hops && (frontier.length || seedRelationships.length) && remainingCharacters > 0; hop++) {
       const nextEntityRanks = new Map<number, number>();
+      const reason = `Hop ${hop + 1}`;
       function visitEntity(entityId: number, rank: number) {
         if (visitedEntities.has(entityId)) return;
-        if (tryIncludeRecord(entityId) || selectedRecords.has(entityId)) {
+        if (tryIncludeRecord(entityId, reason, hop + 1) || included.has(entityId)) {
           const previousRank = nextEntityRanks.get(entityId) ?? -Infinity;
           nextEntityRanks.set(entityId, Math.max(rank, previousRank));
         }
@@ -200,10 +213,13 @@ function createSearch() {
           .sort((left, right) => right.rank - left.rank || left.neighbor.relationshipId - right.neighbor.relationshipId);
         let acceptedRelationships = 0;
         for (const { neighbor, rank } of neighbors) {
-          if (acceptedRelationships >= query.graph_edges) break;
-          const addedRelationship = tryIncludeRecord(neighbor.relationshipId);
+          if (acceptedRelationships >= query.graph_edges) {
+            skip(neighbor.relationshipId, reason, hop + 1, "edge limit reached");
+            continue;
+          }
+          const addedRelationship = tryIncludeRecord(neighbor.relationshipId, reason, hop + 1);
           const neighborAlreadyReached = visitedEntities.has(neighbor.entityId) || nextEntityRanks.has(neighbor.entityId);
-          const canFollowSelectedRelationship = !neighborAlreadyReached && selectedRecords.has(neighbor.relationshipId);
+          const canFollowSelectedRelationship = !neighborAlreadyReached && included.has(neighbor.relationshipId);
           if (!addedRelationship && !canFollowSelectedRelationship) continue;
           acceptedRelationships++;
           visitEntity(neighbor.entityId, rank);
@@ -214,12 +230,30 @@ function createSearch() {
       frontier = rankedEntities.slice(0, MAX_ENTITIES_PER_HOP).map(([entityId]) => entityId);
     }
 
-    const selectedRows = db.prepare(`
-      SELECT id, name, type, description FROM graph_records
+    const skipped = [...rejected.keys()].slice(0, SKIPPED_GRAPH_LIMIT);
+    const shown = [...included.keys(), ...skipped];
+    const rows = db.prepare(`
+      SELECT id, description FROM graph_records
       WHERE generation = ? AND id IN (SELECT value FROM json_each(?))
-    `).all(generation, JSON.stringify([...selectedRecords])) as { id: number; name: string; type: string | null; description: string }[];
-    const notesById = new Map(selectedRows.map(row => [row.id, graphRecordTitle(row.name, row.type) + "\n" + row.description]));
-    return { entities, relationships, notes: [...selectedRecords].map(id => notesById.get(id)!) };
+    `).all(generation, JSON.stringify(shown)) as { id: number; description: string }[];
+    const descriptions = new Map(rows.map(row => [row.id, row.description]));
+    const endpoints = new Map<number, GraphEndpoint>();
+    const trace: GraphTrace[] = shown.map(id => {
+      const { name, type, endpoints: link } = records.get(id)!;
+      for (const endpoint of link ?? []) {
+        const node = records.get(endpoint)!;
+        endpoints.set(endpoint, { id: endpoint, name: node.name, type: node.type });
+      }
+      return {
+        id, name, type, description: descriptions.get(id)!, source: link?.[0], target: link?.[1],
+        ...(included.get(id) ?? rejected.get(id)!), included: included.has(id),
+      };
+    });
+    const notes = Array.from(included.keys(), id => {
+      const { name, type } = records.get(id)!;
+      return graphRecordTitle(name, type) + "\n" + descriptions.get(id)!;
+    });
+    return { entities, relationships, notes, trace, endpoints: [...endpoints.values()], other_skipped: rejected.size - skipped.length };
   };
 }
 

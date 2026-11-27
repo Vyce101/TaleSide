@@ -1,7 +1,11 @@
 import { join } from "node:path";
 import type { ChatSettings } from "../../shared/types.js";
 
-export type GraphContext = { entities: number; relationships: number; notes: string[] };
+import type { GraphEndpoint, GraphTrace } from "../../shared/inspectors.js";
+export type GraphContext = {
+  entities: number; relationships: number; notes: string[];
+  trace: GraphTrace[]; endpoints: GraphEndpoint[]; other_skipped: number;
+};
 export type GraphQuery = Pick<ChatSettings, "graph_budget" | "graph_matches" | "graph_hops" | "graph_edges">
   & { vector: number[]; text: string };
 
