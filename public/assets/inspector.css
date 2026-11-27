@@ -60,6 +60,12 @@
 button.inspector-card:hover, .inspector-card summary:hover { border-color: #6e9981; background: #294236; }
 details.inspector-card > summary { cursor: pointer; }
 details.inspector-card > summary small { display: block; padding-top: 4px; }
+.inspector-score { font-variant-numeric: tabular-nums; color: var(--mint); }
+.inspector-similarity { display: block; height: 3px; border-radius: 3px; background: #314139; overflow: hidden; }
+.inspector-similarity::before {
+  content: ""; display: block; height: 100%; width: var(--inspector-score, 0%);
+  background: var(--dialogue); opacity: var(--inspector-brightness, 1);
+}
 .inspector-preview { font-size: 13px; white-space: pre-line; }
 .inspector-reader {
   white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; padding: 12px;
@@ -122,9 +128,28 @@ details.inspector-card > summary small { display: block; padding-top: 4px; }
   .inspector-meter[data-indeterminate="true"], .inspector-spinner { animation: none; }
 }
 #message-xray .inspector-raw-row { justify-content: space-between; font-weight: 650; background: #252925; }
+.inspector-retrieved-group {
+  min-width: 0; padding: 4px; border: 1px solid #3b4840; border-radius: 6px; background: #252b26;
+}
+.inspector-retrieved-summary {
+  display: grid; gap: 6px; padding: 5px 6px 7px;
+}
+.inspector-retrieved-summary h3 { font-size: 12px; overflow-wrap: anywhere; }
+.inspector-retrieved-summary small { color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.inspector-retrieved-share { display: flex; align-items: center; gap: 7px; }
+.inspector-retrieved-share small { white-space: nowrap; }
+.inspector-retrieved-share .inspector-meter { flex: 1; min-width: 0; height: 3px; color: #729b84; }
+.inspector-retrieved-views { display: grid; gap: 3px; }
+.inspector-retrieved-views .inspector-nav-row { min-height: 31px; gap: 4px; padding: 4px; }
+.inspector-retrieved-views .inspector-share { flex-basis: 33px; }
+@media (width < 570px) {
+  .inspector-retrieved-group { grid-column: 1 / -1; }
+  .inspector-retrieved-views { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
 .inspector-world-tab { border: 0; background: transparent; padding-inline: 9px; }
 .inspector-world-tab:hover { background: #2a302c; }
 .inspector-world-tab[aria-pressed="true"] { background: #2e3c34; }
+.inspector-inline-total { margin-left: auto; white-space: nowrap; }
 .inspector-xray-tools {
   position: sticky; top: 0; z-index: 1; display: flex; justify-content: flex-end; gap: 5px;
   margin: -8px calc(-1 * var(--panel-gutter)) 6px; padding: 5px var(--panel-gutter); background: #212421;
@@ -134,6 +159,17 @@ details.inspector-card > summary small { display: block; padding-top: 4px; }
 }
 .inspector-xray-tools .icon-button:is(:hover, [aria-pressed="true"]) { color: var(--mint); background: var(--green); }
 .inspector-xray-tools .icon-button svg { width: 17px; height: 17px; }
+.inspector-xray-chunk { grid-template-columns: minmax(0, 1fr) max-content; column-gap: 12px; }
+.inspector-xray-chunk-description, .inspector-xray-chunk-status { display: grid; align-content: start; gap: 4px; }
+.inspector-xray-chunk-status { justify-items: end; }
+.inspector-xray-chunk .inspector-preview { grid-column: 1 / -1; }
+:is(.inspector-xray-chunk, .inspector-xray-history) .inspector-preview {
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
+  line-height: 1.4; white-space: normal; overflow-wrap: anywhere;
+}
+:is(.inspector-xray-chunk, .inspector-xray-history) .inspector-preview::before {
+  content: ""; float: inline-end; width: 18%; height: 2lh; shape-outside: inset(1lh 0 0);
+}
 .inspector-reader-title { display: flex; gap: 10px; align-items: center; min-width: 0; }
 .inspector-reader-title h3 { min-width: 0; }
 .inspector-main .inspector-back {
