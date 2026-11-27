@@ -13,4 +13,6 @@
 4. Open **Tale Settings**. Under **Model and reasoning**, select the same key in **Chat key**.
 5. Close Tale Settings. Once the first passage is indexed, send a message and wait for Gemini to reply. The World’s **First Message** is the opening you see before you send anything. Chat starts using character and relationship write-ups after the current set of books finishes indexing.
 
-If indexing reports skipped items or a book edit leaves it paused, click **Resume indexing** to continue from saved work. **World progress** shows how many chunks have been indexed and extracted for each book.
+If indexing reports skipped items or a book edit leaves it paused, open **World Inspector → Overview** from the toolbar and select **Resume Indexing**. Under **Activities**, you can see running operations, recent request details, and the saved key name used on each attempt.
+
+In a Tale, select **Message Context** above a generated reply to see the request for that swipe.

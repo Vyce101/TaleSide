@@ -18,7 +18,15 @@ SQLite under `data/` is the shared source of truth for Worlds, books, indexing p
 
 ## Pause and resume indexing
 
-The World routes send pause and resume to [World indexing](../src/server/worlds/indexing.ts). Pause aborts active indexing requests and keeps work that was already saved. Resume checks key assignments and picks up from the saved chunks, extraction passes, and graph records. Confirming Delete indexing also aborts active requests and clears saved index data. The browser polls while a World is indexing and shows progress in the World editor.
+The World routes send pause and resume to [World indexing](../src/server/worlds/indexing.ts). Pause aborts active indexing requests and keeps work that was already saved. Resume checks key assignments and picks up from the saved chunks, extraction passes, and graph records. Confirming Delete indexing also aborts active requests and clears saved index data.
+
+[World Inspector](../src/client/inspectors/world-inspector.ts) polls the [World Inspector API](../src/server/worlds/inspector.ts) for progress and loads chunk text and saved extraction passes on demand. [Index activity](../src/server/worlds/index-activity.ts) keeps a bounded timeline and recent request details in process memory. It records the saved key name for each request attempt and counts distinct keys per operation for the Activities tab. [Inspector graph reads](../src/server/worlds/inspector-graph.ts) use the published or building generation when available and replay saved extraction passes to show the working graph before resolution.
+
+## Inspect a Tale request
+
+The [request assembler](../taleside/chat_request.py) returns the Gemini request and a separate trace of prompt sections, retrieval decisions, and history. The Tale service sends the request body to Gemini and saves the trace with the corresponding swipe. [Request capture storage](../src/server/tales/request-capture.ts) deduplicates text in SQLite and uses a savepoint so a capture failure can be rolled back while the reply is still saved.
+
+[Message Context](../src/client/inspectors/message-context.ts) loads the original request for the selected swipe through the existing `/xray` route. The [captured graph view](../src/client/inspectors/message-context-graph.ts) reads that saved trace and shares the [canvas renderer](../src/client/inspectors/graph-map.ts) with World Inspector. Both overlays use the [inspector stylesheet](../public/assets/inspector.css).
 
 ## Verify the flows
 
@@ -29,4 +37,5 @@ Run `npm test` and `python -B -m unittest discover -s tests -v` from the reposit
 | Import, edit books, pause, and resume | [Worlds](../src/tests/worlds.test.ts) and [Python book preparation](../tests/test_books.py) |
 | Publish a graph and reuse it after book edits | [Graph](../src/tests/graph.test.ts) |
 | Find a Tale, hold a reply snapshot, and save a partial reply | [Search](../src/tests/search.test.ts) and [Tales](../src/tests/tales.test.ts) |
+| Inspect saved requests, graph layout, and indexing activity | [Inspectors](../src/tests/inspectors.test.ts) |
 | Retry provider failures and reopen existing data | [Provider errors](../src/tests/provider-errors.test.ts) and [Migration](../src/tests/migration.test.ts) |
