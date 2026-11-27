@@ -1,13 +1,14 @@
-import type { InspectorBookPage, InspectorChunkDetail, InspectorOverview } from "../../shared/inspectors.js";
+import type { ActivityDetail, InspectorBookPage, InspectorChunkDetail, InspectorOverview } from "../../shared/inspectors.js";
 import type { World } from "../../shared/types.js";
 import { request, worldRoute } from "../data.js";
+import { activityView } from "./world-activity.js";
 import { booksView, chunkReader } from "./world-books.js";
 import { overviewView } from "./world-overview.js";
 import { backControl, button, el, iconControl, muted, notice, readerHeading, replacePanel } from "./ui.js";
 
-type Tab = "overview" | "books";
+type Tab = "overview" | "activities" | "books";
 type View = { root: HTMLElement; update: (overview: InspectorOverview) => void; escape?: () => boolean; close?: () => void };
-const tabs: [Tab, string][] = [["overview","Overview"],["books","Books & Chunks"]];
+const tabs: [Tab, string][] = [["overview","Overview"],["activities","Activities"],["books","Books & Chunks"]];
 
 export function createWorldInspector(panel: HTMLElement, worldUpdated: (world: World) => void) {
   const name = panel.querySelector<HTMLElement>(".inspector-world-name")!;
@@ -95,6 +96,7 @@ export function createWorldInspector(panel: HTMLElement, worldUpdated: (world: W
     closeSource(false);
     for (const row of sidebar.querySelectorAll<HTMLButtonElement>("button")) row.setAttribute("aria-pressed", String(row.dataset.tab === tab));
     if (tab === "overview") view = overviewView(change);
+    else if (tab === "activities") view = activityView(id => read<ActivityDetail>("inspector-activity", { operation: String(id) }), sourceMarker);
     else view = booksView(
       (bookId, offset) => read<InspectorBookPage>("inspector-book", { book: bookId, offset: String(offset) }),
       (book, chunk) => {
