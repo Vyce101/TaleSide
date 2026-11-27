@@ -10,7 +10,7 @@ from threading import Event
 
 from .books import BookSource, prepare_book
 from .chat_request import chat_request
-from .tale_retrieval import passages
+from .tale_retrieval import passage_prompt_parts, passages
 
 
 def read():
@@ -55,7 +55,11 @@ def retrieve(request):
         send({"world": dict(world)})
         query = read()
         settings = query["settings"]
-        excerpts = passages(database, world, query["vector"], settings, Event()) if query["vector"] else []
+        included, _, _, _ = (
+            passages(database, world, query["vector"], settings, Event()) if query["vector"] else ([], [], 0, 0)
+        )
+        passage_parts = passage_prompt_parts(included)
+        excerpts = ["".join(passage_parts)] if passage_parts else []
         for message in query["history"]:
             if message.get("signed_parts"):
                 message["signed_parts"] = json.loads(message["signed_parts"])

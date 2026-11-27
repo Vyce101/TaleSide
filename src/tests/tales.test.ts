@@ -4,6 +4,16 @@ import { setTimeout as wait } from "node:timers/promises";
 import type { GenerationEvent, Tale, TaleSummary, World } from "../shared/types.js";
 import { fakeProvider, fixture, id, until, upload } from "./fixture.js";
 
+function retrievedBlock(payload: object | undefined) {
+  type Content = { parts: { text: string }[] };
+  const request = payload as { systemInstruction?: Content; contents: Content[] } | undefined;
+  const blocks = [request?.systemInstruction, ...(request?.contents ?? [])];
+  for (const { text } of blocks.flatMap(block => block?.parts ?? [])) {
+    const retrieved = text.match(/<retrieved_context>[\s\S]*?<\/retrieved_context>/);
+    if (retrieved) return retrieved[0];
+  }
+}
+
 test("a Tale is saved on its first accepted send and uses live World metadata and Markdown reply parts", async t => {
   let payload: object | undefined;
   const app = await fixture(t, {
@@ -67,9 +77,15 @@ test("retrieval includes the full chunk even when indexing embedded only a prefi
   const world = await app.newWorld({ name: "Passages", key_ids: [key], max_chunk_size: 6 },
     [["Book.txt", "abcdefghi"]]);
   await until(() => app.world(world.id), value => value.status === "ready");
-  const settings = { ...(await app.profiles()).defaults, chat_key_ids: [key], chunk_budget: 5, chunk_overlap: 2 };
+  const text = "Book 1 — Book\n\nChunk 2\nPreceding context (Chunk 1):\nef\nChunk text:\nghi";
+  const settings = {
+    ...(await app.profiles()).defaults, chat_key_ids: [key], chunk_budget: text.length, chunk_overlap: 2, minimum_similarity: 0.5,
+  };
   await app.generate(world.id, id(), "Find the matching passage.", settings);
-  match(JSON.stringify(payload), /<retrieved_context>\\nefghi\\n<\/retrieved_context>/);
+  equal(retrievedBlock(payload), `<retrieved_context>\n${text}\n</retrieved_context>`);
+
+  await app.generate(world.id, id(), "Find the matching passage.", { ...settings, chunk_budget: text.length - 1 });
+  equal(retrievedBlock(payload), "<retrieved_context>\n</retrieved_context>");
 });
 
 test("the passage budget checks lower-ranked chunks after skipping a chunk that does not fit", async t => {
@@ -89,9 +105,10 @@ test("the passage budget checks lower-ranked chunks after skipping a chunk that 
   const world = await app.newWorld({ name: "Budget", key_ids: [key] },
     [["One.txt", "Best note"], ["Two.txt", "An oversized passage."], ["Three.txt", "Short"]]);
   await until(() => app.world(world.id), value => value.status === "ready");
-  const settings = { ...(await app.profiles()).defaults, chat_key_ids: [key], chunk_budget: 16 };
+  const text = "Book 1 — One\n\nChunk 1\nChunk text:\nBest note\n\nBook 3 — Three\n\nChunk 1\nChunk text:\nShort";
+  const settings = { ...(await app.profiles()).defaults, chat_key_ids: [key], chunk_budget: text.length };
   await app.generate(world.id, id(), "Find the match.", settings);
-  match(JSON.stringify(payload), /<retrieved_context>\\nBest note\\n\\nShort\\n<\/retrieved_context>/);
+  equal(retrievedBlock(payload), `<retrieved_context>\n${text}\n</retrieved_context>`);
 });
 
 test("a higher-ranked passage gives back its overlap when the preceding passage also fits", async t => {
@@ -113,9 +130,11 @@ test("a higher-ranked passage gives back its overlap when the preceding passage 
   const world = await app.newWorld({ name: "Overlapping passages", key_ids: [key], max_chunk_size: 6 },
     [["Book.txt", "abcdefghi"]]);
   await until(() => app.world(world.id), value => value.status === "ready");
-  const settings = { ...(await app.profiles()).defaults, chat_key_ids: [key], chunk_budget: 11, chunk_overlap: 2 };
+  const highestRankedAlone = "Book 1 — Book\n\nChunk 2\nPreceding context (Chunk 1):\nef\nChunk text:\nghi";
+  const settings = { ...(await app.profiles()).defaults, chat_key_ids: [key], chunk_budget: highestRankedAlone.length, chunk_overlap: 2 };
   await app.generate(world.id, id(), "Find the matching passages.", settings);
-  match(JSON.stringify(chatRequest), /<retrieved_context>\\nabcdef\\n\\nghi\\n<\/retrieved_context>/);
+  equal(retrievedBlock(chatRequest),
+    "<retrieved_context>\nBook 1 — Book\n\nChunk 1\nChunk text:\nabcdef\n\nChunk 2\nChunk text:\nghi\n</retrieved_context>");
 });
 
 test("deleting indexing preserves Tales and uses the first new passage without the old index", async t => {
