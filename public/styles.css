@@ -773,7 +773,8 @@ dialog label input { display: block; margin-top: 5px; }
   height: auto;
   justify-self: center;
   align-self: start;
-  max-height: min(62dvh, 100%);
+  --dropdown-max-height: min(62dvh, 100%);
+  max-height: var(--dropdown-max-height);
   background: #212421;
   box-shadow: 0 12px 20px #0006;
 }
@@ -1069,4 +1070,5 @@ dialog label input { display: block; margin-top: 5px; }
 .persona-defaults legend { padding: 0; margin-bottom: 5px; color: var(--muted); font-size: 12px; }
 .persona-defaults button { display: inline-flex; align-items: center; gap: 5px; background: #252925; color: var(--muted); }
 .persona-defaults button[aria-pressed="true"] { background: #294938; border-color: #578e6f; color: var(--mint); }
+
 .persona-defaults svg { width: 15px; height: 15px; }
