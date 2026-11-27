@@ -1,7 +1,7 @@
 import { deepEqual, equal, match, ok } from "node:assert/strict";
 import { test } from "node:test";
 import { setTimeout as wait } from "node:timers/promises";
-import type { MessageContext } from "../shared/inspectors.js";
+import type { InspectorChunkDetail, MessageContext } from "../shared/inspectors.js";
 import type { GenerationEvent, Tale, TaleSummary, World } from "../shared/types.js";
 import { fakeProvider, fixture, id, until, upload } from "./fixture.js";
 
@@ -78,6 +78,11 @@ test("retrieval includes the full chunk even when indexing embedded only a prefi
   const world = await app.newWorld({ name: "Passages", key_ids: [key], max_chunk_size: 6 },
     [["Book.txt", "abcdefghi"]]);
   await until(() => app.world(world.id), value => value.status === "ready");
+  const detail = await app.call<InspectorChunkDetail>(`/api/worlds/${world.id}/inspector-chunk?book=1&chunk=2&revision=${world.book_revision}`);
+  equal(detail.text, "ghi");
+  equal(detail.embedded_characters, 2);
+  equal(detail.characters, 3);
+  equal(detail.preceding, "f");
   const text = "Book 1 — Book\n\nChunk 2\nPreceding context (Chunk 1):\nef\nChunk text:\nghi";
   const settings = {
     ...(await app.profiles()).defaults, chat_key_ids: [key], chunk_budget: text.length, chunk_overlap: 2, minimum_similarity: 0.5,

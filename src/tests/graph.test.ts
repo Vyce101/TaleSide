@@ -2,7 +2,7 @@ import { deepEqual, equal, match, ok } from "node:assert/strict";
 import { readdir, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import { test } from "node:test";
-import type { ActivityDetail, InspectorMap, InspectorOverview, InspectorRecordPage, MessageContext } from "../shared/inspectors.js";
+import type { ActivityDetail, InspectorChunkDetail, InspectorChunkRow, InspectorMap, InspectorOverview, InspectorRecordPage, MessageContext } from "../shared/inspectors.js";
 import type { ChatSettings, World } from "../shared/types.js";
 import { FLASH_LITE, GEMMA, HYDROGEN } from "../shared/models.js";
 import { fakeProvider, fixture, id, until, upload } from "./fixture.js";
@@ -131,6 +131,17 @@ test("Tales use live passages and publish a graph from the whole queue, then reu
   equal(published.edges.length, 3);
   equal(published.nodes.find(node => node.name === "CORVIN")?.source_notes, 3);
   deepEqual(published.edges.filter(edge => edge.name === "CORVIN → THE WATCH").map(edge => edge.source_notes).sort(), [1, 2]);
+  const passage = await app.call<InspectorChunkDetail>(
+    `${base}/inspector-chunk?book=1&chunk=1&revision=${added.book_revision}`);
+  equal(passage.text, "First chapter.");
+  deepEqual(passage.passes.map(pass => pass.number), [0, 1, 2]);
+  const bookRoute = `${base}/inspector-book?book=${added.books[0].id}`;
+  const matches = await app.call<{ items: InspectorChunkRow[] }>(bookRoute + "&q=CHAPTER");
+  equal(matches.items[0].preview, "First chapter.");
+  equal(matches.items[0].embedding_status, "complete");
+  ok(matches.items[0].entities > 0 && matches.items[0].relationships > 0);
+  deepEqual((await app.call<{ items: InspectorChunkRow[] }>(bookRoute + "&q=unrelated")).items, []);
+  deepEqual((await app.call<{ items: InspectorChunkRow[] }>(bookRoute + "&filter=pending")).items, []);
   const filtered = await app.call<InspectorRecordPage>(base + "/inspector-records?kind=entities&type=ITEM");
   deepEqual(filtered.items.map(item => item.name), ["GUILD SEAL"]);
   const combined = await app.call<InspectorRecordPage>(base + "/inspector-records?kind=all&q=Corvin");

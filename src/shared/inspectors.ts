@@ -25,6 +25,16 @@ export type InspectorOverview = {
   entities: number; relationships: number;
 };
 
+export type ChunkStatus = "pending" | "running" | "retrying" | "failed" | "complete" | "off";
+export type InspectorChunk = { number: number; embedded: boolean; embedding_live: boolean; extraction: "pending" | "running" | "partial" | "complete" | "off" };
+export type InspectorChunkRow = InspectorChunk & { preview: string; embedding_status: ChunkStatus; extraction_status: ChunkStatus; entities: number; relationships: number };
+export type InspectorBookPage = { items: InspectorChunkRow[]; more: boolean };
+export type InspectorChunkDetail = InspectorChunk & {
+  book: number; book_name: string; text: string; preceding: string;
+  embedded_characters: number | null; characters: number;
+  passes: { number: number; records: Extraction[] }[];
+};
+
 export type InspectorNode = { id: string; name: string; type: string | null; version: string; };
 export type InspectorEdge = InspectorNode & { source: string; target: string };
 export type InspectorMap = {
