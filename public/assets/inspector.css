@@ -41,6 +41,7 @@
 .inspector-nav-row small { margin-left: auto; font-variant-numeric: tabular-nums; }
 .inspector-nav-row:hover, .inspector-nav-row[aria-pressed="true"] { border-color: #537961; }
 .inspector-nav-row[aria-pressed="true"] { color: var(--mint); }
+.inspector-share { color: #c1d7cb; flex: 0 0 40px; font-variant-numeric: tabular-nums; }
 .inspector-list { display: grid; gap: 8px; align-content: start; min-width: 0; }
 .inspector-heading { margin-bottom: 6px; }
 .inspector-heading h3, .inspector-list h4 { margin: 0; overflow-wrap: anywhere; }
@@ -115,13 +116,24 @@ details.inspector-card > summary small { display: block; padding-top: 4px; }
   .inspector-rail { max-height: 25dvh; padding: 7px; border-right: 0; border-bottom: 1px solid var(--soft-line); }
   .inspector-sidebar { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .inspector-world-name { margin-bottom: 6px; }
+  .inspector-share { flex-basis: auto; }
 }
 @media (prefers-reduced-motion: reduce) {
   .inspector-meter[data-indeterminate="true"], .inspector-spinner { animation: none; }
 }
+#message-xray .inspector-raw-row { justify-content: space-between; font-weight: 650; background: #252925; }
 .inspector-world-tab { border: 0; background: transparent; padding-inline: 9px; }
 .inspector-world-tab:hover { background: #2a302c; }
 .inspector-world-tab[aria-pressed="true"] { background: #2e3c34; }
+.inspector-xray-tools {
+  position: sticky; top: 0; z-index: 1; display: flex; justify-content: flex-end; gap: 5px;
+  margin: -8px calc(-1 * var(--panel-gutter)) 6px; padding: 5px var(--panel-gutter); background: #212421;
+}
+.inspector-xray-tools .icon-button {
+  width: 30px; min-height: 30px; color: var(--muted); border-radius: 5px;
+}
+.inspector-xray-tools .icon-button:is(:hover, [aria-pressed="true"]) { color: var(--mint); background: var(--green); }
+.inspector-xray-tools .icon-button svg { width: 17px; height: 17px; }
 .inspector-reader-title { display: flex; gap: 10px; align-items: center; min-width: 0; }
 .inspector-reader-title h3 { min-width: 0; }
 .inspector-main .inspector-back {

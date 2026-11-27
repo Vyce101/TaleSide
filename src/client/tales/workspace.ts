@@ -16,9 +16,10 @@ type WorkspaceOptions = {
   currentPersona: () => Persona | undefined;
   onBranch: (world: World, tale: Tale) => void;
   onTalesChanged: () => void;
+  onMessageContext: (tale: Tale, message: Message, from: HTMLElement) => void;
 };
 
-export function createTaleWorkspace({ workspace, currentChatSettings, currentPersona, onBranch, onTalesChanged }: WorkspaceOptions) {
+export function createTaleWorkspace({ workspace, currentChatSettings, currentPersona, onBranch, onTalesChanged, onMessageContext }: WorkspaceOptions) {
   const selection: { world?: World; tale?: OpenTale } = {};
   let turnPending = false;
   let editingTurn = false;
@@ -227,8 +228,13 @@ export function createTaleWorkspace({ workspace, currentChatSettings, currentPer
     const tale = selection.tale;
     const article = button.closest<HTMLElement>(".turn");
     const message = tale?.messages.find(row => row.id === Number(article?.dataset.message));
-    if (!tale || !article || !message || reply.active || turnPending || editingTurn) return;
+    if (!tale || !article || !message) return;
     const action = button.dataset.action!;
+    if (action === "xray-turn" && message.has_xray) {
+      onMessageContext(tale, message, button);
+      return;
+    }
+    if (reply.active || turnPending || editingTurn) return;
     if (action === "edit-turn") {
       if (message.has_signature && warnSignatures) previewDialog({
         title: "Edit this AI reply?",

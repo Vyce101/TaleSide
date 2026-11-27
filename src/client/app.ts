@@ -3,6 +3,7 @@ import { loadTales, loadWorlds, request, storeWorld, taleRoute, worlds, type Ope
 import { initializeDialog, outside } from "./dialog.js";
 import { element } from "./dom.js";
 import { createWorldInspector } from "./inspectors/world-inspector.js";
+import { createMessageContext } from "./inspectors/message-context.js";
 import { createKeysPanel } from "./keys-panel.js";
 import { setSurfaceVisible, slideFrames } from "./motion.js";
 import { createPersonaPanel } from "./personas.js";
@@ -31,6 +32,8 @@ const narrow = matchMedia("(width < 1100px)");
 
 const panelButtons = document.querySelectorAll<HTMLButtonElement>(".toolbar [data-panel]");
 let panel: Panel | null = null;
+const messageContextPanel = element("message-xray");
+const messageContext = createMessageContext(messageContextPanel);
 const worldInspector = createWorldInspector(drawers.inspector, updateWorld);
 const inspectorButton = element<HTMLButtonElement>("inspector-button");
 let navigation = 0;
@@ -42,6 +45,11 @@ const taleWorkspace = createTaleWorkspace({
   currentPersona: () => personas.currentPersona(),
   onBranch: navigate,
   onTalesChanged: () => { taleLists.refreshTaleLists(); },
+  onMessageContext: (tale, message, from) => {
+    showPanel(null, false);
+    if (taleLists.historyOpen) taleLists.setHistory(false);
+    void messageContext.open(tale, message, from);
+  },
 });
 const taleLists = createTaleLists({
   workspace,
@@ -113,6 +121,7 @@ function showPanel(next: Panel | null, returnFocus = true) {
   if (previous === next) return;
   const inspected = next === "inspector" ? inspectorWorld() : undefined;
   if (next === "inspector" && !inspected) return;
+  if (next) messageContext.close(false);
   if (previous === "inspector") worldInspector.close();
   panel = next;
   if (inspected) worldInspector.open(inspected);
@@ -147,6 +156,7 @@ function showPanel(next: Panel | null, returnFocus = true) {
 }
 
 function setWorkspace(world?: World, tale?: OpenTale) {
+  messageContext.close(false);
   taleWorkspace.select(world, tale);
   updateInspectorButton();
   if (world) void personas.refreshPersonas();
@@ -228,18 +238,22 @@ for (const button of panelButtons) {
   button.addEventListener("click", () => showPanel(panel === name ? null : name));
 }
 
+messageContextPanel.querySelector<HTMLButtonElement>(".panel-back")!.innerHTML = icon("close");
+messageContextPanel.querySelector<HTMLButtonElement>(".panel-back")!.addEventListener("click", () => messageContext.close());
 element("home-button").addEventListener("click", () => worldEditor.leaveWorldSetup(() => navigate()));
 for (const drawer of Object.values(drawers)) {
   drawer.querySelector(".panel-back")!.addEventListener("click", () => showPanel(null));
 }
 document.addEventListener("click", event => {
-  if ((!panel && !taleLists.historyOpen) || !(event.target instanceof Element)
+  if ((!panel && !taleLists.historyOpen && !messageContext.visible) || !(event.target instanceof Element)
     || event.target.closest(".toolbar button, dialog[open], #toasts")) return;
+  if (messageContext.visible && messageContextPanel.contains(event.target)) return;
   if (panel && drawers[panel].contains(event.target)) return;
   if (taleLists.historyOpen && event.target.closest('#tale-history, [data-action="toggle-history"]')) return;
   const clickedControl = event.target.closest("button, a[href], input, select, textarea, label, summary, [tabindex], [contenteditable=true]");
   if (taleLists.historyOpen) taleLists.setHistory(false, !clickedControl);
-  else showPanel(null, !clickedControl);
+  else if (panel) showPanel(null, !clickedControl);
+  else if (!event.target.closest('[data-action="xray-turn"]')) messageContext.close(!clickedControl);
 }, { capture: true });
 narrow.addEventListener("change", () => {
   const focusInWorkspace = workspace.contains(document.activeElement);
@@ -272,7 +286,7 @@ document.addEventListener("wheel", event => {
   if (event.ctrlKey || !event.deltaY || panel === "worlds" || panel === "settings"
     || document.querySelector("dialog[open]")) return;
   const origin = event.target;
-  if (!(origin instanceof Element) || origin.closest("textarea, select, #toasts, .inspector-surface")) return;
+  if (!(origin instanceof Element) || origin.closest("textarea, select, #toasts, .inspector-surface") || messageContext.visible) return;
   const scroller = panel ? drawers[panel].querySelector<HTMLElement>(".panel-content")
     : taleLists.historyOpen ? document.getElementById("history-list")
     : document.getElementById("transcript") ?? workspace.querySelector<HTMLElement>(".home-view");
@@ -285,7 +299,8 @@ document.addEventListener("wheel", event => {
 
 document.addEventListener("keydown", event => {
   if (event.key !== "Escape" || document.querySelector("dialog[open]")) return;
-  if (panel === "inspector" && worldInspector.escape()) event.preventDefault();
+  if (messageContext.visible) messageContext.escape();
+  else if (panel === "inspector" && worldInspector.escape()) event.preventDefault();
   else if (panel) showPanel(null);
   else if (taleLists.historyOpen) taleLists.setHistory(false, true);
 });

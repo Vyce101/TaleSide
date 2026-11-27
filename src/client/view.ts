@@ -33,6 +33,8 @@ const iconPaths = {
   star: '<path d="m12 3 3 6 7 .9-5 4.6 1 6.5-6-3.2L6 21l1-6.5-5-4.6L9 9Z"/>',
   globe: '<circle cx="12" cy="12" r="9"/><ellipse cx="12" cy="12" rx="4" ry="9"/><path d="M3 12h18"/>',
   drag: '<path d="M7 6h10M7 12h10M7 18h10"/>',
+  page: '<path d="M5 2.5h9l5 5v14H5zM14 2.5V8h5M8.5 12h7m-7 4h7"/>',
+  code: '<path d="m8 7-5 5 5 5m8-10 5 5-5 5m-2-13-4 16"/>',
   duplicate: '<path d="M8 5H5v16h12v-3M9 3h10v13H9zM11 9h6m-3-3v6"/>',
 } satisfies Record<string, string>;
 
@@ -209,6 +211,7 @@ export function messageTurn(message: Message, world: World, last = false, canReg
   const pendingActions = draft || message.id < 0;
   const disabled = busy ? "disabled" : "";
   const actions = `<div class="turn-actions" ${pendingActions ? "inert" : ""}>
+    ${!player && !message.opening && message.has_xray ? iconButton("xray-turn", "page", "Message Context", 'aria-haspopup="dialog"') : ""}
     ${iconButton("branch-turn", "branch", "Branch", disabled)}
     ${canRegenerate ? iconButton("regenerate-turn", "replace", "Regenerate", disabled) : ""}
     ${iconButton("edit-turn", "rename", "Edit", disabled)}
@@ -232,6 +235,7 @@ export function messageTurn(message: Message, world: World, last = false, canReg
         ${model ? `<span class="model-badge" role="img" tabindex="0" aria-label="Model: ${model}" data-tooltip="${model}">${icon("model")}</span>` : ""}
         ${actions}
       </header>
+      ${message.xray_error ? '<p class="inline-error inspector-turn-error">The reply was saved. Its Message Context could not be saved.</p>' : ""}
       ${message.thinking ? thinkingView(message, thinking) : ""}
       <div class="prose"></div>
     </div>
