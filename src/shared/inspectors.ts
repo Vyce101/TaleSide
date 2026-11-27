@@ -1,3 +1,5 @@
+import type { World } from "./types.js";
+import type { Extraction } from "./extraction.js";
 
 export type ActivityKind = "extraction" | "embedding" | "graph";
 export type ActivityStatus = "running" | "complete" | "error" | "stopped";
@@ -17,6 +19,23 @@ export type ActivityDetail = {
 };
 
 export type ActiveOperation = Pick<ActivityDetail, "id" | "kind" | "name" | "location" | "started">;
+export type InspectorNode = { id: string; name: string; type: string | null; version: string; };
+export type InspectorEdge = InspectorNode & { source: string; target: string };
+export type InspectorMap = {
+  revision: string; mode: "extracted" | "resolving" | "ready" | "empty";
+  nodes: (InspectorNode & { source_notes: number })[];
+  edges: (InspectorEdge & { source_notes: number })[];
+};
+export type InspectorRecord = InspectorNode & {
+  source?: string; target?: string; chunks: number; relationships: number;
+  resolved: boolean; summarized: boolean; embedded: boolean;
+};
+export type InspectorRecordDetail = InspectorRecord & { raw: string; summary: string | null };
+export type InspectorRecordPage = {
+  entities: number; relationships: number; distribution: Record<string, number>;
+  items: InspectorRecord[]; more: boolean;
+};
+
 export type PassageTrace = {
   book: number; chunk: number; name: string; similarity: number; text: string; preceding?: string;
   included: boolean;
