@@ -1,4 +1,4 @@
-import type { MessageContext, PassageTrace } from "../../shared/inspectors.js";
+import type { HistoryTrace, MessageContext, PassageTrace } from "../../shared/inspectors.js";
 import type { Message, Tale } from "../../shared/types.js";
 import { request, taleRoute } from "../data.js";
 import { setSurfaceVisible, slideFrames } from "../motion.js";
@@ -60,7 +60,6 @@ export function createMessageContext(panel: HTMLElement) {
       return control;
     }
     for (const item of data.trace.sections) {
-      if (item.kind === "chat_history") continue;
       const key = `block:${item.id}`;
       if (item.kind !== "retrieved_passages") {
         sidebar.append(row(key, item.name, item.characters));
@@ -91,9 +90,9 @@ export function createMessageContext(panel: HTMLElement) {
   }
 
   function showReader(title: string, description: string, text: string,
-    { overlap }: { overlap?: { label: string; text: string } } = {}) {
+    { thinking, overlap }: { thinking?: string; overlap?: { label: string; text: string } } = {}) {
     const position = main.scrollTop;
-    const back = backControl("Chunks", () => closeReader?.());
+    const back = backControl(tab === "chunks" ? "Chunks" : "Chat History", () => closeReader?.());
     closeReader = () => {
       closeReader = undefined;
       content();
@@ -101,6 +100,11 @@ export function createMessageContext(panel: HTMLElement) {
       main.querySelector<HTMLElement>("button, select, [tabindex]")?.focus({ preventScroll: true });
     };
     const nodes: HTMLElement[] = [readerHeading(title, back), muted(description)];
+    if (thinking) {
+      const thoughts = el("div", "inspector-thinking");
+      thoughts.append(el("strong", "", "Thinking sent"), reader(thinking, "Thinking sent"));
+      nodes.push(thoughts);
+    }
     const passage = reader(text, title);
     if (overlap) passage.prepend(
       el("span", "inspector-context-boundary", overlap.label),
@@ -148,6 +152,23 @@ export function createMessageContext(panel: HTMLElement) {
     return [controls, list];
   }
 
+  function historyCard(turn: HistoryTrace) {
+    const thinking = turn.role === "user" ? "" : turn.thinking ? "Thinking Sent" : turn.has_thinking ? "Thinking Saved, Not Sent" : "Thinking Unavailable";
+    const status = [turn.model, thinking, turn.signature_sent ? "Signature Sent" : turn.has_signature ? "Signature Not Sent" : ""].filter(Boolean).join(" · ");
+    const label = `Turn ${turn.turn} · ${turn.name}`;
+    const card = button("", () => showReader(label, status, turn.text, { thinking: turn.thinking }), "inspector-card inspector-xray-history");
+    card.append(el("strong", "", label), el("span", "inspector-preview", preview(turn.text.replace(/\s+/g, " ").trim())));
+    if (status) card.append(el("small", "inspector-muted", status));
+    return card;
+  }
+
+  function history() {
+    const list = el("div", "inspector-list");
+    const values = [...data.trace.history].reverse();
+    list.append(...(values.length ? values.map(historyCard) : [muted("No history in this request.")]));
+    return [list];
+  }
+
   function content() {
     const section = data.trace.sections.find(item => `block:${item.id}` === tab);
     if (tab === "raw") {
@@ -167,6 +188,7 @@ export function createMessageContext(panel: HTMLElement) {
       setMode(rawMode);
       replacePanel(main, [toolbar, code]);
     } else if (tab === "chunks") replacePanel(main, chunks());
+    else if (section?.kind === "chat_history") replacePanel(main, history());
     else if (section) replacePanel(main, [section.text ? reader(section.text, section.name) : muted("No text from this section was sent.")]);
   }
 
@@ -186,7 +208,7 @@ export function createMessageContext(panel: HTMLElement) {
       if (run.signal.aborted) return;
       if (capture.trace.graph_preview?.message_id !== message.id) delete capture.trace.graph_preview;
       data = capture;
-      const first = data.trace.sections.find(section => section.kind !== "retrieved_passages" && section.kind !== "chat_history");
+      const first = data.trace.sections.find(section => section.kind !== "retrieved_passages");
       tab = first ? `block:${first.id}` : "raw";
       tabs();
       content();

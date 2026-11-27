@@ -205,6 +205,7 @@ export function messageTurn(message: Message, world: World, last = false, canReg
   const thinking = message.status === "generating" && !message.content;
   const role = player ? "player" : "narrator";
   const model = escapeHtml(message.model ?? "");
+  const modelHint = `${model} · ${message.thinking ? "Thinking saved" : "Thinking unavailable"}`;
   const time = message.elapsed_ms === null ? (message.status === "generating" ? "0s" : "") : formatDuration(message.elapsed_ms);
   const count = message.swipes?.length ?? 1;
   const position = message.swipe ?? 0;
@@ -232,7 +233,7 @@ export function messageTurn(message: Message, world: World, last = false, canReg
     <div class="turn-content">
       <header>
         <strong>${player ? escapeHtml(message.player_name ?? "You") : escapeHtml(world.name)}</strong>
-        ${model ? `<span class="model-badge" role="img" tabindex="0" aria-label="Model: ${model}" data-tooltip="${model}">${icon("model")}</span>` : ""}
+        ${model ? `<span class="model-badge" role="img" tabindex="0" aria-label="Model: ${modelHint}" data-tooltip="${modelHint}">${icon("model")}</span>` : ""}
         ${actions}
       </header>
       ${message.xray_error ? '<p class="inline-error inspector-turn-error">The reply was saved. Its Message Context could not be saved.</p>' : ""}

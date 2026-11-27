@@ -73,6 +73,7 @@ details.inspector-card > summary small { display: block; padding-top: 4px; }
   font: inherit; line-height: 1.6; user-select: text;
 }
 .inspector-card .inspector-reader { margin-top: 6px; }
+.inspector-thinking { background: #202a24; padding: 8px; border-left: 2px solid #597365; }
 .inspector-thinking .inspector-reader, .inspector-preceding { color: #aebbb2; }
 .inspector-anchor { padding: 0; border: 0; background: none; color: var(--mint); text-decoration: underline; }
 .inspector-heading .panel-back, .inspector-heading .icon-button { flex: none; }
