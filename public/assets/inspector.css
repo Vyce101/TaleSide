@@ -70,6 +70,7 @@ details.inspector-card > summary small { display: block; padding-top: 4px; }
 .inspector-heading .panel-back, .inspector-heading .icon-button { flex: none; }
 .inspector-source-layer { min-height: 100%; }
 .inspector-source-layer > :not(:first-child) { margin-top: 9px; }
+.inspector-graph-info { min-height: 24px; padding: 4px 8px; color: var(--mint); font-size: 12px; overflow-wrap: anywhere; }
 .inspector-overall { font-size: clamp(26px, 3vw, 38px); font-weight: 630; color: var(--mint); }
 .inspector-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; }
 .inspector-stat { display: grid; border: 1px solid #3e4740; background: #292d29; border-radius: 5px; padding: 8px; }
@@ -206,6 +207,34 @@ details.inspector-card > summary small { display: block; padding-top: 4px; }
   display: block; margin: 9px 0; border-block: 1px solid #4d554d; padding: 3px 0; color: var(--mint); font-size: 11px;
 }
 .inspector-context-boundary:first-child { margin-top: 0; }
+.inspector-graph-map {
+  display: grid; gap: 8px; min-width: 0;
+  --inspector-graph-node: var(--mint); --inspector-graph-link: #78938a; --inspector-graph-label: #eff7ef;
+}
+.inspector-map-stage {
+  position: relative; height: clamp(230px, 42dvh, 430px); border: 1px solid #3d4943;
+  border-radius: 7px; background: #111412; overflow: hidden;
+}
+.inspector-map-stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; cursor: grab; }
+.inspector-map-zoom, .inspector-map-live-controls {
+  position: absolute; top: 7px; display: flex; gap: 4px;
+}
+.inspector-map-zoom { left: 7px; }
+.inspector-map-live-controls { right: 7px; }
+:is(.inspector-map-zoom, .inspector-map-live-controls) button {
+  min-width: 30px; width: auto; min-height: 28px; padding: 3px 6px; border: 1px solid #414843;
+  border-radius: 4px; background: #242925; color: var(--cream);
+}
+:is(.inspector-map-zoom, .inspector-map-live-controls) button:is(:hover, [aria-pressed="true"]) {
+  background: #304339; color: var(--mint);
+}
+.inspector-map-live-controls svg { width: 15px; height: 15px; }
+.inspector-map-empty { position: absolute; inset: 50% 12px auto; text-align: center; color: var(--muted); pointer-events: none; }
+.inspector-map-stage .inspector-graph-info {
+  position: absolute; bottom: 7px; left: 7px; max-width: calc(100% - 14px); pointer-events: none; background: #222723ed;
+  border-radius: 4px;
+}
+.inspector-map-stage .inspector-graph-info:empty { display: none; }
 @media (width < 570px) {
   .inspector-pass-summary small { float: none; margin: 2px 0 0 12px; }
 }
