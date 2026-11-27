@@ -26,6 +26,10 @@ And none of this is staged. Harry, Umbridge, your missing friend, Ruijerd, Paul:
 | --- | --- |
 | ![Recent Tales on the TaleSide home screen](./docs/screenshots/recent-tales.png) | ![A Tale showing its opening, an AI reply, and the reply time](./docs/screenshots/tale-chat.png) |
 
+| World Inspector overview | World Inspector graph |
+| --- | --- |
+| ![World Inspector Overview showing book totals and indexing progress](./docs/screenshots/world-inspector-overview.png) | ![World Inspector Graph showing entities and relationships](./docs/screenshots/world-inspector-graph.png) |
+
 ![The former Demo Worlds shelf](./docs/screenshots/homepage.png)
 
 *Deprecated UI. The former Demo Worlds shelf.*
