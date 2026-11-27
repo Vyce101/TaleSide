@@ -67,11 +67,35 @@ details.inspector-card > summary small { display: block; padding-top: 4px; }
 .inspector-card .inspector-reader { margin-top: 6px; }
 .inspector-anchor { padding: 0; border: 0; background: none; color: var(--mint); text-decoration: underline; }
 .inspector-heading .panel-back, .inspector-heading .icon-button { flex: none; }
+.inspector-overall { font-size: clamp(26px, 3vw, 38px); font-weight: 630; color: var(--mint); }
+.inspector-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; }
+.inspector-stat { display: grid; border: 1px solid #3e4740; background: #292d29; border-radius: 5px; padding: 8px; }
+.inspector-stat strong { font-size: 22px; font-variant-numeric: tabular-nums; }
+.inspector-pipeline-row { display: grid; gap: 4px; }
+.inspector-meter {
+  appearance: none; width: 100%; height: 6px; border: 0; border-radius: 99px;
+  background: var(--inspector-track, #333a34); overflow: hidden; color: var(--dialogue);
+}
+.inspector-meter::-webkit-progress-bar { background: transparent; }
+.inspector-meter::-webkit-progress-value { background: currentColor; border-radius: 99px; }
+.inspector-meter::-moz-progress-bar { background: currentColor; border-radius: 99px; }
+.inspector-meter[data-indeterminate="true"] {
+  appearance: none; border: 0; border-radius: 99px;
+  background: repeating-linear-gradient(120deg, #345746 0 7px, #69a287 7px 14px);
+  background-size: 33px 100%; animation: inspector-stripes .85s linear infinite;
+}
+.inspector-meter[data-indeterminate="true"]::-webkit-progress-bar { background: transparent; }
+@keyframes inspector-stripes { to { background-position: 33px 0; } }
+.inspector-spinner { width: 15px; height: 15px; border: 2px solid #537362; border-top-color: var(--mint); border-radius: 50%; animation: inspector-spin .85s linear infinite; }
+@keyframes inspector-spin { to { transform: rotate(360deg); } }
 @media (width < 570px) {
   .inspector-surface .inspector-layout { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
   .inspector-rail { max-height: 25dvh; padding: 7px; border-right: 0; border-bottom: 1px solid var(--soft-line); }
   .inspector-sidebar { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .inspector-world-name { margin-bottom: 6px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .inspector-meter[data-indeterminate="true"], .inspector-spinner { animation: none; }
 }
 .inspector-world-tab { border: 0; background: transparent; padding-inline: 9px; }
 .inspector-world-tab:hover { background: #2a302c; }
@@ -84,3 +108,18 @@ details.inspector-card > summary small { display: block; padding-top: 4px; }
 .inspector-back svg { width: 15px; height: 15px; }
 .inspector-chunk-navigation { flex-wrap: nowrap; }
 .inspector-link { padding: 2px 0; border: 0; background: transparent; color: var(--mint); text-align: left; }
+.inspector-overall-label { display: grid; gap: 1px; }
+.inspector-overall-value { display: flex; align-items: center; gap: 10px; }
+.inspector-main .inspector-toggle-icon {
+  flex: none; width: 30px; min-height: 30px; color: var(--mint); background: #2a332d; border: 1px solid #445249; border-radius: 5px;
+}
+.inspector-toggle-icon svg { width: 18px; height: 18px; }
+.inspector-main .inspector-toggle-icon:is(:hover, :focus-visible, [aria-pressed="true"]) { background: #34483c; }
+.inspector-stage-status { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.inspector-stage-status .inspector-spinner { width: 12px; height: 12px; }
+.inspector-stage-check { color: var(--mint); }
+.inspector-stage-check svg { width: 14px; height: 14px; }
+.inspector-pipeline-row[data-state="Running"] .inspector-stage-status { color: var(--mint); }
+.inspector-pipeline-row[data-state="Waiting"] { color: #a0a49e; }
+.inspector-pipeline-row[data-state="Waiting"] .inspector-muted { color: #8f968e; }
+.inspector-pipeline-row[data-state="Waiting"] .inspector-meter { --inspector-track: #292e2a; }

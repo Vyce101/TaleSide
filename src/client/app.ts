@@ -2,6 +2,7 @@ import type { Tale, TaleSummary, World } from "../shared/types.js";
 import { loadTales, loadWorlds, request, storeWorld, taleRoute, worlds, type OpenTale } from "./data.js";
 import { initializeDialog, outside } from "./dialog.js";
 import { element } from "./dom.js";
+import { createWorldInspector } from "./inspectors/world-inspector.js";
 import { createKeysPanel } from "./keys-panel.js";
 import { setSurfaceVisible, slideFrames } from "./motion.js";
 import { createPersonaPanel } from "./personas.js";
@@ -22,6 +23,7 @@ const drawers = {
   keys: element("keys-drawer"),
   personas: element("personas-drawer"),
   "app-settings": element("app-settings-drawer"),
+  inspector: element("inspector-drawer"),
 };
 type Panel = keyof typeof drawers;
 const panelNames = { worlds: "Worlds", settings: "Tale Settings", keys: "API Keys", "app-settings": "Settings", personas: "Personas", inspector: "World Inspector" };
@@ -29,6 +31,8 @@ const narrow = matchMedia("(width < 1100px)");
 
 const panelButtons = document.querySelectorAll<HTMLButtonElement>(".toolbar [data-panel]");
 let panel: Panel | null = null;
+const worldInspector = createWorldInspector(drawers.inspector, updateWorld);
+const inspectorButton = element<HTMLButtonElement>("inspector-button");
 let navigation = 0;
 let lastWorlds = new Map<string, World>();
 
@@ -56,6 +60,7 @@ const worldEditor = createWorldEditor({
   enterWorld,
   goHome: () => navigate(),
   onWorldUpdated: updateWorld,
+  onEditorChanged: updateInspectorButton,
 });
 const taleSettings = createTaleSettings({
   currentWorld: () => taleWorkspace.world,
@@ -78,8 +83,15 @@ const personas = createPersonaPanel({
   isOpen: () => panel === "personas",
 });
 
+function inspectorWorld() {
+  if (panel === "inspector") return worlds.find(world => world.id === worldInspector.worldId);
+  return (panel === "worlds" ? worldEditor.current : undefined) ?? taleWorkspace.world;
+}
+
+function updateInspectorButton() { inspectorButton.disabled = !inspectorWorld(); }
+
 function updatePanelLayout() {
-  const showFullWidth = narrow.matches && panel !== null && panel !== "keys" && panel !== "personas" && panel !== "app-settings";
+  const showFullWidth = narrow.matches && panel !== null && panel !== "keys" && panel !== "personas" && panel !== "app-settings" && panel !== "inspector";
   workspace.inert = showFullWidth;
   if (!panel) return;
   const back = drawers[panel].querySelector<HTMLButtonElement>(".panel-back")!;
@@ -99,7 +111,12 @@ function setPanelSide(next: Panel | null) {
 function showPanel(next: Panel | null, returnFocus = true) {
   const previous = panel;
   if (previous === next) return;
+  const inspected = next === "inspector" ? inspectorWorld() : undefined;
+  if (next === "inspector" && !inspected) return;
+  if (previous === "inspector") worldInspector.close();
   panel = next;
+  if (inspected) worldInspector.open(inspected);
+  updateInspectorButton();
   for (const button of panelButtons) {
     if (!button.disabled) button.setAttribute("aria-expanded", String(button.dataset.panel === next));
   }
@@ -131,6 +148,7 @@ function showPanel(next: Panel | null, returnFocus = true) {
 
 function setWorkspace(world?: World, tale?: OpenTale) {
   taleWorkspace.select(world, tale);
+  updateInspectorButton();
   if (world) void personas.refreshPersonas();
   taleLists.reset();
   element("home-button").setAttribute("aria-current", String(!world));
@@ -180,7 +198,8 @@ function updateWorld(world: World) {
 function syncWorlds() {
   for (const world of worlds) {
     const previous = lastWorlds.get(world.id);
-    if (!previous || previous.status === world.status || worldEditor.isWorldEditorOpen(world.id)) continue;
+    const inspectorOpen = panel === "inspector" && worldInspector.worldId === world.id;
+    if (!previous || previous.status === world.status || inspectorOpen || worldEditor.isWorldEditorOpen(world.id)) continue;
     if (world.status === "failed") showToast(`${world.name}: ${world.error ?? "Indexing failed."}`);
     if (world.status === "ready" && ["creating", "pausing"].includes(previous.status)) {
       showToast(`${world.name} finished indexing.`, { success: true });
@@ -191,6 +210,8 @@ function syncWorlds() {
   const current = worlds.find(world => world.id === taleWorkspace.world?.id);
   if (current) taleWorkspace.syncWorld(current);
   worldEditor.syncWorldPanel();
+  if (panel === "inspector" && !inspectorWorld()) showPanel(null, false);
+  updateInspectorButton();
 }
 
 initializeDialog(event => {
@@ -204,7 +225,7 @@ for (const button of panelButtons) {
   button.innerHTML = icon(glyph);
   button.setAttribute("aria-label", panelNames[name]);
   button.dataset.tooltip = panelNames[name];
-  if (name !== "inspector") button.addEventListener("click", () => showPanel(panel === name ? null : name));
+  button.addEventListener("click", () => showPanel(panel === name ? null : name));
 }
 
 element("home-button").addEventListener("click", () => worldEditor.leaveWorldSetup(() => navigate()));
@@ -251,7 +272,7 @@ document.addEventListener("wheel", event => {
   if (event.ctrlKey || !event.deltaY || panel === "worlds" || panel === "settings"
     || document.querySelector("dialog[open]")) return;
   const origin = event.target;
-  if (!(origin instanceof Element) || origin.closest("textarea, select, #toasts")) return;
+  if (!(origin instanceof Element) || origin.closest("textarea, select, #toasts, .inspector-surface")) return;
   const scroller = panel ? drawers[panel].querySelector<HTMLElement>(".panel-content")
     : taleLists.historyOpen ? document.getElementById("history-list")
     : document.getElementById("transcript") ?? workspace.querySelector<HTMLElement>(".home-view");
@@ -264,7 +285,8 @@ document.addEventListener("wheel", event => {
 
 document.addEventListener("keydown", event => {
   if (event.key !== "Escape" || document.querySelector("dialog[open]")) return;
-  if (panel) showPanel(null);
+  if (panel === "inspector" && worldInspector.escape()) event.preventDefault();
+  else if (panel) showPanel(null);
   else if (taleLists.historyOpen) taleLists.setHistory(false, true);
 });
 

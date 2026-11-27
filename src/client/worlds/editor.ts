@@ -21,9 +21,10 @@ type WorldEditorOptions = {
   enterWorld: (world: World) => Promise<void>;
   goHome: () => void;
   onWorldUpdated: (world: World) => void;
+  onEditorChanged: () => void;
 };
 
-export function createWorldEditor({ currentWorld, isOpen, showWorldPanel, enterWorld, goHome, onWorldUpdated }: WorldEditorOptions) {
+export function createWorldEditor({ currentWorld, isOpen, showWorldPanel, enterWorld, goHome, onWorldUpdated, onEditorChanged }: WorldEditorOptions) {
   let editor: Editor | undefined;
 
   function restoreWorldPanel() {
@@ -90,6 +91,7 @@ export function createWorldEditor({ currentWorld, isOpen, showWorldPanel, enterW
     if (editor?.pendingPortrait) URL.revokeObjectURL(editor.pendingPortrait);
     window.removeEventListener("beforeunload", warnOnUnload);
     editor = undefined;
+    onEditorChanged();
   }
 
   function hideWorldPanel() { if (editor?.world) closeWorldEditor(); }
@@ -111,6 +113,7 @@ export function createWorldEditor({ currentWorld, isOpen, showWorldPanel, enterW
       extractionKeyIds: world?.extraction_key_ids ?? [], dirty: false, busy: false, description: world?.description ?? WORLD_DESCRIPTION, openings: [...(world?.openings ?? [FIRST_MESSAGE])],
     };
     editor = form;
+    onEditorChanged();
     element("panel-title").textContent = world?.name ?? "New World";
     element("world-panel").innerHTML = editorMarkup(world, indexingOpen);
     bindWorldStory(form);
@@ -543,6 +546,6 @@ export function createWorldEditor({ currentWorld, isOpen, showWorldPanel, enterW
     }
   }
 
-  return { openWorldEditor, restoreWorldPanel, hideWorldPanel, leaveWorldSetup, isWorldEditorOpen,
+  return { get current() { return editor?.world; }, openWorldEditor, restoreWorldPanel, hideWorldPanel, leaveWorldSetup, isWorldEditorOpen,
     syncWorldPanel, updateWorldEditorKeys, handleWorldAction };
 }
